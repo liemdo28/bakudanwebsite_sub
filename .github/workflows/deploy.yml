@@ -23,4 +23,3 @@ jobs:
           source: "about.html,accessibility.html,bakudan-redesign.html,blog-authentic.html,blog-chashu.html,blog-journey.html,blog-ramen-101.html,blog-tonkotsu.html,blog.html,fundraiser.html,happy-hour.html,index.html,locations.html,menu.html,order.html,privacy.html,ramen-guide.html,script.js,styles.css,terms.html,css,js,locations"
           target: ${{ secrets.TARGET_DIR }}
           overwrite: true
-          strip_components: 0

@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bakudan Ramen – Bold Flavor. Modern Japanese Soul. Texas Spirit.</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-red: #D32F2F;
+            --dark-bg: #1a1a1a;
+            --darker-bg: #0d0d0d;
+            --light-text: #ffffff;
+            --gray-text: #b0b0b0;
+            --accent-gold: #FFD700;
+        }
+
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: var(--dark-bg);
+            color: var(--light-text);
+            overflow-x: hidden;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: rgba(13, 13, 13, 0.95);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            padding: 1rem 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(211, 47, 47, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        nav.scrolled {
+            padding: 0.5rem 5%;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 1.8rem;
+            letter-spacing: 2px;
+        }
+
+        .logo-icon {
+            width: 50px;
+            height: 50px;
+            background: var(--primary-red);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 3rem;
+            list-style: none;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--light-text);
+            text-decoration: none;
+            font-weight: 400;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .nav-links a::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: var(--primary-red);
+            transition: width 0.3s ease;
+        }
+
+        .nav-links a:hover::after {
+            width: 100%;
+        }
+
+        .cta-button {
+            background: var(--primary-red);
+            color: white;
+            padding: 0.8rem 2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(211, 47, 47, 0.3);
+        }
+
+        .cta-button:hover {
+            background: #B71C1C;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(211, 47, 47, 0.5);
+        }
+
+        /* Hero Section */
+        .hero {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, #0d0d0d 0%, #1a1a1a 100%);
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse"><path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(211,47,47,0.05)" stroke-width="1"/></pattern></defs><rect width="100%" height="100%" fill="url(%23grid)"/></svg>');
+            opacity: 0.3;
+        }
+
+        .hero-content {
+            text-align: center;
+            z-index: 2;
+            max-width: 1200px;
+            padding: 0 5%;
+        }
+
+        .hero-subtitle {
+            color: var(--primary-red);
+            font-size: 1.2rem;
+            letter-spacing: 3px;
+            margin-bottom: 1rem;
+            font-weight: 400;
+            text-transform: uppercase;
+            animation: fadeInUp 0.8s ease;
+        }
+
+        .hero-title {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 6rem;
+            line-height: 1;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #ffffff 0%, #b0b0b0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: fadeInUp 0.8s ease 0.2s both;
+        }
+
+        .hero-description {
+            font-size: 1.3rem;
+            color: var(--gray-text);
+            max-width: 700px;
+            margin: 0 auto 3rem;
+            line-height: 1.8;
+            animation: fadeInUp 0.8s ease 0.4s both;
+        }
+
+        .hero-ctas {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            animation: fadeInUp 0.8s ease 0.6s both;
+        }
+
+        .btn-primary {
+            background: var(--primary-red);
+            color: white;
+            padding: 1.2rem 3rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(211, 47, 47, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(211, 47, 47, 0.6);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: white;
+            padding: 1.2rem 3rem;
+            border: 2px solid white;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+        }
+
+        .btn-secondary:hover {
+            background: white;
+            color: var(--dark-bg);
+            transform: translateY(-3px);
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* About Section */
+        .about-section {
+            padding: 8rem 5%;
+            background: var(--darker-bg);
+            position: relative;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 5rem;
+        }
+
+        .section-tag {
+            color: var(--primary-red);
+            font-size: 1rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+            font-weight: 400;
+        }
+
+        .section-title {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .section-description {
+            font-size: 1.2rem;
+            color: var(--gray-text);
+            max-width: 700px;
+            margin: 0 auto;
+            line-height: 1.8;
+        }
+
+        .about-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            align-items: center;
+        }
+
+        .about-image {
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        .about-image img {
+            width: 100%;
+            height: 500px;
+            object-fit: cover;
+            display: block;
+            transition: transform 0.5s ease;
+        }
+
+        .about-image:hover img {
+            transform: scale(1.05);
+        }
+
+        .about-content {
+            padding: 2rem;
+        }
+
+        .about-content h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5rem;
+            margin-bottom: 2rem;
+            color: var(--accent-gold);
+        }
+
+        .about-features {
+            list-style: none;
+            margin: 2rem 0;
+        }
+
+        .about-features li {
+            padding: 1rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .about-features li::before {
+            content: '🔥';
+            font-size: 1.5rem;
+        }
+
+        /* Happy Hour Section */
+        .happy-hour-section {
+            padding: 8rem 5%;
+            background: linear-gradient(135deg, var(--dark-bg) 0%, var(--darker-bg) 100%);
+        }
+
+        .happy-hour-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(211, 47, 47, 0.1);
+            border: 2px solid var(--primary-red);
+            border-radius: 30px;
+            padding: 4rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .happy-hour-container::before {
+            content: '🍜';
+            position: absolute;
+            font-size: 20rem;
+            opacity: 0.05;
+            right: -50px;
+            bottom: -50px;
+            transform: rotate(-15deg);
+        }
+
+        .happy-hour-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .happy-hour-badge {
+            display: inline-block;
+            background: var(--primary-red);
+            color: white;
+            padding: 0.5rem 2rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+
+        .happy-hour-title {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 4rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .happy-hour-time {
+            font-size: 1.5rem;
+            color: var(--accent-gold);
+            font-weight: 700;
+        }
+
+        .menu-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            margin-top: 3rem;
+        }
+
+        .menu-category {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2rem;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .menu-category:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-5px);
+        }
+
+        .menu-category h3 {
+            color: var(--primary-red);
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            font-family: 'Bebas Neue', sans-serif;
+            letter-spacing: 2px;
+        }
+
+        .menu-item {
+            padding: 1rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+
+        .menu-item:last-child {
+            border-bottom: none;
+        }
+
+        /* Signature Bowls Section */
+        .bowls-section {
+            padding: 8rem 5%;
+            background: var(--darker-bg);
+        }
+
+        .bowls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 3rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .bowl-card {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 20px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .bowl-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 50px rgba(211, 47, 47, 0.3);
+            border-color: var(--primary-red);
+        }
+
+        .bowl-image {
+            height: 300px;
+            background: linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8rem;
+        }
+
+        .bowl-content {
+            padding: 2rem;
+        }
+
+        .bowl-content h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: var(--accent-gold);
+        }
+
+        .bowl-content p {
+            color: var(--gray-text);
+            line-height: 1.8;
+            margin-bottom: 1.5rem;
+        }
+
+        .bowl-price {
+            font-size: 1.5rem;
+            color: var(--primary-red);
+            font-weight: 700;
+        }
+
+        /* CTA Section */
+        .cta-section {
+            padding: 8rem 5%;
+            background: linear-gradient(135deg, var(--primary-red) 0%, #B71C1C 100%);
+            text-align: center;
+        }
+
+        .cta-section h2 {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 4rem;
+            margin-bottom: 2rem;
+        }
+
+        .cta-section p {
+            font-size: 1.3rem;
+            margin-bottom: 3rem;
+            opacity: 0.9;
+        }
+
+        .cta-section .btn-primary {
+            background: white;
+            color: var(--primary-red);
+        }
+
+        .cta-section .btn-primary:hover {
+            background: var(--dark-bg);
+            color: white;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--darker-bg);
+            padding: 4rem 5%;
+            text-align: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        footer p {
+            color: var(--gray-text);
+            margin-bottom: 1rem;
+        }
+
+        .social-links {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            margin-top: 2rem;
+        }
+
+        .social-links a {
+            color: var(--light-text);
+            font-size: 1.5rem;
+            transition: color 0.3s ease;
+        }
+
+        .social-links a:hover {
+            color: var(--primary-red);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero-title {
+                font-size: 3.5rem;
+            }
+
+            .nav-links {
+                gap: 1rem;
+            }
+
+            .about-grid,
+            .menu-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .section-title {
+                font-size: 3rem;
+            }
+
+            .hero-ctas {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav id="navbar">
+        <div class="logo">
+            <div class="logo-icon">爆</div>
+            <span>BAKUDAN RAMEN</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="#home">Home</a></li>
+            <li><a href="#menu">Menu</a></li>
+            <li><a href="#gallery">Gallery</a></li>
+            <li><a href="https://www.bakudanramen.com/location/">Location</a></li>
+            <li><a href="https://order.toasttab.com/online/bakudan-bandera" class="cta-button">ORDER NOW</a></li>
+        </ul>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero" id="home">
+        <div class="hero-content">
+            <div class="hero-subtitle">Modern Japanese Soul • Texas Spirit</div>
+            <h1 class="hero-title">EXPLOSIVE<br>RAMEN EXPERIENCE</h1>
+            <p class="hero-description">
+                Bold flavors from Japan meet Texas hospitality. Every bowl is a celebration of authentic craftsmanship and vibrant taste.
+            </p>
+            <div class="hero-ctas">
+                <a href="https://order.toasttab.com/online/bakudan-bandera" class="btn-primary">ORDER NOW</a>
+                <a href="#menu" class="btn-secondary">VIEW MENU</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section class="about-section" id="about">
+        <div class="section-header">
+            <div class="section-tag">Our Story</div>
+            <h2 class="section-title">WHERE TRADITION MEETS INNOVATION</h2>
+            <p class="section-description">
+                We blend authentic Japanese ramen-making with Texas hospitality — friendly, warm, and full of personality.
+            </p>
+        </div>
+        <div class="about-grid">
+            <div class="about-image">
+                <img src="data:image/svg+xml,%3Csvg width='800' height='600' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='800' height='600' fill='%23D32F2F'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='100' fill='white' font-family='Arial'%3E🍜%3C/text%3E%3C/svg%3E" alt="Ramen Bowl">
+            </div>
+            <div class="about-content">
+                <h3>Each Bowl is Built with Care</h3>
+                <ul class="about-features">
+                    <li>Slow-simmered broths with depth and complexity</li>
+                    <li>Fresh noodles made daily</li>
+                    <li>Melt-in-your-mouth chashu perfection</li>
+                    <li>Spicy, rich, and umami-packed flavors</li>
+                </ul>
+                <p style="margin-top: 2rem; font-size: 1.1rem; line-height: 1.8;">
+                    Whether you're looking for a quick lunch, a dinner hangout, or a late-night comfort bowl —
+                    <strong style="color: var(--accent-gold);">Bakudan Ramen delivers a full, vibrant dining experience.</strong>
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Happy Hour Section -->
+    <section class="happy-hour-section" id="happy-hour">
+        <div class="happy-hour-container">
+            <div class="happy-hour-header">
+                <div class="happy-hour-badge">Every Day</div>
+                <h2 class="happy-hour-title">HAPPY HOUR</h2>
+                <div class="happy-hour-time">3PM - 6PM</div>
+            </div>
+
+            <div class="menu-grid">
+                <div class="menu-category">
+                    <h3>🍹 DRINKS</h3>
+                    <div class="menu-item">$6 Espresso Martinis</div>
+                    <div class="menu-item">Tequila Corrido OP, Coffee Liqueur, Cold Brew</div>
+                    <div class="menu-item"><strong>½ OFF COCKTAILS</strong><br>All our regular menu cocktails are ½ off</div>
+                    <div class="menu-item">$5 SHOTS<br>Mexican Candy, Jameson Irish Whiskey, Tequila Corrido Blanco | Reposado</div>
+                    <div class="menu-item">$3 DRAFT BEER<br>Kirin Ichiban | Michelob Ultra | Modelo Especial | Bud Light | Freetail Soul Doubt | Seasonal</div>
+                    <div class="menu-item">$4 HOUSE WINE by Sycamore Lane<br>Chardonnay | Cabernet Sauvignon</div>
+                </div>
+
+                <div class="menu-category">
+                    <h3>🍜 FOOD</h3>
+                    <div class="menu-item">$3.5 Edamame | $3.5 Wakame Salad</div>
+                    <div class="menu-item">$4.5 Spicy Edamame | $4.5 Gyoza</div>
+                    <div class="menu-item">$5.5 Takoyaki | $5.5 Wings</div>
+                    <div class="menu-item">$5.5 Chicken Karaage</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Signature Bowls Section -->
+    <section class="bowls-section" id="menu">
+        <div class="section-header">
+            <div class="section-tag">Fan Favorites</div>
+            <h2 class="section-title">🔥 OUR SIGNATURE RAMEN BOWLS</h2>
+            <p class="section-description">
+                Each bowl is a carefully crafted masterpiece, combining traditional techniques with bold, innovative flavors.
+            </p>
+        </div>
+        <div class="bowls-grid">
+            <div class="bowl-card">
+                <div class="bowl-image">🍜</div>
+                <div class="bowl-content">
+                    <h3>Garlic Tonkotsu Ramen</h3>
+                    <p>Rich pork bone broth infused with roasted garlic, topped with chashu, soft egg, and crispy garlic chips.</p>
+                    <div class="bowl-price">$14.95</div>
+                </div>
+            </div>
+            <div class="bowl-card">
+                <div class="bowl-image">🌶️</div>
+                <div class="bowl-content">
+                    <h3>Spicy Miso Ramen</h3>
+                    <p>Bold miso broth with a kick of chili oil, ground pork, bamboo shoots, and a perfectly jammy egg.</p>
+                    <div class="bowl-price">$15.95</div>
+                </div>
+            </div>
+            <div class="bowl-card">
+                <div class="bowl-image">🥬</div>
+                <div class="bowl-content">
+                    <h3>Vegetarian Shoyu</h3>
+                    <p>Light soy-based broth with seasonal vegetables, tofu, mushrooms, and sesame oil drizzle.</p>
+                    <div class="bowl-price">$13.95</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <h2>READY TO EXPERIENCE THE BOLD?</h2>
+        <p>Order online for pickup or delivery. Your perfect bowl awaits.</p>
+        <a href="https://order.toasttab.com/online/bakudan-bandera" class="btn-primary">ORDER NOW</a>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="logo" style="justify-content: center; margin-bottom: 2rem;">
+            <div class="logo-icon">爆</div>
+            <span>BAKUDAN RAMEN</span>
+        </div>
+        <p>&copy; 2024 Bakudan Ramen. All rights reserved.</p>
+        <p>Bold Flavor. Modern Japanese Soul. Texas Spirit.</p>
+        <div class="social-links">
+            <a href="https://www.instagram.com/bakudanramen/">Instagram</a>
+            <a href="https://www.facebook.com/bakudanSA/">Facebook</a>
+            <a href="https://www.yelp.com/biz/bakudan-ramen-san-antonio">Yelp</a>
+        </div>
+    </footer>
+
+    <script>
+        // Navbar scroll effect
+        window.addEventListener('scroll', () => {
+            const navbar = document.getElementById('navbar');
+            if (window.scrollY > 100) {
+                navbar.classList.add('scrolled');
+            } else {
+                navbar.classList.remove('scrolled');
+            }
+        });
+
+        // Smooth scrolling
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

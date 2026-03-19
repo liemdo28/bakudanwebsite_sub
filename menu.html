@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Explore Bakudan Ramen's full menu of authentic Japanese ramen bowls, appetizers, and drinks.">
+    <title>Menu - Bakudan Ramen</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Menu",
+        "name": "Bakudan Ramen Menu",
+        "url": "https://bakudanramen.com/menu.html",
+        "mainEntity": [
+            {
+                "@type": "MenuSection",
+                "name": "Ramen",
+                "hasMenuItem": [
+                    {"@type": "MenuItem", "name": "Garlic Tonkotsu Ramen", "description": "Rich pork bone broth infused with roasted garlic, topped with chashu, soft egg, and crispy garlic chips.", "offers": {"@type": "Offer", "price": "14.95", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Spicy Miso Ramen", "description": "Bold miso broth with a kick of chili oil, ground pork, bamboo shoots, and a perfectly jammy egg.", "offers": {"@type": "Offer", "price": "15.95", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Vegetarian Shoyu Ramen", "description": "Light soy-based broth with seasonal vegetables, tofu, mushrooms, and sesame oil drizzle.", "offers": {"@type": "Offer", "price": "13.95", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Classic Tonkotsu Ramen", "description": "Traditional pork bone broth simmered for 10 hours, with chashu, bamboo shoots, green onion, and nori.", "offers": {"@type": "Offer", "price": "13.95", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Bakudan Special", "description": "Our signature explosion of flavor — tonkotsu base with spicy miso tare, double chashu, corn, butter, and a soft-boiled egg.", "offers": {"@type": "Offer", "price": "17.95", "priceCurrency": "USD"}}
+                ]
+            },
+            {
+                "@type": "MenuSection",
+                "name": "Appetizers",
+                "hasMenuItem": [
+                    {"@type": "MenuItem", "name": "Gyoza (6 pcs)", "description": "Pan-fried pork dumplings with crispy bottoms, served with house ponzu.", "offers": {"@type": "Offer", "price": "7.95", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Karaage Chicken", "description": "Japanese-style fried chicken with yuzu mayo and shichimi.", "offers": {"@type": "Offer", "price": "8.95", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Takoyaki (6 pcs)", "description": "Crispy octopus balls with bonito flakes, Kewpie mayo, and takoyaki sauce.", "offers": {"@type": "Offer", "price": "8.50", "priceCurrency": "USD"}}
+                ]
+            }
+        ]
+    }
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <header class="site-header" role="banner">
+        <a href="index.html" class="logo" aria-label="Bakudan Ramen - Home">
+            <div class="logo-icon" aria-hidden="true">&#29190;</div>
+            <span class="logo-text">BAKUDAN RAMEN</span>
+        </a>
+        <nav aria-label="Main navigation">
+            <ul class="nav-links">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="menu.html" class="active">Menu</a></li>
+                <li><a href="locations.html">Locations</a></li>
+                <li><a href="happy-hour.html">Happy Hour</a></li>
+                <li><a href="about.html">Our Story</a></li>
+                <li><a href="blog.html">Blog</a></li>
+                <li><a href="order.html" class="nav-cta">Order Now</a></li>
+            </ul>
+        </nav>
+        <button class="hamburger" aria-expanded="false" aria-controls="mobile-nav" aria-label="Open menu">
+            <span></span><span></span><span></span>
+        </button>
+    </header>
+    <div class="mobile-nav" id="mobile-nav" role="navigation" aria-label="Mobile navigation">
+        <a href="index.html">Home</a>
+        <a href="menu.html">Menu</a>
+        <a href="locations.html">Locations</a>
+        <a href="happy-hour.html">Happy Hour</a>
+        <a href="about.html">Our Story</a>
+        <a href="blog.html">Blog</a>
+        <a href="order.html" class="nav-cta" style="margin-top: 1rem;">Order Now</a>
+    </div>
+
+    <main id="main-content">
+        <section class="page-hero">
+            <h1>Our Menu</h1>
+            <p>Experience bold, authentic flavors crafted with premium ingredients and traditional Japanese techniques.</p>
+        </section>
+
+        <div style="max-width: 900px; margin: 0 auto 2rem; padding: 1.5rem; background: rgba(236, 74, 94, 0.1); border: 1px solid rgba(236, 74, 94, 0.3); border-radius: 12px; text-align: center;">
+            <p style="color: #F5F0E8; font-weight: 700; margin-bottom: 0.5rem;">Allergen Notice</p>
+            <p style="color: #B8AFA6; font-size: 0.9rem; line-height: 1.6;">Our menu items may contain or come into contact with common allergens including <strong style="color: #F5F0E8;">wheat/gluten, soy, eggs, dairy, shellfish, fish, sesame, peanuts, and tree nuts</strong>. Items are prepared in a shared kitchen. Please inform our staff of any allergies before ordering. For detailed allergen information, call your location directly.</p>
+        </div>
+
+        <section class="menu-section">
+            <div class="menu-categories">
+                <!-- Ramen Category -->
+                <div class="menu-category">
+                    <h2>Ramen</h2>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Garlic Tonkotsu</h3>
+                            <p>Rich pork bone broth with roasted garlic, chashu pork, soft-boiled egg, nori, and bamboo shoots</p>
+                        </div>
+                        <div class="menu-item-price">$14.95</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Spicy Miso</h3>
+                            <p>Fiery miso-based broth with chicken, jalapeños, garlic chili oil, soft-boiled egg, and scallions</p>
+                        </div>
+                        <div class="menu-item-price">$15.95</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Vegetarian Shoyu</h3>
+                            <p>Light, umami-rich soy sauce broth with tofu, mushrooms, spinach, corn, and a soft-boiled egg</p>
+                        </div>
+                        <div class="menu-item-price">$13.95</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Bakudan Special</h3>
+                            <p>Our signature creation with tonkotsu broth, premium chashu pork, soft-boiled egg, nori, bamboo, garlic oil, and bonito flakes</p>
+                        </div>
+                        <div class="menu-item-price">$16.95</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Curry Ramen</h3>
+                            <p>Aromatic Japanese curry broth with chicken, potatoes, carrots, onions, and a soft-boiled egg</p>
+                        </div>
+                        <div class="menu-item-price">$15.95</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Tantanmen</h3>
+                            <p>Sesame-based spicy broth with ground chicken, sesame paste, chili oil, soft-boiled egg, and scallions</p>
+                        </div>
+                        <div class="menu-item-price">$15.95</div>
+                    </div>
+                </div>
+
+                <!-- Appetizers Category -->
+                <div class="menu-category">
+                    <h2>Appetizers</h2>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Edamame</h3>
+                            <p>Steamed soybeans lightly salted</p>
+                        </div>
+                        <div class="menu-item-price">$5.00</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Spicy Edamame</h3>
+                            <p>Steamed soybeans with sriracha and sesame seeds</p>
+                        </div>
+                        <div class="menu-item-price">$6.00</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Gyoza</h3>
+                            <p>Six pan-fried pork dumplings served with dipping sauce</p>
+                        </div>
+                        <div class="menu-item-price">$7.00</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Takoyaki</h3>
+                            <p>Four golden octopus balls with takoyaki sauce and bonito flakes</p>
+                        </div>
+                        <div class="menu-item-price">$8.00</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Chicken Karaage</h3>
+                            <p>Crispy Japanese fried chicken with spicy mayo</p>
+                        </div>
+                        <div class="menu-item-price">$8.00</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Wings</h3>
+                            <p>Three teriyaki-glazed chicken wings</p>
+                        </div>
+                        <div class="menu-item-price">$8.00</div>
+                    </div>
+                </div>
+
+                <!-- Drinks & Cocktails Category -->
+                <div class="menu-category">
+                    <h2>Drinks & Cocktails</h2>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Japanese Beer</h3>
+                            <p>Asahi, Sapporo, or Kirin</p>
+                        </div>
+                        <div class="menu-item-price">$6.00</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Sake</h3>
+                            <p>Selection of premium sake by the glass or bottle</p>
+                        </div>
+                        <div class="menu-item-price">$7.00+</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Yuzu Cocktail</h3>
+                            <p>Japanese citrus vodka with yuzu juice and ginger beer</p>
+                        </div>
+                        <div class="menu-item-price">$12.00</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Lychee Martini</h3>
+                            <p>Vodka, lychee liqueur, fresh lemon juice, and garnished with a lychee</p>
+                        </div>
+                        <div class="menu-item-price">$11.00</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>House Wine</h3>
+                            <p>Red or white wine by the glass</p>
+                        </div>
+                        <div class="menu-item-price">$8.00</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Soft Drinks</h3>
+                            <p>Japanese sodas, tea, or water</p>
+                        </div>
+                        <div class="menu-item-price">$2.00+</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <p style="max-width: 900px; margin: 2rem auto 0; text-align: center; color: #B8AFA6; font-size: 0.85rem;">Prices are subject to change without notice. Please verify current pricing when ordering online or at the restaurant. Tax and gratuity not included.</p>
+
+        <!-- Happy Hour CTA Banner -->
+        <section class="happy-hour-banner">
+            <h2>Ready to Experience Happy Hour?</h2>
+            <p class="time">Monday-Friday 4PM - 6PM</p>
+            <a href="happy-hour.html" class="btn">View Happy Hour Specials</a>
+        </section>
+    </main>
+
+    <footer class="site-footer" role="contentinfo">
+        <div class="footer-grid">
+            <div class="footer-brand">
+                <a href="index.html" class="logo" aria-label="Bakudan Ramen - Home">
+                    <div class="logo-icon" aria-hidden="true">&#29190;</div>
+                    <span class="logo-text">BAKUDAN RAMEN</span>
+                </a>
+                <p>Bold Flavor. Modern Japanese Soul. Texas Spirit. Three locations serving San Antonio.</p>
+            </div>
+            <div class="footer-col">
+                <h4>LOCATIONS</h4>
+                <address><strong>Bandera</strong>11309 Bandera Rd Ste 111<br>San Antonio, TX 78254<br><a href="tel:+12102777740">(210) 277-7740</a></address>
+                <address><strong>Stone Oak</strong>22506 U.S. Hwy 281 N Ste 106<br>San Antonio, TX 78258<br><a href="tel:+12104370632">(210) 437-0632</a></address>
+                <address><strong>The Rim</strong>17619 La Cantera Pkwy #208<br>San Antonio, TX 78256<br><a href="tel:+12102578080">(210) 257-8080</a></address>
+            </div>
+            <div class="footer-col">
+                <h4>HOURS</h4>
+                <ul>
+                    <li>Mon&ndash;Thu: 11:00 AM &ndash; 8:30 PM</li>
+                    <li>Fri&ndash;Sat: 11:00 AM &ndash; 9:00 PM</li>
+                    <li>Sun: 11:00 AM &ndash; 8:00 PM</li>
+                </ul>
+                <h4 style="margin-top: 1.5rem;">FOLLOW US</h4>
+                <div class="footer-social">
+                    <a href="https://www.instagram.com/bakudanramen/" aria-label="Follow Bakudan Ramen on Instagram">Instagram</a>
+                    <a href="https://www.facebook.com/bakudanSA/" aria-label="Follow Bakudan Ramen on Facebook">Facebook</a>
+                    <a href="https://www.yelp.com/biz/bakudan-ramen-san-antonio" aria-label="Review Bakudan Ramen on Yelp">Yelp</a>
+                </div>
+            </div>
+            <div class="footer-col">
+                <h4>EXPLORE</h4>
+                <ul>
+                    <li><a href="menu.html">View Menu</a></li>
+                    <li><a href="order.html">Order Online</a></li>
+                    <li><a href="happy-hour.html">Happy Hour</a></li>
+                    <li><a href="fundraiser.html">Fundraiser Program</a></li>
+                    <li><a href="about.html">Our Story</a></li>
+                    <li><a href="blog.html">Blog</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 Bakudan Ramen. All rights reserved. <a href="privacy.html">Privacy Policy</a> &bull; <a href="terms.html">Terms of Service</a> &bull; <a href="accessibility.html">Accessibility</a></p>
+        </div>
+    </footer>
+
+    <div class="cookie-banner" role="dialog" aria-label="Cookie consent" aria-hidden="true">
+        <div class="cookie-banner-inner">
+            <div class="cookie-text"><p>We use essential cookies for site functionality and third-party services (Google Fonts, Toast ordering) to enhance your experience. You can choose to accept all cookies or limit to essentials only. <a href="privacy.html">Learn more</a>.</p></div>
+            <div class="cookie-buttons">
+                <button class="cookie-btn cookie-btn-accept" data-consent="accept-all">Accept All</button>
+                <button class="cookie-btn cookie-btn-essential" data-consent="essential-only">Essential Only</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/consent.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

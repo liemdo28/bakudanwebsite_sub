@@ -1,0 +1,4 @@
+AuthType Basic
+AuthName "Private Site"
+AuthUserFile "E:/Project/Bakudan/.htpasswd"
+Require valid-user

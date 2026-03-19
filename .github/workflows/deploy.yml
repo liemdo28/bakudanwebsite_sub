@@ -1,4 +1,4 @@
-name: Deploy to rim.bakudanramen.com
+name: Deploy rim.bakudanramen.com
 
 on:
   push:
@@ -10,16 +10,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Deploy via SCP
+      - name: Copy files via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          password: ${{ secrets.PASSWORD }}
-          port: ${{ secrets.PORT }}
-          source: "."
-          target: ${{ secrets.TARGET_DIR }}
+          host: ${{ secrets.pdx1-shared-a3-05.dreamhost.com }}
+          username: ${{ secrets.dh_d5ng5e }}
+          password: ${{ secrets.bakudan@210 }}
+          port: ${{ secrets.22 }}
+          source: "about.html,accessibility.html,bakudan-redesign.html,blog-authentic.html,blog-chashu.html,blog-journey.html,blog-ramen-101.html,blog-tonkotsu.html,blog.html,fundraiser.html,happy-hour.html,index.html,locations.html,menu.html,order.html,privacy.html,ramen-guide.html,script.js,styles.css,terms.html,css,js,locations"
+          target: ${{ secrets./home/dh_d5ng5e/rim.bakudanramen.com/ }}
           overwrite: true
+          strip_components: 0

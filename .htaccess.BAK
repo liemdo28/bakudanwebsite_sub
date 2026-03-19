@@ -1,4 +1,0 @@
-AuthType Basic
-AuthName "Bakudan Private Preview"
-AuthUserFile /home/dh_d5ng5e/.htpasswd
-Require valid-user

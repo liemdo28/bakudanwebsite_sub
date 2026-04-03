@@ -1614,6 +1614,94 @@ button:focus-visible {
 }
 
 /* ===================================
+   GEISHA ARTWORK - PAGE HERO BRANDING
+   =================================== */
+.page-hero {
+    position: relative;
+    overflow: hidden;
+}
+
+.hero-geisha,
+.page-hero-geisha {
+    position: absolute;
+    bottom: 0;
+    width: 180px;
+    height: auto;
+    opacity: 0.15;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.hero-geisha-left,
+.page-hero-geisha-left {
+    left: 2%;
+}
+
+.hero-geisha-right,
+.page-hero-geisha-right {
+    right: 2%;
+}
+
+.hero {
+    position: relative;
+    overflow: hidden;
+}
+
+.hero .hero-geisha {
+    opacity: 0.12;
+    width: 220px;
+    bottom: 10%;
+}
+
+@media (max-width: 1024px) {
+    .hero-geisha,
+    .page-hero-geisha {
+        width: 120px;
+        opacity: 0.1;
+    }
+}
+
+@media (max-width: 768px) {
+    .hero-geisha,
+    .page-hero-geisha {
+        display: none;
+    }
+}
+
+/* ===================================
+   LOCATION BADGE (MENU)
+   =================================== */
+.location-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: var(--radius-full);
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+.location-badge--all {
+    background: rgba(222, 184, 100, 0.15);
+    color: var(--color-gold);
+    border: 1px solid rgba(222, 184, 100, 0.3);
+}
+
+.location-badge--rim-so {
+    background: rgba(236, 74, 94, 0.1);
+    color: var(--color-accent-red);
+    border: 1px solid rgba(236, 74, 94, 0.25);
+}
+
+.location-badge--bandera {
+    background: rgba(184, 175, 166, 0.1);
+    color: var(--color-text-muted);
+    border: 1px solid rgba(184, 175, 166, 0.25);
+}
+
+/* ===================================
    DELIVERY POP-UP BANNER
    =================================== */
 .delivery-popup-overlay {

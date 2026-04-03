@@ -20,20 +20,40 @@
                 "@type": "MenuSection",
                 "name": "Ramen",
                 "hasMenuItem": [
-                    {"@type": "MenuItem", "name": "Garlic Tonkotsu Ramen", "description": "Rich pork bone broth infused with roasted garlic, topped with chashu, soft egg, and crispy garlic chips.", "offers": {"@type": "Offer", "price": "14.95", "priceCurrency": "USD"}},
-                    {"@type": "MenuItem", "name": "Spicy Miso Ramen", "description": "Bold miso broth with a kick of chili oil, ground pork, bamboo shoots, and a perfectly jammy egg.", "offers": {"@type": "Offer", "price": "15.95", "priceCurrency": "USD"}},
-                    {"@type": "MenuItem", "name": "Vegetarian Shoyu Ramen", "description": "Light soy-based broth with seasonal vegetables, tofu, mushrooms, and sesame oil drizzle.", "offers": {"@type": "Offer", "price": "13.95", "priceCurrency": "USD"}},
-                    {"@type": "MenuItem", "name": "Classic Tonkotsu Ramen", "description": "Traditional pork bone broth simmered for 10 hours, with chashu, bamboo shoots, green onion, and nori.", "offers": {"@type": "Offer", "price": "13.95", "priceCurrency": "USD"}},
-                    {"@type": "MenuItem", "name": "Bakudan Special", "description": "Our signature explosion of flavor — tonkotsu base with spicy miso tare, double chashu, corn, butter, and a soft-boiled egg.", "offers": {"@type": "Offer", "price": "17.95", "priceCurrency": "USD"}}
+                    {"@type": "MenuItem", "name": "Garlic Tonkotsu Ramen", "description": "Rich pork bone broth with roasted garlic, chashu pork, soft-boiled egg, nori, and bamboo shoots.", "offers": {"@type": "Offer", "price": "14.95", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Spicy Miso Ramen", "description": "Fiery miso-based broth with chicken, jalapeños, garlic chili oil, soft-boiled egg, and scallions.", "offers": {"@type": "Offer", "price": "15.95", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Vegetarian Ramen", "description": "Light, umami-rich soy sauce broth with tofu, mushrooms, spinach, corn, and a soft-boiled egg.", "offers": {"@type": "Offer", "price": "13.95", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Bakudan Chicken", "description": "Our signature creation with tonkotsu broth, premium chicken, soft-boiled egg, nori, bamboo, garlic oil, and bonito flakes.", "offers": {"@type": "Offer", "price": "16.95", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Cilantro Lime Chicken", "description": "Bright, zesty chicken broth with cilantro, lime, tender chicken, and fresh toppings. Our #1 seller."},
+                    {"@type": "MenuItem", "name": "Spicy Shoyu"},
+                    {"@type": "MenuItem", "name": "Gyoza Chicken"}
                 ]
             },
             {
                 "@type": "MenuSection",
                 "name": "Appetizers",
                 "hasMenuItem": [
-                    {"@type": "MenuItem", "name": "Gyoza (6 pcs)", "description": "Pan-fried pork dumplings with crispy bottoms, served with house ponzu.", "offers": {"@type": "Offer", "price": "7.95", "priceCurrency": "USD"}},
-                    {"@type": "MenuItem", "name": "Karaage Chicken", "description": "Japanese-style fried chicken with yuzu mayo and shichimi.", "offers": {"@type": "Offer", "price": "8.95", "priceCurrency": "USD"}},
-                    {"@type": "MenuItem", "name": "Takoyaki (6 pcs)", "description": "Crispy octopus balls with bonito flakes, Kewpie mayo, and takoyaki sauce.", "offers": {"@type": "Offer", "price": "8.50", "priceCurrency": "USD"}}
+                    {"@type": "MenuItem", "name": "Edamame", "offers": {"@type": "Offer", "price": "5.00", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Gyoza (6 pcs)", "offers": {"@type": "Offer", "price": "7.00", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Karaage Chicken", "offers": {"@type": "Offer", "price": "8.00", "priceCurrency": "USD"}},
+                    {"@type": "MenuItem", "name": "Takoyaki", "offers": {"@type": "Offer", "price": "8.00", "priceCurrency": "USD"}}
+                ]
+            },
+            {
+                "@type": "MenuSection",
+                "name": "Entrées & Salads",
+                "hasMenuItem": [
+                    {"@type": "MenuItem", "name": "Stonepot Entrée"},
+                    {"@type": "MenuItem", "name": "Katsu Curry Entrée"},
+                    {"@type": "MenuItem", "name": "Bulgogi Bowl"}
+                ]
+            },
+            {
+                "@type": "MenuSection",
+                "name": "Kids Menu",
+                "hasMenuItem": [
+                    {"@type": "MenuItem", "name": "Kids Ramen"},
+                    {"@type": "MenuItem", "name": "Kids Karage"}
                 ]
             }
         ]
@@ -76,6 +96,9 @@
         <section class="page-hero">
             <h1>Our Menu</h1>
             <p>Experience bold, authentic flavors crafted with premium ingredients and traditional Japanese techniques.</p>
+            <!-- PLACEHOLDER: Add geisha mural artwork as decorative elements -->
+            <!-- Left: <img src="images/geisha-left.png" class="page-hero-geisha page-hero-geisha-left" alt="" aria-hidden="true"> -->
+            <!-- Right: <img src="images/geisha-right.png" class="page-hero-geisha page-hero-geisha-right" alt="" aria-hidden="true"> -->
         </section>
 
         <div style="max-width: 900px; margin: 0 auto 2rem; padding: 1.5rem; background: rgba(236, 74, 94, 0.1); border: 1px solid rgba(236, 74, 94, 0.3); border-radius: 12px; text-align: center;">
@@ -107,7 +130,7 @@
 
                     <div class="menu-item">
                         <div class="menu-item-info">
-                            <h3>Vegetarian Shoyu</h3>
+                            <h3>Vegetarian</h3>
                             <p>Light, umami-rich soy sauce broth with tofu, mushrooms, spinach, corn, and a soft-boiled egg</p>
                         </div>
                         <div class="menu-item-price">$13.95</div>
@@ -115,26 +138,34 @@
 
                     <div class="menu-item">
                         <div class="menu-item-info">
-                            <h3>Bakudan Special</h3>
-                            <p>Our signature creation with tonkotsu broth, premium chashu pork, soft-boiled egg, nori, bamboo, garlic oil, and bonito flakes</p>
+                            <h3>Bakudan Chicken</h3>
+                            <p>Our signature creation featuring tender chicken in a rich tonkotsu broth, soft-boiled egg, nori, bamboo shoots, and bonito flakes</p>
                         </div>
                         <div class="menu-item-price">$16.95</div>
                     </div>
 
                     <div class="menu-item">
                         <div class="menu-item-info">
-                            <h3>Curry Ramen</h3>
-                            <p>Aromatic Japanese curry broth with chicken, potatoes, carrots, onions, and a soft-boiled egg</p>
+                            <h3>Cilantro Lime Chicken</h3>
+                            <p>Bright, zesty chicken broth with cilantro, lime, tender chicken, and fresh toppings. Our #1 seller.</p>
                         </div>
-                        <div class="menu-item-price">$15.95</div>
+                        <div class="menu-item-price">$TBD</div>
                     </div>
 
                     <div class="menu-item">
                         <div class="menu-item-info">
-                            <h3>Tantanmen</h3>
-                            <p>Sesame-based spicy broth with ground chicken, sesame paste, chili oil, soft-boiled egg, and scallions</p>
+                            <h3>Spicy Shoyu</h3>
+                            <p><!-- PLACEHOLDER: needs description from team --></p>
                         </div>
-                        <div class="menu-item-price">$15.95</div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Gyoza Chicken</h3>
+                            <p><!-- PLACEHOLDER: needs description from team --></p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
                     </div>
                 </div>
 
@@ -191,40 +222,84 @@
                     </div>
                 </div>
 
-                <!-- Drinks & Cocktails Category -->
+                <!-- Entrées & Salads Category -->
                 <div class="menu-category">
-                    <h2>Drinks & Cocktails</h2>
+                    <h2>Entrées & Salads</h2>
 
                     <div class="menu-item">
                         <div class="menu-item-info">
-                            <h3>Japanese Beer</h3>
-                            <p>Asahi, Sapporo, or Kirin</p>
+                            <h3>Stonepot Entrée</h3>
+                            <p><!-- PLACEHOLDER: needs description from team --></p>
                         </div>
-                        <div class="menu-item-price">$6.00</div>
+                        <div class="menu-item-price">$TBD</div>
                     </div>
 
                     <div class="menu-item">
                         <div class="menu-item-info">
-                            <h3>Sake</h3>
-                            <p>Selection of premium sake by the glass or bottle</p>
+                            <h3>Katsu Curry Entrée</h3>
+                            <p><!-- PLACEHOLDER: needs description from team --></p>
                         </div>
-                        <div class="menu-item-price">$7.00+</div>
+                        <div class="menu-item-price">$TBD</div>
                     </div>
 
                     <div class="menu-item">
                         <div class="menu-item-info">
-                            <h3>Yuzu Cocktail</h3>
-                            <p>Japanese citrus vodka with yuzu juice and ginger beer</p>
+                            <h3>Bulgogi Bowl</h3>
+                            <p><!-- PLACEHOLDER: needs description from team --></p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+
+                    <!-- PLACEHOLDER: Add salad items needed from team (names, descriptions, prices) -->
+                </div>
+
+                <!-- Kids Menu Category -->
+                <div class="menu-category">
+                    <h2>Kids Menu</h2>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Kids Ramen</h3>
+                            <p>A kid-friendly portion of our classic ramen, perfect for young diners.</p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Kids Karage</h3>
+                            <p>Crispy Japanese fried chicken bites, a kid favorite.</p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+                </div>
+
+                <!-- Cocktails Category -->
+                <div class="menu-category">
+                    <h2>Cocktails <span class="location-badge location-badge--rim-so">Stone Oak & The Rim Only</span></h2>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Moonstone Margarita</h3>
+                            <p><!-- PLACEHOLDER: needs description. San Antonio's favorite! Top seller. --></p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Blushing Geisha</h3>
+                            <p><!-- PLACEHOLDER: needs description. A Bakudan staple cocktail. --></p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Espresso Martini</h3>
+                            <p>Tequila Corrido OP, Coffee Liqueur, Cold Brew</p>
                         </div>
                         <div class="menu-item-price">$12.00</div>
-                    </div>
-
-                    <div class="menu-item">
-                        <div class="menu-item-info">
-                            <h3>Lychee Martini</h3>
-                            <p>Vodka, lychee liqueur, fresh lemon juice, and garnished with a lychee</p>
-                        </div>
-                        <div class="menu-item-price">$11.00</div>
                     </div>
 
                     <div class="menu-item">
@@ -237,10 +312,121 @@
 
                     <div class="menu-item">
                         <div class="menu-item-info">
+                            <h3>Sake</h3>
+                            <p>Selection of premium sake by the glass or bottle</p>
+                        </div>
+                        <div class="menu-item-price">$7.00+</div>
+                    </div>
+
+                    <p style="font-size: 0.9rem; color: #B8AFA6; margin-top: 1rem;">Full cocktail menu available at Stone Oak and The Rim locations only. Bandera offers saké-based cocktails — see below.</p>
+                </div>
+
+                <!-- Saké Bar Category -->
+                <div class="menu-category">
+                    <h2>Saké Bar <span class="location-badge location-badge--bandera">Bandera Only</span></h2>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Saké Cocktails</h3>
+                            <p><!-- PLACEHOLDER: needs specific cocktail names from team --></p>
+                        </div>
+                        <div class="menu-item-price">Various</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Saké Sangria Pitcher</h3>
+                            <p>A refreshing pitcher of fruit-infused saké sangria</p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Hot Sake</h3>
+                            <p>Traditional warm sake</p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+                </div>
+
+                <!-- Beer Category -->
+                <div class="menu-category">
+                    <h2>Beer</h2>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Japanese Beer</h3>
+                            <p>Asahi, Sapporo</p>
+                        </div>
+                        <div class="menu-item-price">$6.00</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Draft Beer</h3>
+                            <p>Michelob Ultra, Modelo Especial, Bud Light, Freetail Soul Doubt, Seasonal</p>
+                        </div>
+                        <div class="menu-item-price">$5.00</div>
+                    </div>
+                </div>
+
+                <!-- Mocktails Category -->
+                <div class="menu-category">
+                    <h2>Mocktails <span class="location-badge location-badge--all"><!-- PLACEHOLDER: need location availability --></span></h2>
+
+                    <!-- PLACEHOLDER: Need mocktail names, descriptions, prices, and which locations carry them -->
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3><!-- PLACEHOLDER: mocktail items needed from team --></h3>
+                            <p></p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+                </div>
+
+                <!-- Ramune Category -->
+                <div class="menu-category">
+                    <h2>Ramune</h2>
+                    <p style="font-size: 0.95rem; color: #B8AFA6; margin-bottom: 1rem;">Ramune is Japan's iconic marble-sealed soda, known for its unique bottle design and refreshing flavors.</p>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Ramune — Original <span class="location-badge location-badge--all">All Locations</span></h3>
+                            <p></p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Ramune — Flavored <span class="location-badge location-badge--bandera">Bandera Only</span></h3>
+                            <p><!-- PLACEHOLDER: need 5 flavor names (Bandera carries 5 flavors; Stone Oak & The Rim carry Original only) --></p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
+                    </div>
+                </div>
+
+                <!-- Non-Alcoholic Beverages Category -->
+                <div class="menu-category">
+                    <h2>Non-Alcoholic Beverages</h2>
+
+                    <!-- PLACEHOLDER: need full list of sodas, teas, and non-alcoholic beverages from team -->
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
                             <h3>Soft Drinks</h3>
-                            <p>Japanese sodas, tea, or water</p>
+                            <p><!-- PLACEHOLDER: specific options needed --></p>
                         </div>
                         <div class="menu-item-price">$2.00+</div>
+                    </div>
+
+                    <div class="menu-item">
+                        <div class="menu-item-info">
+                            <h3>Tea</h3>
+                            <p><!-- PLACEHOLDER: specific options needed --></p>
+                        </div>
+                        <div class="menu-item-price">$TBD</div>
                     </div>
                 </div>
             </div>

@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Complete Ramen Glossary & Guide - Bakudan Ramen</title>
+    <meta name="description" content="The complete ramen glossary — learn every term, ingredient, technique, and regional style. Your ultimate guide to understanding and ordering ramen from Bakudan Ramen.">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        .toc-container {
+            background-color: #f5f5f5;
+            border-left: 4px solid #d4241e;
+            padding: 1.5rem;
+            margin: 2rem 0;
+            border-radius: 4px;
+        }
+
+        .toc-container h3 {
+            margin-top: 0;
+            color: #1a1a1a;
+        }
+
+        .toc-container ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .toc-container li {
+            margin: 0.75rem 0;
+        }
+
+        .toc-container a {
+            color: #d4241e;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s ease;
+        }
+
+        .toc-container a:hover {
+            color: #1a1a1a;
+            text-decoration: underline;
+        }
+
+        .guide-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+        }
+
+        .guide-table thead {
+            background-color: #d4241e;
+            color: white;
+        }
+
+        .guide-table th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .guide-table td {
+            padding: 1rem;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .guide-table tbody tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        .guide-table tbody tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        .definition-block {
+            background-color: #fafafa;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-left: 3px solid #d4241e;
+            border-radius: 4px;
+        }
+
+        .definition-block strong {
+            color: #d4241e;
+        }
+
+        .term-row {
+            margin-bottom: 2rem;
+        }
+
+        .term-name {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 0.5rem;
+        }
+
+        .japanese-text {
+            font-family: 'Noto Sans JP', sans-serif;
+            font-size: 1.05rem;
+            color: #666;
+        }
+
+        .pronunciation {
+            color: #d4241e;
+            font-style: italic;
+            margin: 0.5rem 0;
+        }
+
+        .etiquette-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .do-box {
+            background-color: #e8f5e9;
+            padding: 1.5rem;
+            border-radius: 4px;
+            border-left: 4px solid #27ae60;
+        }
+
+        .do-box h4 {
+            color: #27ae60;
+            margin-top: 0;
+        }
+
+        .dont-box {
+            background-color: #ffebee;
+            padding: 1.5rem;
+            border-radius: 4px;
+            border-left: 4px solid #d4241e;
+        }
+
+        .dont-box h4 {
+            color: #d4241e;
+            margin-top: 0;
+        }
+
+        .do-box ul, .dont-box ul {
+            margin: 1rem 0;
+            padding-left: 1.5rem;
+        }
+
+        .do-box li, .dont-box li {
+            margin-bottom: 0.5rem;
+        }
+
+        .section-anchor {
+            scroll-margin-top: 80px;
+        }
+
+        .faq-item {
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        .faq-item:last-child {
+            border-bottom: none;
+        }
+
+        .faq-question {
+            font-weight: 700;
+            color: #d4241e;
+            margin-bottom: 0.75rem;
+        }
+
+        .regional-style {
+            background-color: #fafafa;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            border-left: 3px solid #d4241e;
+        }
+
+        .regional-style h4 {
+            margin-top: 0;
+            color: #1a1a1a;
+        }
+
+        .regional-style ul {
+            margin: 0.5rem 0;
+            padding-left: 1.5rem;
+        }
+
+        .regional-style li {
+            margin-bottom: 0.25rem;
+        }
+
+        @media (max-width: 768px) {
+            .etiquette-section {
+                grid-template-columns: 1fr;
+            }
+
+            .guide-table {
+                font-size: 0.9rem;
+            }
+
+            .guide-table th,
+            .guide-table td {
+                padding: 0.75rem 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <header class="site-header" role="banner">
+        <a href="index.html" class="logo" aria-label="Bakudan Ramen - Home">
+            <div class="logo-icon" aria-hidden="true">&#29190;</div>
+            <span class="logo-text">BAKUDAN RAMEN</span>
+        </a>
+        <nav aria-label="Main navigation">
+            <ul class="nav-links">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="menu.html">Menu</a></li>
+                <li><a href="locations.html">Locations</a></li>
+                <li><a href="happy-hour.html">Happy Hour</a></li>
+                <li><a href="about.html">Our Story</a></li>
+                <li><a href="blog.html" class="active">Blog</a></li>
+                <li><a href="order.html" class="nav-cta">Order Now</a></li>
+            </ul>
+        </nav>
+        <button class="hamburger" aria-expanded="false" aria-controls="mobile-nav" aria-label="Open menu">
+            <span></span><span></span><span></span>
+        </button>
+    </header>
+    <div class="mobile-nav" id="mobile-nav" role="navigation" aria-label="Mobile navigation">
+        <a href="index.html">Home</a>
+        <a href="menu.html">Menu</a>
+        <a href="locations.html">Locations</a>
+        <a href="happy-hour.html">Happy Hour</a>
+        <a href="about.html">Our Story</a>
+        <a href="blog.html">Blog</a>
+        <a href="order.html" class="nav-cta" style="margin-top: 1rem;">Order Now</a>
+    </div>
+
+    <main id="main-content">
+    <article class="blog-post">
+        <header class="blog-post-header">
+            <div class="section-tag">Reference Guide</div>
+            <h1>The Complete Ramen Glossary & Guide</h1>
+            <p class="subtitle">Your ultimate reference for understanding ramen — from A to Z</p>
+            <p class="blog-post-meta">Bookmark this page. You'll need it.</p>
+        </header>
+
+        <div class="blog-post-content">
+            <p>Whether you're a ramen newbie or a seasoned slurper, this glossary will help you decode menus, understand techniques, and sound like a pro at the counter.</p>
+
+            <!-- Table of Contents -->
+            <div class="toc-container">
+                <h3>Table of Contents</h3>
+                <ul>
+                    <li><a href="#broth-types">Broth Types</a></li>
+                    <li><a href="#noodle-terms">Noodle Terms</a></li>
+                    <li><a href="#tare-seasoning">Tare (Seasoning)</a></li>
+                    <li><a href="#toppings-ingredients">Toppings & Ingredients</a></li>
+                    <li><a href="#cooking-techniques">Cooking Techniques</a></li>
+                    <li><a href="#regional-styles">Regional Styles</a></li>
+                    <li><a href="#ordering-etiquette">Ordering & Etiquette</a></li>
+                    <li><a href="#faq">Common Ramen Questions</a></li>
+                    <li><a href="#vocabulary-cheat-sheet">Vocabulary Cheat Sheet</a></li>
+                </ul>
+            </div>
+
+            <!-- BROTH TYPES -->
+            <h2 class="section-anchor" id="broth-types">Broth Types (スープ - Sūpu)</h2>
+
+            <h3>Tonkotsu (豚骨)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Tonkotsu</div>
+                    <div class="japanese-text">豚骨</div>
+                    <div class="pronunciation">Pronunciation: tone-coat-sue</div>
+                    <p><strong>Translation:</strong> Pork bones</p>
+                    <p><strong>Description:</strong> Rich, creamy, milky-white broth made by boiling pork bones at high heat for 8-12+ hours. The fat and collagen emulsify, creating a thick, opaque soup.</p>
+                    <p><strong>Flavor:</strong> Intense pork, rich, fatty, umami-packed</p>
+                    <p><strong>Origin:</strong> Fukuoka (Kyushu region)</p>
+                    <p><strong>At Bakudan:</strong> Our signature! Simmered for 10 hours daily.</p>
+                </div>
+            </div>
+
+            <h3>Shoyu (醤油)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Shoyu</div>
+                    <div class="japanese-text">醤油</div>
+                    <div class="pronunciation">Pronunciation: show-you</div>
+                    <p><strong>Translation:</strong> Soy sauce</p>
+                    <p><strong>Description:</strong> Clear, brown broth typically made with chicken and/or pork, seasoned with soy sauce-based tare.</p>
+                    <p><strong>Flavor:</strong> Savory, salty, balanced, clean</p>
+                    <p><strong>Origin:</strong> Tokyo</p>
+                    <p><strong>Best for:</strong> First-time ramen eaters; it's the most balanced style</p>
+                </div>
+            </div>
+
+            <h3>Miso (味噌)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Miso</div>
+                    <div class="japanese-text">味噌</div>
+                    <div class="pronunciation">Pronunciation: mee-so</div>
+                    <p><strong>Translation:</strong> Fermented soybean paste</p>
+                    <p><strong>Description:</strong> Cloudy, tan-to-brown broth made with miso paste blended into pork or chicken base.</p>
+                    <p><strong>Flavor:</strong> Rich, earthy, slightly sweet, complex</p>
+                    <p><strong>Origin:</strong> Sapporo (Hokkaido)</p>
+                    <p><strong>Fun fact:</strong> Often served with butter and corn in Hokkaido</p>
+                </div>
+            </div>
+
+            <h3>Shio (塩)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Shio</div>
+                    <div class="japanese-text">塩</div>
+                    <div class="pronunciation">Pronunciation: shee-oh</div>
+                    <p><strong>Translation:</strong> Salt</p>
+                    <p><strong>Description:</strong> Clear, pale broth seasoned primarily with salt. Usually chicken or seafood-based.</p>
+                    <p><strong>Flavor:</strong> Light, clean, delicate, lets ingredients shine</p>
+                    <p><strong>Origin:</strong> Hakodate (Hokkaido)</p>
+                    <p><strong>Best for:</strong> Those who want a lighter bowl</p>
+                </div>
+            </div>
+
+            <h3>Tsukemen (つけ麺)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Tsukemen</div>
+                    <div class="japanese-text">つけ麺</div>
+                    <div class="pronunciation">Pronunciation: tsoo-keh-men</div>
+                    <p><strong>Translation:</strong> Dipping noodles</p>
+                    <p><strong>Description:</strong> Not technically a broth "type" — it's a serving style where cold or room-temp noodles are served separately from a hot, ultra-concentrated dipping broth.</p>
+                    <p><strong>How to eat:</strong> Dip a few noodles at a time into the broth, slurp, repeat.</p>
+                    <p><strong>Origin:</strong> Tokyo (1960s)</p>
+                </div>
+            </div>
+
+            <!-- NOODLE TERMS -->
+            <h2 class="section-anchor" id="noodle-terms">Noodle Terms (麺 - Men)</h2>
+
+            <h3>Kansui (かん水)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Kansui</div>
+                    <div class="japanese-text">かん水</div>
+                    <div class="pronunciation">Pronunciation: kahn-sue-ee</div>
+                    <p><strong>What it is:</strong> Alkaline mineral water (usually potassium carbonate and sodium carbonate) added to ramen dough</p>
+                    <p><strong>Why it matters:</strong> Gives ramen noodles their:</p>
+                    <ul>
+                        <li>Yellow color</li>
+                        <li>Springy, chewy texture (koshi)</li>
+                        <li>Distinct aroma</li>
+                    </ul>
+                    <p><strong>Important:</strong> Without kansui, it's not ramen — it's just wheat noodles.</p>
+                </div>
+            </div>
+
+            <h3>Koshi (コシ)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Koshi</div>
+                    <div class="japanese-text">コシ</div>
+                    <div class="pronunciation">Pronunciation: koh-shee</div>
+                    <p><strong>What it is:</strong> The firm, springy, bouncy texture of properly made ramen noodles</p>
+                    <p><strong>Think of it as:</strong> The "al dente" of ramen</p>
+                    <p><strong>How to recognize it:</strong> Noodles should have resistance when you bite, not be soft or mushy</p>
+                </div>
+            </div>
+
+            <h3>Noodle Firmness Options</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Katame (硬め)</div>
+                    <div class="japanese-text">硬め</div>
+                    <div class="pronunciation">Pronunciation: kah-tah-meh</div>
+                    <p><strong>What it is:</strong> Firm noodles (undercooked slightly)</p>
+                    <p><strong>When to order:</strong> If you like your noodles with extra chew</p>
+                    <p><strong>Note:</strong> Common preference in Hakata-style tonkotsu shops</p>
+                </div>
+
+                <div class="term-row">
+                    <div class="term-name">Futsu (普通)</div>
+                    <div class="japanese-text">普通</div>
+                    <div class="pronunciation">Pronunciation: foo-tsoo</div>
+                    <p><strong>What it is:</strong> Regular/normal noodle firmness</p>
+                    <p><strong>When to order:</strong> Default; what most people prefer</p>
+                </div>
+
+                <div class="term-row">
+                    <div class="term-name">Yawa (柔)</div>
+                    <div class="japanese-text">柔</div>
+                    <div class="pronunciation">Pronunciation: yah-wah</div>
+                    <p><strong>What it is:</strong> Soft noodles (cooked longer)</p>
+                    <p><strong>When to order:</strong> If you prefer softer, less chewy noodles</p>
+                </div>
+            </div>
+
+            <h3>Kaedama (替え玉)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Kaedama</div>
+                    <div class="japanese-text">替え玉</div>
+                    <div class="pronunciation">Pronunciation: kah-eh-dah-mah</div>
+                    <p><strong>What it is:</strong> A noodle refill! After you finish your first serving of noodles (but still have broth left), you can order more noodles.</p>
+                    <p><strong>Price:</strong> Usually $2-3</p>
+                    <p><strong>Pro tip:</strong> Popular in tonkotsu shops</p>
+                </div>
+            </div>
+
+            <!-- TARE -->
+            <h2 class="section-anchor" id="tare-seasoning">Tare (タレ - Seasoning)</h2>
+
+            <h3>Tare (タレ)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Tare</div>
+                    <div class="japanese-text">タレ</div>
+                    <div class="pronunciation">Pronunciation: tah-reh</div>
+                    <p><strong>What it is:</strong> A concentrated seasoning base added to each bowl before the broth</p>
+                    <p><strong>Why it exists:</strong> The broth itself is relatively unseasoned. Tare is what gives the soup its final flavor.</p>
+                    <p><strong>Types:</strong></p>
+                    <ul>
+                        <li><strong>Shoyu tare:</strong> Soy sauce-based</li>
+                        <li><strong>Shio tare:</strong> Salt-based</li>
+                        <li><strong>Miso tare:</strong> Miso paste-based</li>
+                    </ul>
+                    <p><strong>Fun fact:</strong> At Bakudan, every bowl gets exactly 2 tablespoons of tare — measured, not eyeballed.</p>
+                </div>
+            </div>
+
+            <h3>Aroma Oil (香味油 - Kōmi Abura)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <p><strong>What it is:</strong> Flavored oil added on top of the broth for aroma and richness</p>
+                    <p><strong>Types:</strong></p>
+                    <ul>
+                        <li><strong>Mayu (black garlic oil):</strong> Charred garlic oil, smoky and intense</li>
+                        <li><strong>Negi oil:</strong> Scallion-infused oil</li>
+                        <li><strong>Sesame oil:</strong> Nutty, aromatic</li>
+                        <li><strong>Chili oil (rayu):</strong> Spicy, for heat lovers</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- TOPPINGS -->
+            <h2 class="section-anchor" id="toppings-ingredients">Toppings & Ingredients (具 - Gu)</h2>
+
+            <h3>Chashu (チャーシュー)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Chashu</div>
+                    <div class="japanese-text">チャーシュー</div>
+                    <div class="pronunciation">Pronunciation: chah-shoo</div>
+                    <p><strong>What it is:</strong> Braised pork belly or shoulder, sliced thin</p>
+                    <p><strong>How it's made:</strong> Rolled, tied, seared, then braised for 4+ hours in soy-mirin-sake mixture</p>
+                    <p><strong>Texture:</strong> Should melt in your mouth</p>
+                    <p><strong>At Bakudan:</strong> We use pork belly, braised for 4+ hours</p>
+                </div>
+            </div>
+
+            <h3>Ajitama / Ajitsuke Tamago (味玉 / 味付け卵)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Ajitama / Ajitsuke Tamago</div>
+                    <div class="japanese-text">味玉 / 味付け卵</div>
+                    <div class="pronunciation">Pronunciation: ah-jee-tah-mah / ah-jee-tsoo-keh tah-mah-go</div>
+                    <p><strong>What it is:</strong> Soft-boiled egg marinated in soy-mirin mixture</p>
+                    <p><strong>Key feature:</strong> <strong>Jammy, runny yolk</strong> (if it's hard-boiled, it's wrong)</p>
+                    <p><strong>Marinating time:</strong> 12-24 hours for best flavor</p>
+                    <p><strong>Why it's essential:</strong> The creamy yolk enriches the broth</p>
+                </div>
+            </div>
+
+            <h3>Menma (メンマ)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Menma</div>
+                    <div class="japanese-text">メンマ</div>
+                    <div class="pronunciation">Pronunciation: men-mah</div>
+                    <p><strong>What it is:</strong> Fermented bamboo shoots</p>
+                    <p><strong>Texture:</strong> Crunchy, slightly chewy</p>
+                    <p><strong>Flavor:</strong> Earthy, slightly tangy, savory</p>
+                    <p><strong>Why it's there:</strong> Adds texture contrast and cuts through richness</p>
+                </div>
+            </div>
+
+            <h3>Negi (ネギ)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Negi</div>
+                    <div class="japanese-text">ネギ</div>
+                    <div class="pronunciation">Pronunciation: neh-ghee</div>
+                    <p><strong>What it is:</strong> Scallions/green onions, thinly sliced</p>
+                    <p><strong>Why it's essential:</strong> Fresh, sharp, aromatic — balances the rich broth</p>
+                </div>
+            </div>
+
+            <h3>Nori (海苔)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Nori</div>
+                    <div class="japanese-text">海苔</div>
+                    <div class="pronunciation">Pronunciation: noh-ree</div>
+                    <p><strong>What it is:</strong> Dried, roasted seaweed sheets</p>
+                    <p><strong>Flavor:</strong> Salty, oceanic, umami</p>
+                    <p><strong>How to eat:</strong> Some people tear it and mix it into the broth; others eat it on the side</p>
+                </div>
+            </div>
+
+            <h3>Kikurage (きくらげ)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Kikurage</div>
+                    <div class="japanese-text">きくらげ</div>
+                    <div class="pronunciation">Pronunciation: kee-koo-rah-geh</div>
+                    <p><strong>What it is:</strong> Wood ear mushrooms</p>
+                    <p><strong>Texture:</strong> Crunchy, gelatinous</p>
+                    <p><strong>Flavor:</strong> Mild, slightly earthy</p>
+                    <p><strong>Why it's there:</strong> Texture contrast</p>
+                </div>
+            </div>
+
+            <h3>Naruto / Narutomaki (鳴門巻き)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Naruto / Narutomaki</div>
+                    <div class="japanese-text">鳴門巻き</div>
+                    <div class="pronunciation">Pronunciation: nah-roo-toh / nah-roo-toh-mah-kee</div>
+                    <p><strong>What it is:</strong> Fish cake with a pink spiral design</p>
+                    <p><strong>Flavor:</strong> Mild, slightly sweet</p>
+                    <p><strong>Fun fact:</strong> Named after the whirlpools in the Naruto Strait</p>
+                </div>
+            </div>
+
+            <h3>Moyashi (もやし)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Moyashi</div>
+                    <div class="japanese-text">もやし</div>
+                    <div class="pronunciation">Pronunciation: moh-yah-shee</div>
+                    <p><strong>What it is:</strong> Bean sprouts</p>
+                    <p><strong>Texture:</strong> Crunchy, fresh</p>
+                    <p><strong>Common in:</strong> Miso ramen, jiro-style ramen</p>
+                </div>
+            </div>
+
+            <h3>Corn (コーン) & Butter (バター)</h3>
+            <div class="definition-block">
+                <div class="term-row">
+                    <div class="term-name">Corn</div>
+                    <div class="japanese-text">コーン</div>
+                    <div class="pronunciation">Pronunciation: kohn</div>
+                    <p><strong>What it is:</strong> Sweet corn kernels</p>
+                    <p><strong>Common in:</strong> Hokkaido-style miso ramen</p>
+                    <p><strong>Why:</strong> Adds sweetness and texture</p>
+                </div>
+
+                <div class="term-row">
+                    <div class="term-name">Butter</div>
+                    <div class="japanese-text">バター</div>
+                    <div class="pronunciation">Pronunciation: bah-tah</div>
+                    <p><strong>What it is:</strong> A pat of butter melted into the broth</p>
+                    <p><strong>Common in:</strong> Hokkaido-style miso ramen</p>
+                    <p><strong>Effect:</strong> Adds richness and creaminess</p>
+                </div>
+            </div>
+
+            <!-- COOKING TECHNIQUES -->
+            <h2 class="section-anchor" id="cooking-techniques">Cooking Techniques</h2>
+
+            <h3>Emulsification (乳化 - Nyūka)</h3>
+            <div class="definition-block">
+                <p><strong>What it is:</strong> The process of breaking fat into tiny droplets that stay suspended in liquid</p>
+                <p><strong>Why it matters:</strong> This is what makes tonkotsu broth creamy and white</p>
+                <p><strong>How it happens:</strong> High, rolling boil + constant agitation</p>
+            </div>
+
+            <h3>Collagen to Gelatin Conversion</h3>
+            <div class="definition-block">
+                <p><strong>What it is:</strong> Collagen (connective tissue in bones and meat) breaks down into gelatin when cooked low and slow</p>
+                <p><strong>Why it matters:</strong> Gelatin gives broth body, richness, and a silky mouthfeel</p>
+                <p><strong>Best method:</strong> Long, gentle simmering (not boiling)</p>
+            </div>
+
+            <h3>Blanching (湯通し - Yudōshi)</h3>
+            <div class="definition-block">
+                <p><strong>What it is:</strong> Quickly boiling bones/meat to remove impurities before making broth</p>
+                <p><strong>Why it's important:</strong> Prevents cloudy, off-tasting broth</p>
+                <p><strong>How:</strong> Boil for 5-10 minutes, discard water, scrub bones clean</p>
+            </div>
+
+            <h3>Chintan (清湯) vs. Paitan (白湯)</h3>
+            <div class="definition-block">
+                <ul>
+                    <li><strong>Chintan:</strong> Clear broth (shoyu, shio)</li>
+                    <li><strong>Paitan:</strong> Cloudy/white broth (tonkotsu, some miso)</li>
+                    <li><strong>Difference:</strong> Chintan is simmered gently; paitan is boiled vigorously</li>
+                </ul>
+            </div>
+
+            <!-- REGIONAL STYLES -->
+            <h2 class="section-anchor" id="regional-styles">Regional Styles</h2>
+
+            <div class="regional-style">
+                <h4>Hakata Ramen (博多ラーメン) — Fukuoka</h4>
+                <ul>
+                    <li><strong>Broth:</strong> Tonkotsu (pork bone)</li>
+                    <li><strong>Noodles:</strong> Thin, firm</li>
+                    <li><strong>Toppings:</strong> Minimal (chashu, scallions, sesame, pickled ginger)</li>
+                    <li><strong>Special feature:</strong> Kaedama (noodle refills)</li>
+                </ul>
+            </div>
+
+            <div class="regional-style">
+                <h4>Tokyo Ramen (東京ラーメン)</h4>
+                <ul>
+                    <li><strong>Broth:</strong> Shoyu (soy sauce-based)</li>
+                    <li><strong>Noodles:</strong> Medium, slightly curly</li>
+                    <li><strong>Toppings:</strong> Chashu, menma, negi, nori</li>
+                    <li><strong>Vibe:</strong> Balanced, clean, classic</li>
+                </ul>
+            </div>
+
+            <div class="regional-style">
+                <h4>Sapporo Ramen (札幌ラーメン) — Hokkaido</h4>
+                <ul>
+                    <li><strong>Broth:</strong> Miso</li>
+                    <li><strong>Noodles:</strong> Thick, chewy</li>
+                    <li><strong>Toppings:</strong> Corn, butter, moyashi, chashu</li>
+                    <li><strong>Vibe:</strong> Hearty, warming (designed for cold winters)</li>
+                </ul>
+            </div>
+
+            <div class="regional-style">
+                <h4>Kitakata Ramen (喜多方ラーメン) — Fukushima</h4>
+                <ul>
+                    <li><strong>Broth:</strong> Shoyu with niboshi (dried sardines)</li>
+                    <li><strong>Noodles:</strong> Thick, flat, curly</li>
+                    <li><strong>Flavor:</strong> Umami-forward, slightly fishy</li>
+                </ul>
+            </div>
+
+            <div class="regional-style">
+                <h4>Yokohama Ie-Kei Ramen (家系ラーメン)</h4>
+                <ul>
+                    <li><strong>Broth:</strong> Tonkotsu-shoyu hybrid</li>
+                    <li><strong>Noodles:</strong> Thick, straight</li>
+                    <li><strong>Toppings:</strong> Spinach, nori sheets, chashu</li>
+                    <li><strong>Vibe:</strong> Rich, bold, filling</li>
+                </ul>
+            </div>
+
+            <div class="regional-style">
+                <h4>Jiro-Style Ramen (二郎系)</h4>
+                <ul>
+                    <li><strong>Broth:</strong> Pork and vegetable-based</li>
+                    <li><strong>Noodles:</strong> Ultra-thick, almost udon-like</li>
+                    <li><strong>Toppings:</strong> MASSIVE pile of bean sprouts, cabbage, pork slabs</li>
+                    <li><strong>Vibe:</strong> Extreme portions, heavy, challenging</li>
+                </ul>
+            </div>
+
+            <!-- ORDERING & ETIQUETTE -->
+            <h2 class="section-anchor" id="ordering-etiquette">Ordering & Etiquette</h2>
+
+            <h3>How to Order at a Ramen Shop</h3>
+            <div class="definition-block">
+                <p><strong>In Japan:</strong></p>
+                <ol>
+                    <li>Often use a <strong>ticket machine</strong> (券売機 - kenbai-ki) — insert money, press button for your bowl</li>
+                    <li>Hand ticket to staff</li>
+                    <li>Sit at counter or table</li>
+                    <li>Specify preferences (noodle firmness, toppings, etc.)</li>
+                </ol>
+
+                <p><strong>At Bakudan:</strong></p>
+                <ol>
+                    <li>Order at the counter or via server</li>
+                    <li>Tell us any customizations (spice level, extra toppings, etc.)</li>
+                    <li>Sit back and relax — we'll bring it to you!</li>
+                </ol>
+            </div>
+
+            <h3>Customization Options (Hokkaido/Hakata Style)</h3>
+            <div class="definition-block">
+                <ul>
+                    <li><strong>Noodle firmness:</strong> Katame (firm), futsu (normal), yawa (soft)</li>
+                    <li><strong>Richness:</strong> Kotteri (rich) vs. assari (light)</li>
+                    <li><strong>Oil level:</strong> More or less aroma oil</li>
+                    <li><strong>Garlic:</strong> Extra garlic chips or garlic paste</li>
+                    <li><strong>Spice:</strong> Spicy miso paste, chili oil</li>
+                </ul>
+            </div>
+
+            <h3>How to Eat Ramen Like a Pro</h3>
+            <div class="definition-block">
+                <ol>
+                    <li><strong>Step 1:</strong> Admire the bowl (it's okay to take a photo!)</li>
+                    <li><strong>Step 2:</strong> Taste the broth first (use the spoon)</li>
+                    <li><strong>Step 3:</strong> Slurp the noodles (yes, slurping is encouraged — it aerates the broth and enhances flavor)</li>
+                    <li><strong>Step 4:</strong> Enjoy the toppings (save some for throughout the meal)</li>
+                    <li><strong>Step 5:</strong> If you want, crack the egg yolk and mix it into the broth for extra richness</li>
+                    <li><strong>Step 6:</strong> Drink the remaining broth (it's not rude — it's a compliment!)</li>
+                    <li><strong>Optional:</strong> Order kaedama (noodle refill) if available</li>
+                </ol>
+            </div>
+
+            <h3>Ramen Etiquette</h3>
+            <div class="etiquette-section">
+                <div class="do-box">
+                    <h4>✓ DO</h4>
+                    <ul>
+                        <li>Slurp loudly (it's normal and shows enjoyment)</li>
+                        <li>Eat quickly (ramen is best hot; noodles get soggy)</li>
+                        <li>Finish your bowl (shows appreciation)</li>
+                    </ul>
+                </div>
+                <div class="dont-box">
+                    <h4>✗ DON'T</h4>
+                    <ul>
+                        <li>Share bowls (everyone orders their own)</li>
+                        <li>Let noodles sit too long (they'll overcook in the hot broth)</li>
+                        <li>Add soy sauce or salt (the chef already balanced it)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- FAQ -->
+            <h2 class="section-anchor" id="faq">Common Ramen Questions</h2>
+
+            <div class="faq-item">
+                <div class="faq-question">Q: Is it rude NOT to slurp?</div>
+                <p><strong>A:</strong> In Japan, slurping is normal and appreciated. Outside Japan, do what feels comfortable. At Bakudan, slurp away!</p>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-question">Q: Can I add hot sauce or sriracha?</div>
+                <p><strong>A:</strong> We'd prefer you taste it as-is first. But if you want extra heat, we have chili oil and spicy paste available.</p>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-question">Q: Why are ramen noodles yellow?</div>
+                <p><strong>A:</strong> The kansui (alkaline mineral water) in the dough reacts with the wheat flour, creating that yellow hue.</p>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-question">Q: What's the difference between ramen and pho?</div>
+                <p><strong>A:</strong> Completely different! Pho is Vietnamese, made with rice noodles and a clear, aromatic broth (star anise, cinnamon). Ramen is Japanese, made with wheat noodles and can have many different broth styles.</p>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-question">Q: Is ramen healthy?</div>
+                <p><strong>A:</strong> Ramen is rich and indulgent. It's comfort food. That said, it has protein (pork, egg), vegetables (scallions, bamboo), and broth with collagen and minerals. Enjoy it as an occasional treat!</p>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-question">Q: Can I get ramen to-go?</div>
+                <p><strong>A:</strong> Yes! But ramen is best eaten fresh. If you're taking it home, we'll pack the noodles and broth separately so the noodles don't get soggy.</p>
+            </div>
+
+            <!-- VOCABULARY CHEAT SHEET -->
+            <h2 class="section-anchor" id="vocabulary-cheat-sheet">Ramen Vocabulary Cheat Sheet</h2>
+
+            <table class="guide-table">
+                <thead>
+                    <tr>
+                        <th>Japanese</th>
+                        <th>Pronunciation</th>
+                        <th>English</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>ラーメン</td>
+                        <td>rah-men</td>
+                        <td>Ramen</td>
+                    </tr>
+                    <tr>
+                        <td>麺</td>
+                        <td>men</td>
+                        <td>Noodles</td>
+                    </tr>
+                    <tr>
+                        <td>スープ</td>
+                        <td>sū-pu</td>
+                        <td>Soup/Broth</td>
+                    </tr>
+                    <tr>
+                        <td>タレ</td>
+                        <td>tah-reh</td>
+                        <td>Seasoning base</td>
+                    </tr>
+                    <tr>
+                        <td>具</td>
+                        <td>gu</td>
+                        <td>Toppings</td>
+                    </tr>
+                    <tr>
+                        <td>チャーシュー</td>
+                        <td>chah-shoo</td>
+                        <td>Braised pork</td>
+                    </tr>
+                    <tr>
+                        <td>味玉</td>
+                        <td>ah-jee-tah-mah</td>
+                        <td>Marinated egg</td>
+                    </tr>
+                    <tr>
+                        <td>ネギ</td>
+                        <td>neh-ghee</td>
+                        <td>Scallions</td>
+                    </tr>
+                    <tr>
+                        <td>海苔</td>
+                        <td>noh-ree</td>
+                        <td>Seaweed</td>
+                    </tr>
+                    <tr>
+                        <td>替え玉</td>
+                        <td>kah-eh-dah-mah</td>
+                        <td>Noodle refill</td>
+                    </tr>
+                    <tr>
+                        <td>硬め</td>
+                        <td>kah-tah-meh</td>
+                        <td>Firm noodles</td>
+                    </tr>
+                    <tr>
+                        <td>柔</td>
+                        <td>yah-wah</td>
+                        <td>Soft noodles</td>
+                    </tr>
+                    <tr>
+                        <td>濃厚</td>
+                        <td>koh-ku</td>
+                        <td>Rich/thick</td>
+                    </tr>
+                    <tr>
+                        <td>あっさり</td>
+                        <td>ah-ssah-ree</td>
+                        <td>Light</td>
+                    </tr>
+                    <tr>
+                        <td>美味しい</td>
+                        <td>oi-shee</td>
+                        <td>Delicious</td>
+                    </tr>
+                    <tr>
+                        <td>ごちそうさまでした</td>
+                        <td>go-chee-so-sah-mah desh-tah</td>
+                        <td>Thank you for the meal</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- CONCLUSION -->
+            <h2>Bringing It All Together</h2>
+
+            <p>Now you're armed with knowledge. You can:</p>
+            <ul>
+                <li>Decode any ramen menu</li>
+                <li>Order with confidence</li>
+                <li>Understand what makes each bowl unique</li>
+                <li>Appreciate the craft behind every element</li>
+            </ul>
+
+            <p><strong>Ready to put your knowledge to the test?</strong></p>
+
+            <p style="margin-top: 2rem; text-align: center;">
+                <a href="#" class="btn-primary" style="display: inline-block; margin-right: 1rem;">Order Now</a>
+                <a href="blog.html" class="btn-primary" style="display: inline-block; margin-right: 1rem;">View Blog</a>
+                <a href="index.html" class="btn-primary" style="display: inline-block;">Visit Us</a>
+            </p>
+
+            <h3 style="margin-top: 3rem;">Next Steps</h3>
+            <ul>
+                <li><a href="blog-tonkotsu.html">Read: The Art of Tonkotsu (Our 10-Hour Broth)</a></li>
+                <li><a href="blog-ramen-101.html">Read: Ramen 101 - The 4 Essential Elements</a></li>
+                <li><a href="blog-journey.html">Read: From Japan to Texas - Our Journey</a></li>
+            </ul>
+
+            <hr style="margin-top: 3rem; margin-bottom: 2rem;">
+
+            <p style="color: #666; font-size: 0.9rem;">
+                <em>Compiled by the Bakudan Ramen team</em><br>
+                <em>Last updated: February 2024</em>
+            </p>
+
+            <p style="color: #666; font-size: 0.9rem;">
+                <strong>Share this guide:</strong> Perfect for ramen enthusiasts, first-time visitors, and curious foodies
+            </p>
+
+        </div>
+
+        <div class="blog-post-cta">
+            <h3>Ready to Put Your Knowledge to the Test?</h3>
+            <p>Visit Bakudan Ramen and order with confidence. Our team is ready to serve you an authentic bowl made with passion and precision.</p>
+            <a href="#" class="btn-primary">ORDER NOW</a>
+        </div>
+
+        <div class="related-posts">
+            <h3>Related Blog Posts</h3>
+            <div class="related-posts-grid">
+                <a href="blog-tonkotsu.html" class="related-post-card">
+                    <div class="related-post-tag">Behind the Scenes</div>
+                    <h4>The Art of Tonkotsu</h4>
+                    <p>How we make our 10-hour broth</p>
+                </a>
+                <a href="blog-ramen-101.html" class="related-post-card">
+                    <div class="related-post-tag">Education</div>
+                    <h4>Ramen 101</h4>
+                    <p>The 4 essential elements</p>
+                </a>
+                <a href="blog-chashu.html" class="related-post-card">
+                    <div class="related-post-tag">Technique</div>
+                    <h4>The Secret Behind Perfect Chashu</h4>
+                    <p>How we make pork that melts on your tongue</p>
+                </a>
+            </div>
+        </div>
+    </article>
+    </main>
+
+    <!-- Footer -->
+    <footer class="site-footer" role="contentinfo">
+        <div class="footer-grid">
+            <div class="footer-brand">
+                <a href="index.html" class="logo" aria-label="Bakudan Ramen - Home">
+                    <div class="logo-icon" aria-hidden="true">&#29190;</div>
+                    <span class="logo-text">BAKUDAN RAMEN</span>
+                </a>
+                <p>Bold Flavor. Modern Japanese Soul. Texas Spirit. Three locations serving San Antonio.</p>
+            </div>
+            <div class="footer-col">
+                <h4>LOCATIONS</h4>
+                <address><strong>Bandera</strong>11309 Bandera Rd Ste 111<br>San Antonio, TX 78254<br><a href="tel:+12102777740">(210) 277-7740</a></address>
+                <address><strong>Stone Oak</strong>22506 U.S. Hwy 281 N Ste 106<br>San Antonio, TX 78258<br><a href="tel:+12104370632">(210) 437-0632</a></address>
+                <address><strong>The Rim</strong>17619 La Cantera Pkwy #208<br>San Antonio, TX 78256<br><a href="tel:+12102578080">(210) 257-8080</a></address>
+            </div>
+            <div class="footer-col">
+                <h4>HOURS</h4>
+                <ul>
+                    <li>Mon&ndash;Thu: 11:00 AM &ndash; 8:30 PM</li>
+                    <li>Fri&ndash;Sat: 11:00 AM &ndash; 9:00 PM</li>
+                    <li>Sun: 11:00 AM &ndash; 8:00 PM</li>
+                </ul>
+                <h4 style="margin-top: 1.5rem;">FOLLOW US</h4>
+                <div class="footer-social">
+                    <a href="https://www.instagram.com/bakudanramen/" aria-label="Follow on Instagram">Instagram</a>
+                    <a href="https://www.facebook.com/bakudanSA/" aria-label="Follow on Facebook">Facebook</a>
+                    <a href="https://www.yelp.com/biz/bakudan-ramen-san-antonio" aria-label="Review on Yelp">Yelp</a>
+                </div>
+            </div>
+            <div class="footer-col">
+                <h4>EXPLORE</h4>
+                <ul>
+                    <li><a href="menu.html">View Menu</a></li>
+                    <li><a href="order.html">Order Online</a></li>
+                    <li><a href="happy-hour.html">Happy Hour</a></li>
+                    <li><a href="fundraiser.html">Fundraiser Program</a></li>
+                    <li><a href="about.html">Our Story</a></li>
+                    <li><a href="blog.html">Blog</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 Bakudan Ramen. All rights reserved. <a href="privacy.html">Privacy Policy</a> &bull; <a href="terms.html">Terms of Service</a> &bull; <a href="accessibility.html">Accessibility</a></p>
+        </div>
+    </footer>
+    <div class="cookie-banner" role="dialog" aria-label="Cookie consent" aria-hidden="true">
+        <div class="cookie-banner-inner">
+            <div class="cookie-text"><p>We use essential cookies for site functionality and third-party services (Google Fonts, Toast ordering) to enhance your experience. <a href="privacy.html">Learn more</a>.</p></div>
+            <div class="cookie-buttons">
+                <button class="cookie-btn cookie-btn-accept" data-consent="accept-all">Accept All</button>
+                <button class="cookie-btn cookie-btn-essential" data-consent="essential-only">Essential Only</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/consent.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

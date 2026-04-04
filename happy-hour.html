@@ -36,27 +36,36 @@
 
     <main id="main-content">
         <section class="page-hero" role="region" aria-labelledby="hero-title">
+            <!-- PLACEHOLDER: Add geisha mural artwork as decorative elements -->
+            <!-- Left: <img src="images/geisha-left.png" class="page-hero-geisha page-hero-geisha-left" alt="" aria-hidden="true"> -->
+            <!-- Right: <img src="images/geisha-right.png" class="page-hero-geisha page-hero-geisha-right" alt="" aria-hidden="true"> -->
             <h1 id="hero-title">HAPPY HOUR</h1>
-            <p>Unwind with specially curated drinks and appetizers at incredible prices. Every day, 3 PM - 6 PM at all three San Antonio locations.</p>
+            <p>Unwind with specially curated drinks and appetizers at incredible prices. Every day, 3 PM &ndash; 6 PM.</p>
         </section>
 
         <p style="max-width: 900px; margin: 0 auto 2rem; text-align: center; color: #B8AFA6; font-size: 0.85rem;">Alcoholic beverages are available to guests 21 years of age and older with valid identification. Please drink responsibly.</p>
 
-        <section class="happy-hour-section" aria-labelledby="hh-heading">
+        <div style="max-width: 900px; margin: 0 auto 3rem; padding: 1.5rem; background: rgba(222, 184, 100, 0.1); border: 1px solid rgba(222, 184, 100, 0.3); border-radius: 12px; text-align: center;">
+            <p style="color: #F5F0E8; font-weight: 700; margin-bottom: 0.5rem;">Important: Drink Menus Vary by Location</p>
+            <p style="color: #B8AFA6; font-size: 0.9rem; line-height: 1.6;">Our Stone Oak &amp; The Rim locations offer a full cocktail program, while our Bandera location features a curated sak&eacute; and beer selection. Please check below for your location&rsquo;s specific happy hour menu.</p>
+        </div>
+
+        <!-- STONE OAK & THE RIM HAPPY HOUR -->
+        <section class="happy-hour-section" aria-labelledby="hh-heading-rimso">
             <div class="happy-hour-container">
                 <div class="happy-hour-header">
-                    <span class="happy-hour-badge">Every Day</span>
-                    <h2 id="hh-heading">HAPPY HOUR</h2>
-                    <div class="happy-hour-time">3 PM - 6 PM</div>
+                    <span class="happy-hour-badge">Stone Oak &amp; The Rim</span>
+                    <h2 id="hh-heading-rimso">HAPPY HOUR</h2>
+                    <div class="happy-hour-time">Every Day &bull; 3 PM &ndash; 6 PM</div>
                 </div>
 
                 <div class="hh-menu-grid">
                     <div class="hh-category">
                         <h3>Drinks</h3>
-                        <div class="hh-item"><strong>$6 Espresso Martinis</strong><br>Tequila Corrido OP, Coffee Liqueur, Cold Brew</div>
+                        <div class="hh-item"><strong>$6.50 Espresso Martinis</strong><br>Tequila Corrido OP, Coffee Liqueur, Cold Brew</div>
                         <div class="hh-item"><strong>1/2 OFF COCKTAILS</strong><br>All regular menu cocktails</div>
                         <div class="hh-item"><strong>$5 SHOTS</strong><br>Mexican Candy, Jameson, Tequila Corrido Blanco/Reposado</div>
-                        <div class="hh-item"><strong>$3 DRAFT BEER</strong><br>Kirin Ichiban, Michelob Ultra, Modelo Especial, Bud Light, Freetail Soul Doubt, Seasonal</div>
+                        <div class="hh-item"><strong>$3 DRAFT BEER</strong><br>Michelob Ultra, Modelo Especial, Bud Light, Freetail Soul Doubt, Seasonal</div>
                         <div class="hh-item"><strong>$4 HOUSE WINE</strong><br>By Sycamore Lane (Chardonnay, Cabernet Sauvignon)</div>
                     </div>
 
@@ -74,9 +83,44 @@
             </div>
         </section>
 
+        <!-- BANDERA HAPPY HOUR -->
+        <section class="happy-hour-section" aria-labelledby="hh-heading-bandera" style="margin-top: 3rem;">
+            <div class="happy-hour-container" style="border-color: rgba(184, 175, 166, 0.3);">
+                <div class="happy-hour-header">
+                    <span class="happy-hour-badge" style="background: rgba(184, 175, 166, 0.15); color: #B8AFA6;">Bandera Location</span>
+                    <h2 id="hh-heading-bandera">HAPPY HOUR</h2>
+                    <div class="happy-hour-time">Every Day &bull; 3 PM &ndash; 6 PM</div>
+                </div>
+
+                <div class="hh-menu-grid">
+                    <div class="hh-category">
+                        <h3>Drinks</h3>
+                        <div class="hh-item"><strong>$5 ALL SAK&Eacute; COCKTAILS</strong></div>
+                        <div class="hh-item"><strong>$20 SAK&Eacute; SANGRIA PITCHERS</strong></div>
+                        <div class="hh-item"><strong>$4 HOUSE WINE</strong><br>By Sycamore Lane (Chardonnay, Cabernet Sauvignon)</div>
+                        <div class="hh-item"><strong>$4 HOT SAKE</strong></div>
+                        <div class="hh-item"><strong>$3 DRAFT BEERS</strong><br>Michelob Ultra, Modelo Especial, Bud Light, Freetail Soul Doubt, Seasonal</div>
+                    </div>
+
+                    <div class="hh-category">
+                        <h3>Food</h3>
+                        <div class="hh-item"><strong>$3.50 Edamame</strong></div>
+                        <div class="hh-item"><strong>$3.50 Wakame Salad</strong></div>
+                        <div class="hh-item"><strong>$4.50 Spicy Edamame</strong></div>
+                        <div class="hh-item"><strong>$4.50 Gyoza</strong></div>
+                        <div class="hh-item"><strong>$5.50 Takoyaki</strong></div>
+                        <div class="hh-item"><strong>$5.50 Wings</strong></div>
+                        <div class="hh-item"><strong>$5.50 Chicken Karaage</strong></div>
+                    </div>
+                </div>
+
+                <p style="text-align: center; color: #B8AFA6; font-size: 0.85rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">Bandera serves sak&eacute;-based cocktails and beer. For full cocktail menu including margaritas and espresso martinis, visit our Stone Oak or The Rim locations.</p>
+            </div>
+        </section>
+
         <section class="cta-section" aria-labelledby="cta-heading">
             <h2 id="cta-heading">Join Us for Happy Hour</h2>
-            <p>Every day from 3 PM to 6 PM at all three San Antonio locations. No reservation needed—walk-ins always welcome.</p>
+            <p>Every day from 3 PM to 6 PM. No reservation needed&mdash;walk-ins always welcome.</p>
             <a href="locations.html" class="btn btn-white">View Locations</a>
         </section>
     </main>

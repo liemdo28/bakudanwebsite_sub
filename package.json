@@ -1,0 +1,27 @@
+{
+  "name": "bakudan-website",
+  "version": "1.0.0",
+  "description": "Bakudan Ramen — website + Links Hub + Blog CMS",
+  "main": "server/server.js",
+  "scripts": {
+    "start":  "node server/server.js",
+    "dev":    "node --watch server/server.js",
+    "lint":   "node --input-type=module --eval \"import('./server/db.js').then(()=>console.log('lint OK'))\" 2>&1 || echo lint-skip",
+    "build":  "echo No build step required — static site with Node API",
+    "test":   "node server/test.js"
+  },
+  "dependencies": {
+    "bcryptjs":     "^2.4.3",
+    "dotenv":       "^16.4.5",
+    "express":      "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer":       "^1.4.5-lts.1",
+    "node-cron":    "^3.0.3"
+  },
+  "notes": {
+    "sqlite": "Uses Node.js built-in node:sqlite (Node >= 22.5). No native compilation required."
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

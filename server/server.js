@@ -66,6 +66,7 @@ app.get('/api/config', (req, res) => {
 
 /* ── API Routes ──────────────────────────────────── */
 app.use('/api/auth',    require('./routes/auth'));
+app.use('/api/admin',   require('./routes/admin'));
 app.use('/api/links',   require('./routes/links'));
 app.use('/api/blog',    require('./routes/blog'));
 app.use('/api/public',  require('./routes/public'));
@@ -85,12 +86,20 @@ app.use('/links-admin', (req, res, next) => {
 });
 
 /* ── Public links page ───────────────────────────── */
-app.get('/links', (req, res) => {
-  res.sendFile(path.join(ROOT, 'links', 'index.html'));
-});
-app.get('/links/:slug', (req, res) => {
-  res.sendFile(path.join(ROOT, 'links', 'index.html'));
-});
+app.get('/links', (req, res) => res.sendFile(path.join(ROOT, 'links', 'index.html')));
+// /links/preview/:slug  — must be declared BEFORE /links/:slug wildcard
+app.get('/links/preview/:slug', (req, res) => res.sendFile(path.join(ROOT, 'links', 'index.html')));
+// Static temporary Linktree for Maria's preview
+app.get('/links-temp', (req, res) => res.sendFile(path.join(ROOT, 'links-temp', 'index.html')));
+app.get('/links/:slug', (req, res) => res.sendFile(path.join(ROOT, 'links', 'index.html')));
+
+/* ── Linktree sub-pages (static, noindex) ────────── */
+// Location selector — 3 stores with verified Google Maps links
+app.get('/store-locations', (req, res) => res.sendFile(path.join(ROOT, 'store-locations', 'index.html')));
+// Smart delivery router — geolocation → nearest Toast order URL
+app.get('/order-smart', (req, res) => res.sendFile(path.join(ROOT, 'order-smart', 'index.html')));
+// Reservations placeholder
+app.get('/reservations', (req, res) => res.sendFile(path.join(ROOT, 'reservations', 'index.html')));
 
 /* ── Blog CMS public pages ───────────────────────── */
 app.get('/blog-cms', (req, res) => res.sendFile(path.join(ROOT, 'blog-cms', 'index.html')));
@@ -120,16 +129,28 @@ app.use((err, req, res, _next) => {
 });
 
 /* ── Scheduled publishing cron ───────────────────── */
-// Every minute: auto-publish blog posts whose scheduled_at has passed
+// Every minute: auto-publish blog posts + link pages whose scheduled time has passed
 cron.schedule('* * * * *', () => {
   const now = new Date().toISOString();
-  const result = db.prepare(`
+
+  // Blog posts
+  const blogResult = db.prepare(`
     UPDATE blog_posts
     SET status = 'published', published_at = datetime('now'), updated_at = datetime('now')
     WHERE status = 'scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= ? AND archived_at IS NULL
   `).run(now);
-  if (result.changes > 0) {
-    console.log(`[cron] Auto-published ${result.changes} scheduled blog post(s)`);
+  if (blogResult.changes > 0) {
+    console.log(`[cron] Auto-published ${blogResult.changes} scheduled blog post(s)`);
+  }
+
+  // Link pages
+  const pagesResult = db.prepare(`
+    UPDATE link_pages
+    SET status = 'published', is_active = 1, last_published_at = datetime('now'), updated_at = datetime('now')
+    WHERE status = 'scheduled' AND scheduled_publish_at IS NOT NULL AND scheduled_publish_at <= ?
+  `).run(now);
+  if (pagesResult.changes > 0) {
+    console.log(`[cron] Auto-published ${pagesResult.changes} scheduled link page(s)`);
   }
 });
 

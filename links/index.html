@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3GZ2RYDR6M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3GZ2RYDR6M');
+    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" id="meta-robots" content="index, follow">
+<title>Bakudan Ramen — Links</title>
+<meta name="description" content="Quick links for Bakudan Ramen — order online, view menu, find us on social media.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: 'Noto Sans JP', system-ui, sans-serif;
+  background: #111;
+  color: #fafafa;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px 60px;
+}
+
+.links-container { width: 100%; max-width: 420px; }
+
+.links-logo {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.links-logo-icon {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: linear-gradient(135deg, #EC4A5E, #A01830);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 40px; margin-bottom: 14px;
+  box-shadow: 0 4px 24px rgba(236,74,94,.3);
+}
+.links-headline    { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; color: #fff; }
+.links-subheadline { font-size: 11px; letter-spacing: 2px; color: #888; margin-top: 4px; }
+
+/* Buttons */
+.btn-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+
+.links-btn {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px; border-radius: 12px; width: 100%;
+  text-decoration: none; color: inherit; cursor: pointer;
+  transition: all .18s; border: none; font-family: inherit;
+  position: relative;
+}
+.links-btn.primary {
+  background: #EC4A5E;
+  box-shadow: 0 4px 16px rgba(236,74,94,.35);
+}
+.links-btn.primary:hover  { background: #c73a4c; transform: translateY(-1px); }
+.links-btn.secondary      { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); }
+.links-btn.secondary:hover { background: rgba(255,255,255,.1); transform: translateY(-1px); }
+
+.links-btn-icon {
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.1); font-size: 18px;
+}
+.links-btn.primary .links-btn-icon { background: rgba(0,0,0,.15); }
+.links-btn-icon svg { width: 20px; height: 20px; }
+
+.links-btn-text { flex: 1; text-align: left; }
+.links-btn-title    { font-size: 14px; font-weight: 700; }
+.links-btn.primary .links-btn-title { font-size: 15px; }
+.links-btn-subtitle { font-size: 11px; opacity: .7; margin-top: 1px; }
+
+.links-btn-featured::after { content: '★'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: #DEB864; font-size: 12px; }
+
+/* Footer */
+.links-footer { margin-top: 40px; text-align: center; font-size: 11px; color: #444; }
+.links-footer a { color: #666; text-decoration: none; }
+
+/* Loading state */
+#links-loading { text-align: center; padding: 60px 20px; color: #555; }
+#links-error   { text-align: center; padding: 40px 20px; color: #888; }
+
+/* Preview mode */
+.preview-banner {
+  background: #1e3a5f; border: 1px solid #2563eb;
+  border-radius: 8px; padding: 8px 14px; margin-bottom: 20px;
+  font-size: 11px; color: #93c5fd; text-align: center; letter-spacing: .5px;
+}
+.btn-hidden-indicator {
+  font-size: 10px; color: #64748b; margin-left: 8px;
+  background: rgba(255,255,255,.06); padding: 2px 6px; border-radius: 4px;
+}
+.links-btn.disabled-preview {
+  opacity: .45; cursor: default; pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<div class="links-container">
+  <div id="links-loading">Loading...</div>
+  <div id="links-content" style="display:none">
+    <div class="links-logo">
+      <div class="links-logo-icon" id="links-icon">爆</div>
+      <div class="links-headline" id="links-headline">BAKUDAN RAMEN</div>
+      <div class="links-subheadline" id="links-subheadline">AUTHENTIC JAPANESE RAMEN &middot; SAN ANTONIO</div>
+    </div>
+    <div class="btn-list" id="links-buttons"></div>
+  </div>
+  <div id="links-error" style="display:none">
+    <div style="font-size:28px;margin-bottom:12px">爆</div>
+    <div style="color:#EC4A5E;font-weight:700;margin-bottom:8px">Page not found</div>
+    <div style="font-size:13px">This link page is not available.</div>
+  </div>
+</div>
+
+<div class="links-footer">
+  &copy; <span id="links-year"></span> Bakudan Ramen &mdash; <a href="/">bakudanramen.com</a>
+</div>
+
+<script>
+(function() {
+  document.getElementById('links-year').textContent = new Date().getFullYear();
+
+  // Detect preview mode: /links/preview/:slug?token=xxx
+  const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
+  const isPreview = pathParts.includes('preview');
+  const previewToken = new URLSearchParams(window.location.search).get('token');
+
+  // Slug: last path segment (unless it's 'links' or 'preview' -> default public customer page)
+  const lastSeg = pathParts[pathParts.length - 1];
+  const slug = (lastSeg === 'links' || lastSeg === 'preview' || !lastSeg) ? 'bakudan-links-main' : lastSeg;
+
+  // Apply noindex for preview pages
+  if (isPreview) {
+    document.getElementById('meta-robots').content = 'noindex, nofollow';
+  }
+
+  // Icon map (SVG for known platforms)
+  const ICONS = {
+    order:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+    website:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10A15.3 15.3 0 0112 2z"/></svg>',
+    instagram:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>',
+    facebook:    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>',
+    menu:        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>',
+    gift:        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg>',
+    ticket:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 9a3 3 0 010 6v2a2 2 0 002 2h16a2 2 0 002-2v-2a3 3 0 010-6V7a2 2 0 00-2-2H4a2 2 0 00-2 2v2z"/></svg>',
+    directions:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>',
+    phone:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.82 19.79 19.79 0 01.01 1.19 2 2 0 012 .01h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14.92v2z"/></svg>',
+    external:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+  };
+
+  function getIcon(b) {
+    if (b.custom_icon_svg) return b.custom_icon_svg;
+    const key = b.icon_key || b.icon;
+    if (key && ICONS[key]) return ICONS[key];
+    return ICONS.external;
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    }[ch]));
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/`/g, '&#096;');
+  }
+
+  function normalizeButton(b) {
+    const title = b.title || b.label || 'Untitled link';
+    const subtitle = b.subtitle || '';
+    const isEnabled = b.enabled === undefined ? true : Number(b.enabled) === 1 || b.enabled === true;
+    const isVisible = b.visible === undefined ? Number(b.is_active ?? 1) === 1 : !!b.visible;
+    const href = b.url && b.url !== '#' ? b.url : '#';
+    const isExternal = /^https?:\/\//i.test(href) || /^mailto:|^tel:/i.test(href);
+    return {
+      ...b,
+      title,
+      subtitle,
+      href,
+      enabled: isEnabled,
+      visible: isVisible,
+      isPrimary: b.style_variant === 'primary' || Number(b.is_featured) === 1,
+      isFeatured: Number(b.is_featured) === 1 || b.is_featured === true,
+      opensInNewTab: b.opens_in_new_tab === undefined ? isExternal : !!b.opens_in_new_tab,
+    };
+  }
+
+  function trackClick(pageId, btnId) {
+    fetch('/api/public/analytics/click', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_id: pageId, button_id: btnId }),
+    }).catch(() => {});
+  }
+
+  async function load() {
+    // Choose API endpoint based on mode
+    const apiUrl = isPreview && previewToken
+      ? `/api/public/links/preview/${encodeURIComponent(slug)}?token=${encodeURIComponent(previewToken)}`
+      : `/api/public/links/${encodeURIComponent(slug)}`;
+
+    const res  = await fetch(apiUrl);
+    const data = await res.json();
+
+    document.getElementById('links-loading').style.display = 'none';
+
+    if (!res.ok || !data.ok) {
+      document.getElementById('links-error').style.display = 'block';
+      return;
+    }
+
+    const { page, buttons, settings } = data.data;
+    const isPreviewMode = !!data.preview;
+
+    // Update meta
+    document.title = (page.headline || page.title) + ' — Bakudan Ramen';
+    if (page.handle) {
+      document.getElementById('links-headline').textContent = page.handle;
+    } else {
+      document.getElementById('links-headline').textContent = page.headline || settings.links_headline || 'BAKUDAN RAMEN';
+    }
+    document.getElementById('links-subheadline').textContent = page.subheadline || settings.links_subheadline || '';
+
+    // Preview banner
+    if (isPreviewMode) {
+      const banner = document.createElement('div');
+      banner.className = 'preview-banner';
+      banner.innerHTML = '&#128274; PREVIEW &mdash; Internal Use Only &mdash; Not publicly indexed';
+      document.querySelector('.links-logo').insertAdjacentElement('beforebegin', banner);
+    }
+
+    // Track view (only for published pages, not preview)
+    if (!isPreviewMode) {
+      fetch('/api/public/analytics/view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page_id: page.id, user_agent: navigator.userAgent, referer: document.referrer }),
+      }).catch(() => {});
+    }
+
+    const listEl = document.getElementById('links-buttons');
+    if (!buttons.length) {
+      listEl.innerHTML = '<div style="text-align:center;color:#555;padding:24px">No links available yet.</div>';
+    } else {
+      const now = new Date().toISOString();
+      listEl.innerHTML = buttons.map(b => {
+        const button = normalizeButton(b);
+        const isPrimary  = button.isPrimary;
+        const isFeatured = button.isFeatured;
+
+        // In preview mode show all buttons, even hidden/disabled (with indicators)
+        const isHidden   = isPreviewMode && !button.visible;
+        const isDisabled = isPreviewMode && !button.enabled;
+        const isScheduled = button.start_at && now < button.start_at;
+
+        const target = button.opensInNewTab ? '_blank' : '_self';
+        const rel = target === '_blank' ? ' rel="noopener noreferrer"' : '';
+        const href = button.href;
+
+        let indicator = '';
+        if (isPreviewMode) {
+          if (isHidden)    indicator = '<span class="btn-hidden-indicator">Hidden</span>';
+          if (isDisabled)  indicator = '<span class="btn-hidden-indicator">Disabled</span>';
+          if (isScheduled) indicator = '<span class="btn-hidden-indicator">Scheduled</span>';
+        }
+
+        return `
+        <a href="${escapeAttr(href)}" target="${target}"${rel}
+           class="links-btn ${isPrimary?'primary':'secondary'}${isFeatured?' links-btn-featured':''}${(isHidden||isDisabled)?' disabled-preview':''}"
+           onclick="${href==='#'?'event.preventDefault();showComingSoon()':''}${!isPreviewMode&&href!=='#'?`fetch('/api/public/analytics/click',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page_id:${Number(page.id)},button_id:${Number(button.id)}})}).catch(()=>{})`:''}" >
+          <div class="links-btn-icon">${getIcon(b)}</div>
+          <div class="links-btn-text" style="flex:1">
+            <div class="links-btn-title">${escapeHtml(button.title)}${indicator}</div>
+            ${button.subtitle ? `<div class="links-btn-subtitle">${escapeHtml(button.subtitle)}</div>` : ''}
+          </div>
+        </a>`;
+      }).join('');
+    }
+
+    document.getElementById('links-content').style.display = 'block';
+  }
+
+  function showComingSoon() {
+    const t = document.createElement('div');
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e3a5f;color:#93c5fd;border:1px solid #2563eb;padding:10px 20px;border-radius:8px;font-size:13px;z-index:9999';
+    t.textContent = 'Link coming soon';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2500);
+  }
+
+  load().catch(err => {
+    document.getElementById('links-loading').style.display = 'none';
+    document.getElementById('links-error').style.display = 'block';
+    console.error('Links load error:', err);
+  });
+})();
+</script>
+</body>
+</html>

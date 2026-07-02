@@ -331,16 +331,27 @@ async function doLogin() {
   const btn   = document.getElementById('login-btn');
   if (!email || !pwd) { if (errEl) { errEl.textContent = 'Email and password required.'; errEl.style.display = 'block'; } return; }
   if (btn) btn.textContent = 'Signing in…';
-  const res = await POST('/auth/login', { email, password: pwd });
-  if (res?.ok) {
-    _token = res.token;
-    _user  = res.user;
-    localStorage.setItem('bkdn_token', _token);
-    localStorage.setItem('bkdn_user', JSON.stringify(_user));
-    renderShell();
-    router();
-  } else {
-    if (errEl) { errEl.textContent = res?.error || 'Login failed.'; errEl.style.display = 'block'; }
+  try {
+    const res = await POST('/auth/login', { email, password: pwd });
+    const payload = res?.data || res || {};
+    if (res?.ok && payload.token) {
+      _token = payload.token;
+      _user  = payload.user || {};
+      try {
+        localStorage.setItem('bkdn_token', _token);
+        localStorage.setItem('bkdn_user', JSON.stringify(_user));
+      } catch (storageErr) {
+        console.warn('Could not persist admin session.', storageErr);
+      }
+      renderShell();
+      router();
+    } else {
+      if (errEl) { errEl.textContent = res?.error || res?.message || 'Login failed.'; errEl.style.display = 'block'; }
+      if (btn) btn.textContent = 'Sign In to Dashboard';
+    }
+  } catch (err) {
+    console.error('Login failed.', err);
+    if (errEl) { errEl.textContent = 'Login failed. Please try again.'; errEl.style.display = 'block'; }
     if (btn) btn.textContent = 'Sign In to Dashboard';
   }
 }
@@ -1825,7 +1836,7 @@ window.BKDN = {
 /* ═══════════════════════════════════════════════════════════════
    BOOT
 ═══════════════════════════════════════════════════════════════ */
-document.addEventListener('DOMContentLoaded', async () => {
+async function bootAdmin() {
   // Load server config
   try {
     const cfgRes = await fetch('/api/config');
@@ -1857,4 +1868,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (_token) { renderShell(); router(); }
   else { renderLogin(); }
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootAdmin);
+} else {
+  bootAdmin();
+}

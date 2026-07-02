@@ -220,7 +220,7 @@ body {
 
     if (lowerTitle === 'email us' || lowerHref.includes('/marketing-signup')) {
       return {
-        title: 'Email Club',
+        title: lowerTitle.includes('offer') ? title : 'Email Club & Offers',
         subtitle: subtitle || 'Bakudan updates and offers',
       };
     }

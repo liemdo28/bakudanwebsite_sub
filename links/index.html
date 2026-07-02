@@ -178,17 +178,68 @@ body {
     return escapeHtml(value).replace(/`/g, '&#096;');
   }
 
+  function inferLocation(href) {
+    const url = String(href || '').toLowerCase();
+    if (url.includes('stone-oak')) {
+      return { name: 'Stone Oak', detail: '22506 US-281 N' };
+    }
+    if (url.includes('bandera')) {
+      return { name: 'Bandera', detail: '11309 Bandera Rd' };
+    }
+    if (url.includes('the-rim') || url.includes('bakudanramen')) {
+      return { name: 'The Rim', detail: '17619 La Cantera Pkwy' };
+    }
+    return null;
+  }
+
+  function polishButtonCopy(title, subtitle, href) {
+    const lowerTitle = String(title || '').toLowerCase();
+    const lowerHref = String(href || '').toLowerCase();
+    const location = inferLocation(href);
+
+    if (lowerHref.includes('/smsoptin')) {
+      return {
+        title: 'Text Updates & Offers',
+        subtitle: subtitle || 'Bakudan deals and news by SMS',
+      };
+    }
+
+    if (lowerHref.includes('order.toasttab.com') && location) {
+      return {
+        title: `Order ${location.name}`,
+        subtitle: subtitle || location.detail,
+      };
+    }
+
+    if (lowerHref.includes('/rewardssignup') && location) {
+      return {
+        title: lowerTitle.includes(location.name.toLowerCase()) ? title : `${location.name} Rewards`,
+        subtitle: subtitle || `Earn rewards at ${location.name}`,
+      };
+    }
+
+    if (lowerTitle === 'email us' || lowerHref.includes('/marketing-signup')) {
+      return {
+        title: 'Email Club',
+        subtitle: subtitle || 'Bakudan updates and offers',
+      };
+    }
+
+    return { title, subtitle };
+  }
+
   function normalizeButton(b) {
-    const title = b.title || b.label || 'Untitled link';
-    const subtitle = b.subtitle || '';
+    const rawTitle = b.title || b.label || 'Untitled link';
+    const rawSubtitle = b.subtitle || '';
     const isEnabled = b.enabled === undefined ? true : Number(b.enabled) === 1 || b.enabled === true;
     const isVisible = b.visible === undefined ? Number(b.is_active ?? 1) === 1 : !!b.visible;
     const href = b.url && b.url !== '#' ? b.url : '#';
     const isExternal = /^https?:\/\//i.test(href) || /^mailto:|^tel:/i.test(href);
+    const copy = polishButtonCopy(rawTitle, rawSubtitle, href);
     return {
       ...b,
-      title,
-      subtitle,
+      title: copy.title,
+      subtitle: copy.subtitle,
       href,
       enabled: isEnabled,
       visible: isVisible,
@@ -211,8 +262,9 @@ body {
     const apiUrl = isPreview && previewToken
       ? `/api/public/links/preview/${encodeURIComponent(slug)}?token=${encodeURIComponent(previewToken)}`
       : `/api/public/links/${encodeURIComponent(slug)}`;
+    const cacheBustedApiUrl = apiUrl + (apiUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
 
-    const res  = await fetch(apiUrl);
+    const res  = await fetch(cacheBustedApiUrl, { cache: 'no-store' });
     const data = await res.json();
 
     document.getElementById('links-loading').style.display = 'none';

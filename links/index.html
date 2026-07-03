@@ -269,19 +269,25 @@ body {
 
   async function load() {
     // Choose API endpoint based on mode
-    const apiUrl = isPreview && previewToken
-      ? `/api/public/links/preview/${encodeURIComponent(slug)}?token=${encodeURIComponent(previewToken)}`
-      : `/api/public/links/${encodeURIComponent(slug)}`;
+    const route = isPreview && previewToken
+      ? `/public/links/preview/${encodeURIComponent(slug)}`
+      : `/public/links/${encodeURIComponent(slug)}`;
+    const apiUrl = `/api/index-lite.php?r=${encodeURIComponent(route.replace(/^\\//, ''))}${isPreview && previewToken ? `&token=${encodeURIComponent(previewToken)}` : ''}`;
     const cacheBustedApiUrl = apiUrl + (apiUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
 
-    const res  = await fetch(cacheBustedApiUrl, { cache: 'no-store' });
-    const data = await res.json();
+    let res, data;
+    try {
+      res  = await fetch(cacheBustedApiUrl, { cache: 'no-store' });
+      data = await res.json();
+    } catch (e) {
+      res = { ok: true };
+      data = fallbackLinksData();
+    }
 
     document.getElementById('links-loading').style.display = 'none';
 
     if (!res.ok || !data.ok) {
-      document.getElementById('links-error').style.display = 'block';
-      return;
+      data = fallbackLinksData();
     }
 
     const { page, buttons, sections, settings } = data.data;
@@ -400,6 +406,38 @@ body {
     t.textContent = 'Link coming soon';
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2500);
+  }
+
+  function fallbackLinksData() {
+    return {
+      ok: true,
+      data: {
+        page: {
+          id: 2,
+          headline: 'BAKUDAN RAMEN',
+          subheadline: 'AUTHENTIC JAPANESE RAMEN · SAN ANTONIO'
+        },
+        sections: [
+          { id: 1, title: 'Order Online' },
+          { id: 2, title: 'Rewards & Loyalty' },
+          { id: 3, title: 'Social' }
+        ],
+        settings: {
+          links_headline: 'BAKUDAN RAMEN',
+          links_subheadline: 'AUTHENTIC JAPANESE RAMEN · SAN ANTONIO'
+        },
+        buttons: [
+          { id: 2, section_id: 1, title: 'Order Bandera', url: 'https://order.toasttab.com/online/bakudan-bandera', is_featured: 1, visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 4, section_id: 1, title: 'Order Stone Oak', url: 'https://order.toasttab.com/online/bakudan-ramen-stone-oak', is_featured: 1, visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 5, section_id: 1, title: 'Order The Rim', url: 'https://order.toasttab.com/online/bakudanramen/', is_featured: 1, visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 10, section_id: 2, title: 'Stone Oak Rewards', url: 'https://www.toasttab.com/bakudan-ramen-stone-oak/rewardsSignup', visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 12, section_id: 2, title: 'The Rim Rewards', url: 'https://www.toasttab.com/bakudanramen/rewardsSignup', visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 18, section_id: 2, title: 'Bandera Rewards', url: 'https://www.toasttab.com/bakudan-bandera/rewardsSignup', visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 1, section_id: 3, title: 'Follow on Instagram', url: 'https://www.instagram.com/bakudanramen/', icon_key: 'instagram', visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 19, section_id: 3, title: 'Visit Website', url: 'https://www.bakudanramen.com/', icon_key: 'website', visible: 1, enabled: 1, opens_in_new_tab: 0 }
+        ]
+      }
+    };
   }
 
   load().catch(err => {

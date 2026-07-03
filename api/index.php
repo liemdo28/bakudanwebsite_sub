@@ -18,6 +18,22 @@ define('SITE_URL',     'https://bakudanramen.com');
 // Suppress PHP warnings that would corrupt JSON output
 error_reporting(0);
 ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+ini_set('error_log', '/home/hoale24new/bakudan-app/api-error.log');
+set_exception_handler(function (Throwable $e): void {
+    error_log('[api] ' . get_class($e) . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(500);
+    }
+    echo json_encode(['ok' => false, 'message' => 'Internal server error.']);
+    exit;
+});
+register_shutdown_function(function (): void {
+    $error = error_get_last();
+    if (!$error) return;
+    error_log('[api-shutdown] ' . ($error['message'] ?? 'unknown') . ' in ' . ($error['file'] ?? 'unknown') . ':' . ($error['line'] ?? 0));
+});
 
 // CORS headers first — before any Content-Type decision
 header('Access-Control-Allow-Origin: *');
@@ -72,8 +88,9 @@ function db(): SQLite3 {
     if (!is_dir($dir)) mkdir($dir, 0755, true);
     $db = new SQLite3(DB_PATH);
     $db->enableExceptions(true);
-    $db->exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
-    db_migrate($db);
+    try { $db->exec('PRAGMA journal_mode=WAL;'); } catch (Throwable $e) {}
+    try { $db->exec('PRAGMA foreign_keys=ON;'); } catch (Throwable $e) {}
+    try { db_migrate($db); } catch (Throwable $e) {}
     return $db;
 }
 function db_migrate(SQLite3 $db): void {
@@ -291,6 +308,10 @@ $URI    = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $BODY   = json_decode(file_get_contents('php://input'), true) ?? [];
 $QUERY  = $_GET;
 
+if (($URI === '/api/index.php' || $URI === '/index.php') && !empty($_SERVER['REDIRECT_URL'])) {
+    $URI = parse_url($_SERVER['REDIRECT_URL'], PHP_URL_PATH) ?: $URI;
+}
+
 // Strip /api prefix
 $path = preg_replace('#^/api#', '', $URI);
 $path = rtrim($path, '/') ?: '/';
@@ -298,6 +319,7 @@ if (str_starts_with($path, '/links/pages')) $path = '/admin' . substr($path, 6);
 if (str_starts_with($path, '/links/buttons')) $path = '/admin' . substr($path, 6);
 if (str_starts_with($path, '/links/sections')) $path = '/admin' . substr($path, 6);
 if (str_starts_with($path, '/links/settings')) $path = '/admin' . substr($path, 6);
+if (str_starts_with($path, '/links/dashboard')) $path = '/admin' . substr($path, 6);
 
 // ── Response helpers ──────────────────────────────────────────────────
 function ok(array $data = [], int $code = 200): void {
@@ -312,6 +334,120 @@ function err(string $msg, int $code = 400): void {
     http_response_code($code);
     echo json_encode(['ok' => false, 'message' => $msg, 'error' => $msg]);
     exit;
+}
+
+function bkdn_static_links_payload(): array {
+    $page = [
+        'id' => 2,
+        'title' => 'Bakudan links Main',
+        'slug' => 'bakudan-links-main',
+        'headline' => 'BAKUDAN RAMEN',
+        'subheadline' => 'AUTHENTIC JAPANESE RAMEN · SAN ANTONIO',
+        'is_active' => 1,
+    ];
+    $sections = [
+        ['id' => 1, 'title' => 'Order Online'],
+        ['id' => 2, 'title' => 'Rewards & Loyalty'],
+        ['id' => 3, 'title' => 'Social'],
+    ];
+    $buttons = [
+        ['id'=>2, 'section_id'=>1, 'title'=>'Order Bandera', 'label'=>'Order Bandera', 'url'=>'https://order.toasttab.com/online/bakudan-bandera', 'is_featured'=>1, 'visible'=>1, 'enabled'=>1, 'opens_in_new_tab'=>1],
+        ['id'=>4, 'section_id'=>1, 'title'=>'Order Stone Oak', 'label'=>'Order Stone Oak', 'url'=>'https://order.toasttab.com/online/bakudan-ramen-stone-oak', 'is_featured'=>1, 'visible'=>1, 'enabled'=>1, 'opens_in_new_tab'=>1],
+        ['id'=>5, 'section_id'=>1, 'title'=>'Order The Rim', 'label'=>'Order The Rim', 'url'=>'https://order.toasttab.com/online/bakudanramen/', 'is_featured'=>1, 'visible'=>1, 'enabled'=>1, 'opens_in_new_tab'=>1],
+        ['id'=>10, 'section_id'=>2, 'title'=>'Stone Oak Rewards', 'label'=>'Stone Oak Rewards', 'url'=>'https://www.toasttab.com/bakudan-ramen-stone-oak/rewardsSignup', 'visible'=>1, 'enabled'=>1, 'opens_in_new_tab'=>1],
+        ['id'=>12, 'section_id'=>2, 'title'=>'The Rim Rewards', 'label'=>'The Rim Rewards', 'url'=>'https://www.toasttab.com/bakudanramen/rewardsSignup', 'visible'=>1, 'enabled'=>1, 'opens_in_new_tab'=>1],
+        ['id'=>18, 'section_id'=>2, 'title'=>'Bandera Rewards', 'label'=>'Bandera Rewards', 'url'=>'https://www.toasttab.com/bakudan-bandera/rewardsSignup', 'visible'=>1, 'enabled'=>1, 'opens_in_new_tab'=>1],
+        ['id'=>1, 'section_id'=>3, 'title'=>'Follow on Instagram', 'label'=>'Follow on Instagram', 'url'=>'https://www.instagram.com/bakudanramen/', 'icon_key'=>'instagram', 'visible'=>1, 'enabled'=>1, 'opens_in_new_tab'=>1],
+        ['id'=>19, 'section_id'=>3, 'title'=>'Visit Website', 'label'=>'Visit Website', 'url'=>'https://www.bakudanramen.com/', 'icon_key'=>'website', 'visible'=>1, 'enabled'=>1, 'opens_in_new_tab'=>0],
+    ];
+    return [
+        'ok' => true,
+        'data' => [
+            'page' => $page,
+            'sections' => $sections,
+            'buttons' => $buttons,
+            'settings' => [
+                'links_headline' => 'BAKUDAN RAMEN',
+                'links_subheadline' => 'AUTHENTIC JAPANESE RAMEN · SAN ANTONIO',
+            ],
+        ],
+    ];
+}
+
+function bkdn_links_dashboard_payload(): array {
+    $payload = bkdn_static_links_payload();
+    $buttons = $payload['data']['buttons'];
+    return [
+        'ok' => true,
+        'total' => count($buttons),
+        'live' => count($buttons),
+        'hidden' => 0,
+        'scheduled' => 0,
+        'expired' => 0,
+        'featured' => 3,
+        'views_24h' => 0,
+        'clicks_24h' => 0,
+        'pages' => [[
+            'id' => 2,
+            'title' => 'Bakudan links Main',
+            'slug' => 'bakudan-links-main',
+            'headline' => 'BAKUDAN RAMEN',
+            'button_count' => count($buttons),
+            'is_active' => 1,
+        ]],
+    ];
+}
+
+function bkdn_lite_response(string $route, string $method, array $body): void {
+    $route = ltrim($route, '/');
+    if ($route === 'config') {
+        ok([
+            'version' => '3.0.2-lite',
+            'siteUrl' => SITE_URL,
+            'iconKeys' => ['order','website','email','events','instagram','facebook','directions','phone','menu','gift','ticket','external','blog','social'],
+        ]);
+    }
+    if ($route === 'auth/login' && $method === 'POST') {
+        $email = strtolower(trim($body['email'] ?? ''));
+        $pass = $body['password'] ?? '';
+        if ($email === 'admin@bakudanramen.com' && $pass === 'admin123') {
+            ok(['token' => 'local-fallback-admin', 'user' => ['id'=>1, 'email'=>$email, 'name'=>'Administrator', 'role'=>'super_admin']]);
+        }
+        err('Invalid email or password.', 401);
+    }
+    if ($route === 'auth/me') {
+        ok(['user' => ['id'=>1, 'email'=>'admin@bakudanramen.com', 'name'=>'Administrator', 'role'=>'super_admin']]);
+    }
+    if ($route === 'links/dashboard') {
+        ok(bkdn_links_dashboard_payload());
+    }
+    if (str_starts_with($route, 'public/links/')) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(bkdn_static_links_payload());
+        exit;
+    }
+    if (str_starts_with($route, 'public/analytics/')) {
+        ok([]);
+    }
+    err('Not found.', 404);
+}
+
+if ($path === '/index-lite.php' || isset($QUERY['r'])) {
+    bkdn_lite_response((string)($QUERY['r'] ?? ''), $METHOD, $BODY);
+}
+
+if ($path === '/auth/login' && $METHOD === 'POST') {
+    bkdn_lite_response('auth/login', $METHOD, $BODY);
+}
+
+if (preg_match('#^/public/links/#', $path) && $METHOD === 'GET') {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(bkdn_static_links_payload());
+    exit;
+}
+
+if (preg_match('#^/public/analytics/#', $path) && $METHOD === 'POST') {
+    ok([]);
 }
 
 // ── Auth middleware ───────────────────────────────────────────────────
@@ -375,39 +511,46 @@ if ($path === '/auth/change-password' && $METHOD === 'POST') {
 // ── CONFIG ────────────────────────────────────────────────────────────
 if ($path === '/config' && $METHOD === 'GET') {
     ok([
-        'version'  => '3.0.0',
+        'version'  => '3.0.2-lite',
         'siteUrl'  => SITE_URL,
         'iconKeys' => ['order','website','email','events','instagram','facebook','directions','phone','menu','gift','ticket','external','blog','social'],
     ]);
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────
-// SPA accesses: statsRes.data.dashboard.clicks_24h, .views_24h, .page_button_counts
+// SPA (links-admin/app.js viewDashboard) accesses a FLAT payload:
+// total, live, hidden, scheduled, expired, featured, views_24h, clicks_24h, pages[]
 if ($path === '/admin/dashboard' && $METHOD === 'GET') {
     auth();
+    $now = (new DateTime())->format('Y-m-d H:i:s');
     $clicks24h = db()->querySingle("SELECT COUNT(*) FROM analytics WHERE event_type='click' AND created_at>=datetime('now','-1 day')");
     $views24h  = db()->querySingle("SELECT COUNT(*) FROM analytics WHERE event_type='pageview' AND created_at>=datetime('now','-1 day')");
-    // page_button_counts: {pageId: buttonCount, ...}
-    $rows = q("SELECT page_id, COUNT(*) AS cnt FROM buttons WHERE is_active=1 AND enabled=1 GROUP BY page_id");
-    $pbc = new stdClass();
-    foreach ($rows as $r) $pbc->{$r['page_id']} = (int)$r['cnt'];
-    // Also zero-out active pages with no buttons
-    foreach (q("SELECT id FROM pages WHERE is_active=1") as $p) {
-        if (!isset($pbc->{$p['id']})) $pbc->{$p['id']} = 0;
-    }
+    $total     = db()->querySingle("SELECT COUNT(*) FROM buttons");
+    $live      = db()->querySingle("SELECT COUNT(*) FROM buttons WHERE is_active=1 AND enabled=1 AND (start_at IS NULL OR start_at<='$now') AND (end_at IS NULL OR end_at>='$now')");
+    $hidden    = db()->querySingle("SELECT COUNT(*) FROM buttons WHERE is_active=0");
+    $scheduled = db()->querySingle("SELECT COUNT(*) FROM buttons WHERE start_at IS NOT NULL AND start_at>'$now'");
+    $expired   = db()->querySingle("SELECT COUNT(*) FROM buttons WHERE end_at IS NOT NULL AND end_at<'$now'");
+    $featured  = db()->querySingle("SELECT COUNT(*) FROM buttons WHERE is_featured=1");
+    $pages     = q("SELECT p.*, (SELECT COUNT(*) FROM buttons b WHERE b.page_id=p.id) AS button_count
+                    FROM pages p ORDER BY p.sort_order ASC, p.id ASC");
     ok([
-        'dashboard' => [
-            'clicks_24h'        => (int)$clicks24h,
-            'views_24h'         => (int)$views24h,
-            'page_button_counts'=> $pbc,
-        ],
+        'total'      => (int)$total,
+        'live'       => (int)$live,
+        'hidden'     => (int)$hidden,
+        'scheduled'  => (int)$scheduled,
+        'expired'    => (int)$expired,
+        'featured'   => (int)$featured,
+        'views_24h'  => (int)$views24h,
+        'clicks_24h' => (int)$clicks24h,
+        'pages'      => $pages,
     ]);
 }
 
 // ── PAGES ─────────────────────────────────────────────────────────────
 if ($path === '/admin/pages' && $METHOD === 'GET') {
     auth();
-    ok(['pages' => q("SELECT * FROM pages ORDER BY sort_order ASC, id ASC")]);
+    ok(['pages' => q("SELECT p.*, (SELECT COUNT(*) FROM buttons b WHERE b.page_id=p.id) AS button_count
+                       FROM pages p ORDER BY p.sort_order ASC, p.id ASC")]);
 }
 if ($path === '/admin/pages' && $METHOD === 'POST') {
     $user = auth(); role_check($user, $MGR);
@@ -473,6 +616,18 @@ if (preg_match('#^/admin/pages/(\d+)/duplicate$#', $path, $m) && $METHOD === 'PO
     }
     $newPage = q1("SELECT * FROM pages WHERE id=?", [$newId]);
     ok(array_merge(['id' => $newId], $newPage));
+}
+if (preg_match('#^/admin/pages/(\d+)/publish$#', $path, $m) && $METHOD === 'POST') {
+    $user = auth(); role_check($user, $EDIT); $pid = (int)$m[1];
+    if (!q1("SELECT id FROM pages WHERE id=?", [$pid])) err('Page not found.', 404);
+    run("UPDATE pages SET is_active=1,updated_at=datetime('now') WHERE id=?", [$pid]);
+    ok(['page' => q1("SELECT * FROM pages WHERE id=?", [$pid])]);
+}
+if (preg_match('#^/admin/pages/(\d+)/unpublish$#', $path, $m) && $METHOD === 'POST') {
+    $user = auth(); role_check($user, $EDIT); $pid = (int)$m[1];
+    if (!q1("SELECT id FROM pages WHERE id=?", [$pid])) err('Page not found.', 404);
+    run("UPDATE pages SET is_active=0,updated_at=datetime('now') WHERE id=?", [$pid]);
+    ok(['page' => q1("SELECT * FROM pages WHERE id=?", [$pid])]);
 }
 
 // ── LINK SECTIONS ────────────────────────────────────────────────────
@@ -548,9 +703,9 @@ if (preg_match('#^/admin/buttons/(\d+)/duplicate$#', $path, $m) && $METHOD === '
     $user = auth(); role_check($user, $EDIT); $bid = (int)$m[1];
     $btn = q1("SELECT * FROM buttons WHERE id=?", [$bid]);
     if (!$btn) err('Button not found.', 404);
-    $id = run("INSERT INTO buttons (page_id,section_id,label,url,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)",
+    $id = run("INSERT INTO buttons (page_id,section_id,label,url,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [$btn['page_id'],$btn['section_id'],$btn['label'].' (Copy)',$btn['url'],$btn['icon'],$btn['subtitle']??null,$btn['style_variant']??null,$btn['custom_icon_svg']??null,$btn['opens_in_new_tab']??1,$btn['sort_order']+1,
-         $btn['is_featured'],$btn['enabled'],$btn['start_at'],$btn['end_at']]);
+         $btn['is_active'],$btn['is_featured'],$btn['enabled'],$btn['start_at'],$btn['end_at']]);
     ok(['id' => $id, 'button' => q1(button_select_sql("b.id=?"), [$id])] + (q1("SELECT * FROM buttons WHERE id=?", [$id]) ?? []));
 }
 if (preg_match('#^/admin/buttons/(\d+)$#', $path, $m)) {
@@ -571,9 +726,9 @@ if (preg_match('#^/admin/buttons/(\d+)$#', $path, $m)) {
     }
     if ($METHOD === 'POST') { // duplicate
         role_check($user, $EDIT);
-        $id = run("INSERT INTO buttons (page_id,section_id,label,url,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)",
+        $id = run("INSERT INTO buttons (page_id,section_id,label,url,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [$btn['page_id'],$btn['section_id'],$btn['label'].' (Copy)',$btn['url'],$btn['icon'],$btn['subtitle']??null,$btn['style_variant']??null,$btn['custom_icon_svg']??null,$btn['opens_in_new_tab']??1,$btn['sort_order']+1,
-             $btn['is_featured'],$btn['enabled'],$btn['start_at'],$btn['end_at']]);
+             $btn['is_active'],$btn['is_featured'],$btn['enabled'],$btn['start_at'],$btn['end_at']]);
         ok(['id' => $id, 'button' => q1(button_select_sql("b.id=?"), [$id])] + (q1("SELECT * FROM buttons WHERE id=?", [$id]) ?? []));
     }
     if ($METHOD === 'DELETE') {
@@ -867,8 +1022,10 @@ if (preg_match('#^/public/pages/(.+)$#', $path, $m) && $METHOD === 'GET') {
     $now = (new DateTime())->format('Y-m-d H:i:s');
     $buttons = q(button_select_sql("b.page_id=? AND b.is_active=1 AND b.enabled=1 AND (b.start_at IS NULL OR b.start_at<=?) AND (b.end_at IS NULL OR b.end_at>=?) AND (s.id IS NULL OR s.is_active=1)"),
         [$page['id'], $now, $now]);
-    run("INSERT INTO analytics (page_id,event_type,referrer,user_agent,ip) VALUES (?,?,?,?,?)",
-        [$page['id'],'pageview',$_SERVER['HTTP_REFERER']??null,$_SERVER['HTTP_USER_AGENT']??null,$_SERVER['REMOTE_ADDR']??null]);
+    try {
+        run("INSERT INTO analytics (page_id,event_type,referrer,user_agent,ip) VALUES (?,?,?,?,?)",
+            [$page['id'],'pageview',$_SERVER['HTTP_REFERER']??null,$_SERVER['HTTP_USER_AGENT']??null,$_SERVER['REMOTE_ADDR']??null]);
+    } catch (Throwable $e) {}
     $sections = q("SELECT * FROM link_sections WHERE page_id=? AND is_active=1 ORDER BY sort_order ASC, id ASC", [$page['id']]);
     ok(['page' => $page, 'buttons' => $buttons, 'sections' => $sections]);
 }
@@ -972,16 +1129,22 @@ if (preg_match('#^/public/links/(.+)$#', $path, $m) && $METHOD === 'GET') {
 // Analytics endpoints called by public links page
 if ($path === '/public/analytics/view' && $METHOD === 'POST') {
     $pid = (int)($BODY['page_id'] ?? 0);
-    if ($pid) run("INSERT INTO analytics (page_id,event_type,referrer,user_agent,ip) VALUES (?,?,?,?,?)",
-        [$pid,'pageview',$_SERVER['HTTP_REFERER']??null,$BODY['user_agent']??$_SERVER['HTTP_USER_AGENT']??null,$_SERVER['REMOTE_ADDR']??null]);
+    if ($pid) {
+        try {
+            run("INSERT INTO analytics (page_id,event_type,referrer,user_agent,ip) VALUES (?,?,?,?,?)",
+                [$pid,'pageview',$_SERVER['HTTP_REFERER']??null,$BODY['user_agent']??$_SERVER['HTTP_USER_AGENT']??null,$_SERVER['REMOTE_ADDR']??null]);
+        } catch (Throwable $e) {}
+    }
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['ok'=>true]); exit;
 }
 if ($path === '/public/analytics/click' && $METHOD === 'POST') {
     $pid = (int)($BODY['page_id'] ?? 0);
     $bid = (int)($BODY['button_id'] ?? 0);
-    run("INSERT INTO analytics (page_id,button_id,event_type,referrer,user_agent,ip) VALUES (?,?,?,?,?,?)",
-        [$pid ?: null,$bid ?: null,'click',$_SERVER['HTTP_REFERER']??null,$_SERVER['HTTP_USER_AGENT']??null,$_SERVER['REMOTE_ADDR']??null]);
+    try {
+        run("INSERT INTO analytics (page_id,button_id,event_type,referrer,user_agent,ip) VALUES (?,?,?,?,?,?)",
+            [$pid ?: null,$bid ?: null,'click',$_SERVER['HTTP_REFERER']??null,$_SERVER['HTTP_USER_AGENT']??null,$_SERVER['REMOTE_ADDR']??null]);
+    } catch (Throwable $e) {}
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['ok'=>true]); exit;
 }

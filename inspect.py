@@ -1,0 +1,7 @@
+f=open('api/index.php','r',encoding='utf-8')  
+c=f.read()  
+f.close()  
+print('88655:', repr(c[88655:88800]))  
+print('88830:', repr(c[88830:88950]))  
+print('89415:', repr(c[89415:89550]))  
+print('89779:', repr(c[89779:89900]))  

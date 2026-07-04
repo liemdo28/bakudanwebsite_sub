@@ -1,0 +1,9 @@
+RewriteEngine On
+
+# Pass Authorization header through Apache (DreamHost shared hosting strips it otherwise)
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [QSA,L]
+

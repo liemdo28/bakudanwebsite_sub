@@ -1,0 +1,47 @@
+============================================================ 
+ BAKUDAN GA4 SOURCE-CODE AUDIT - MEASUREMENT ID: G-3GZ2RYDR6M 
+ Generated: Wed 06/24/2026 22:31:25.09 
+ Working dir: E:\Project\Master\Bakudan\bakudanramen.com-current\ 
+============================================================ 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\about.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\accessibility.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\best-ramen-san-antonio.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\blog-authentic.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\blog-chashu.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\blog-journey.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\blog-ramen-101.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\blog-tonkotsu.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\blog.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\fundraiser.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\happy-hour-ramen-san-antonio.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\happy-hour.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\index.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\japanese-food-san-antonio.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\locations.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\menu.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\order.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\privacy.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\ramen-guide.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\ramen-near-the-rim-la-cantera.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\ramen-near-utsa.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\ramen-stone-oak.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\terms.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\tonkotsu-ramen-san-antonio.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\vegetarian-ramen-san-antonio.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\blog-cms\index.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\blog-cms\post.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\links\index.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\links-admin\index.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\links-temp\index.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\locations\bandera.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\locations\stone-oak.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\locations\the-rim.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\order-smart\index.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\reservations\index.html 
+[OK]    E:\Project\Master\Bakudan\bakudanramen.com-current\store-locations\index.html 
+ 
+----------------------------------------------------------- 
+TOTAL HTML FILES SCANNED:  36 
+FILES WITH GA4 TAG:       36 
+FILES MISSING GA4 TAG:    0 
+ 

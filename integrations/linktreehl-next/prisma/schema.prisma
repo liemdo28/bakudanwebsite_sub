@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Brand {
+  id              Int        @id @default(autoincrement())
+  name            String     @db.VarChar(100)
+  slug            String     @unique @db.VarChar(100)
+  logo_path       String?    @db.VarChar(500)
+  primary_color   String     @default("#C8102E") @db.VarChar(7)
+  secondary_color String     @default("#1A1A1A") @db.VarChar(7)
+  is_active       Boolean    @default(true)
+  created_at      DateTime   @default(now())
+  updated_at      DateTime   @updatedAt
+
+  stores     Store[]
+  link_pages LinkPage[]
+  users      User[]
+
+  @@map("brands")
+}
+
+model Store {
+  id            Int      @id @default(autoincrement())
+  brand_id      Int
+  name          String   @db.VarChar(100)
+  slug          String   @unique @db.VarChar(100)
+  location_name String?  @db.VarChar(200)
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  brand      Brand      @relation(fields: [brand_id], references: [id])
+  link_pages LinkPage[]
+  users      User[]
+
+  @@index([brand_id])
+  @@map("stores")
+}
+
+model LinkPage {
+  id                Int      @id @default(autoincrement())
+  brand_id          Int
+  store_id          Int?
+  title             String   @db.VarChar(200)
+  slug              String   @unique @db.VarChar(200)
+  headline          String?  @db.VarChar(300)
+  subheadline       String?  @db.VarChar(500)
+  hero_image_path   String?  @db.VarChar(500)
+  seo_title         String?  @db.VarChar(200)
+  seo_description   String?  @db.VarChar(500)
+  social_image_path String?  @db.VarChar(500)
+  theme_json        Json?
+  is_active         Boolean  @default(true)
+  published_at      DateTime?
+  expires_at        DateTime?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  brand        Brand            @relation(fields: [brand_id], references: [id])
+  store        Store?           @relation(fields: [store_id], references: [id])
+  buttons      LinkButton[]
+  click_events LinkClickEvent[]
+  qr_assets    QrAsset[]
+
+  @@index([brand_id])
+  @@index([store_id])
+  @@index([slug])
+  @@map("link_pages")
+}
+
+model LinkButton {
+  id               Int       @id @default(autoincrement())
+  link_page_id     Int
+  title            String    @db.VarChar(200)
+  url              String    @db.VarChar(2000)
+  button_style     String    @default("primary") @db.VarChar(50)
+  sort_order       Int       @default(0)
+  icon_name        String?   @db.VarChar(100)
+  is_active        Boolean   @default(true)
+  is_featured      Boolean   @default(false)
+  animation        String?   @db.VarChar(50)
+  opens_in_new_tab Boolean   @default(true)
+  start_at         DateTime?
+  end_at           DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  link_page    LinkPage         @relation(fields: [link_page_id], references: [id], onDelete: Cascade)
+  click_events LinkClickEvent[]
+
+  @@index([link_page_id, sort_order])
+  @@map("link_buttons")
+}
+
+model LinkClickEvent {
+  id             BigInt   @id @default(autoincrement())
+  link_page_id   Int
+  link_button_id Int?
+  event_type     String   @db.VarChar(20)
+  ip_hash        String?  @db.VarChar(64)
+  user_agent     String?  @db.VarChar(500)
+  referer        String?  @db.VarChar(1000)
+  device_type    String?  @db.VarChar(20)
+  utm_source     String?  @db.VarChar(100)
+  utm_medium     String?  @db.VarChar(100)
+  utm_campaign   String?  @db.VarChar(100)
+  created_at     DateTime @default(now())
+
+  link_page   LinkPage    @relation(fields: [link_page_id], references: [id], onDelete: Cascade)
+  link_button LinkButton? @relation(fields: [link_button_id], references: [id], onDelete: SetNull)
+
+  @@index([link_page_id, created_at])
+  @@index([link_button_id])
+  @@index([event_type, created_at])
+  @@map("link_click_events")
+}
+
+model QrAsset {
+  id           Int      @id @default(autoincrement())
+  link_page_id Int
+  file_path    String   @db.VarChar(500)
+  format       String   @db.VarChar(10)
+  created_at   DateTime @default(now())
+
+  link_page LinkPage @relation(fields: [link_page_id], references: [id], onDelete: Cascade)
+
+  @@index([link_page_id])
+  @@map("qr_assets")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.VarChar(100)
+  email         String   @unique @db.VarChar(200)
+  password_hash String   @db.VarChar(255)
+  role          String   @default("viewer") @db.VarChar(30)
+  brand_id      Int?
+  store_id      Int?
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  brand Brand? @relation(fields: [brand_id], references: [id])
+  store Store? @relation(fields: [store_id], references: [id])
+
+  @@index([email])
+  @@index([brand_id])
+  @@index([store_id])
+  @@map("users")
+}

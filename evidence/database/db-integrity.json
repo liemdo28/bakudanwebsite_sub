@@ -1,0 +1,235 @@
+{
+  "tables": [
+    {
+      "name": "analytics",
+      "sql": "CREATE TABLE analytics (\n  id           INTEGER PRIMARY KEY AUTOINCREMENT,\n  page_id      INTEGER REFERENCES pages(id)      ON DELETE SET NULL,\n  button_id    INTEGER REFERENCES buttons(id)    ON DELETE SET NULL,\n  shortlink_id INTEGER REFERENCES shortlinks(id) ON DELETE SET NULL,\n  event_type   TEXT    NOT NULL DEFAULT 'click',\n  referrer     TEXT,\n  user_agent   TEXT,\n  ip           TEXT,\n  created_at   TEXT    NOT NULL DEFAULT (datetime('now'))\n)"
+    },
+    {
+      "name": "audit_logs",
+      "sql": "CREATE TABLE audit_logs (\r\n        id INTEGER PRIMARY KEY AUTOINCREMENT,\r\n        user_id INTEGER, action TEXT NOT NULL,\r\n        entity_type TEXT, entity_id INTEGER,\r\n        before_json TEXT, after_json TEXT, page_id INTEGER,\r\n        created_at TEXT NOT NULL DEFAULT (datetime('now'))\r\n    )"
+    },
+    {
+      "name": "blog_posts",
+      "sql": "CREATE TABLE blog_posts (\n  id           INTEGER PRIMARY KEY AUTOINCREMENT,\n  title        TEXT    NOT NULL,\n  slug         TEXT    UNIQUE NOT NULL,\n  status       TEXT    NOT NULL DEFAULT 'draft',\n  content      TEXT,\n  excerpt      TEXT,\n  cover_image  TEXT,\n  author_id    INTEGER REFERENCES users(id),\n  published_at TEXT,\n  scheduled_at TEXT,\n  archived_at  TEXT,\n  created_at   TEXT    NOT NULL DEFAULT (datetime('now')),\n  updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))\n, category TEXT, tags TEXT, seo_title TEXT, seo_description TEXT, og_image TEXT, tiptap_json TEXT, reading_time INTEGER NOT NULL DEFAULT 0)"
+    },
+    {
+      "name": "buttons",
+      "sql": "CREATE TABLE buttons (\n  id          INTEGER PRIMARY KEY AUTOINCREMENT,\n  page_id     INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,\n  label       TEXT    NOT NULL,\n  url         TEXT    NOT NULL,\n  icon        TEXT,\n  sort_order  INTEGER NOT NULL DEFAULT 0,\n  is_active   INTEGER NOT NULL DEFAULT 1,\n  is_featured INTEGER NOT NULL DEFAULT 0,\n  enabled     INTEGER NOT NULL DEFAULT 1,\n  start_at    TEXT,\n  end_at      TEXT,\n  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),\n  updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))\n, section_id INTEGER REFERENCES link_sections(id) ON DELETE SET NULL, subtitle TEXT, style_variant TEXT, custom_icon_svg TEXT, opens_in_new_tab INTEGER NOT NULL DEFAULT 1, link_type TEXT NOT NULL DEFAULT 'external', internal_page_id INTEGER REFERENCES pages(id) ON DELETE SET NULL)"
+    },
+    {
+      "name": "link_health",
+      "sql": "CREATE TABLE link_health (\r\n        id INTEGER PRIMARY KEY AUTOINCREMENT,\r\n        button_id INTEGER NOT NULL REFERENCES buttons(id) ON DELETE CASCADE,\r\n        url TEXT NOT NULL, status TEXT NOT NULL, http_code INTEGER,\r\n        checked_at TEXT NOT NULL DEFAULT (datetime('now'))\r\n    )"
+    },
+    {
+      "name": "link_sections",
+      "sql": "CREATE TABLE link_sections (\n        id INTEGER PRIMARY KEY AUTOINCREMENT,\n        page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,\n        title TEXT NOT NULL,\n        section_key TEXT,\n        sort_order INTEGER NOT NULL DEFAULT 0,\n        is_active INTEGER NOT NULL DEFAULT 1,\n        created_at TEXT NOT NULL DEFAULT (datetime('now')),\n        updated_at TEXT NOT NULL DEFAULT (datetime('now'))\n    , status TEXT NOT NULL DEFAULT 'active', start_at TEXT, end_at TEXT)"
+    },
+    {
+      "name": "locations",
+      "sql": "CREATE TABLE locations (\r\n        id INTEGER PRIMARY KEY AUTOINCREMENT,\r\n        name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL,\r\n        address TEXT, phone TEXT,\r\n        toast_order_url TEXT, toast_signup_url TEXT, maps_url TEXT,\r\n        is_active INTEGER NOT NULL DEFAULT 1,\r\n        sort_order INTEGER NOT NULL DEFAULT 0,\r\n        created_at TEXT NOT NULL DEFAULT (datetime('now')),\r\n        updated_at TEXT NOT NULL DEFAULT (datetime('now'))\r\n    )"
+    },
+    {
+      "name": "page_versions",
+      "sql": "CREATE TABLE page_versions (\r\n        id INTEGER PRIMARY KEY AUTOINCREMENT,\r\n        page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,\r\n        version_number INTEGER NOT NULL,\r\n        snapshot_json TEXT NOT NULL,\r\n        published_by INTEGER,\r\n        created_at TEXT NOT NULL DEFAULT (datetime('now'))\r\n    )"
+    },
+    {
+      "name": "pages",
+      "sql": "CREATE TABLE pages (\n  id          INTEGER PRIMARY KEY AUTOINCREMENT,\n  title       TEXT    NOT NULL,\n  slug        TEXT    UNIQUE NOT NULL,\n  headline    TEXT,\n  store_slug  TEXT,\n  is_active   INTEGER NOT NULL DEFAULT 0,\n  sort_order  INTEGER NOT NULL DEFAULT 0,\n  theme       TEXT,\n  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),\n  updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))\n, page_type TEXT NOT NULL DEFAULT 'link_hub', visibility TEXT NOT NULL DEFAULT 'public', status TEXT NOT NULL DEFAULT 'draft', preview_token TEXT, scheduled_publish_at TEXT, staff_password_hash TEXT)"
+    },
+    {
+      "name": "redirects",
+      "sql": "CREATE TABLE redirects (\n  id           INTEGER PRIMARY KEY AUTOINCREMENT,\n  page_id      INTEGER REFERENCES pages(id) ON DELETE CASCADE,\n  source       TEXT    NOT NULL,\n  destination  TEXT    NOT NULL,\n  is_permanent INTEGER NOT NULL DEFAULT 0,\n  created_at   TEXT    NOT NULL DEFAULT (datetime('now'))\n)"
+    },
+    {
+      "name": "settings",
+      "sql": "CREATE TABLE settings (\n  key        TEXT PRIMARY KEY,\n  value      TEXT NOT NULL,\n  updated_at TEXT NOT NULL DEFAULT (datetime('now'))\n)"
+    },
+    {
+      "name": "shortlinks",
+      "sql": "CREATE TABLE shortlinks (\n  id           INTEGER PRIMARY KEY AUTOINCREMENT,\n  code         TEXT    UNIQUE NOT NULL,\n  destination  TEXT    NOT NULL,\n  label        TEXT,\n  utm_source   TEXT,\n  utm_medium   TEXT,\n  utm_campaign TEXT,\n  clicks       INTEGER NOT NULL DEFAULT 0,\n  is_active    INTEGER NOT NULL DEFAULT 1,\n  created_at   TEXT    NOT NULL DEFAULT (datetime('now')),\n  updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))\n)"
+    },
+    {
+      "name": "sqlite_sequence",
+      "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+    },
+    {
+      "name": "subscribers",
+      "sql": "CREATE TABLE subscribers (\n  id         INTEGER PRIMARY KEY AUTOINCREMENT,\n  email      TEXT    UNIQUE NOT NULL,\n  name       TEXT,\n  source     TEXT,\n  is_active  INTEGER NOT NULL DEFAULT 1,\n  created_at TEXT    NOT NULL DEFAULT (datetime('now'))\n)"
+    },
+    {
+      "name": "users",
+      "sql": "CREATE TABLE users (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  email         TEXT    UNIQUE NOT NULL,\n  password_hash TEXT    NOT NULL,\n  name          TEXT,\n  role          TEXT    NOT NULL DEFAULT 'viewer',\n  store_slug    TEXT,\n  is_active     INTEGER NOT NULL DEFAULT 1,\n  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),\n  updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))\n)"
+    }
+  ],
+  "counts": [
+    {
+      "table_name": "pages",
+      "count": 2
+    },
+    {
+      "table_name": "link_sections",
+      "count": 6
+    },
+    {
+      "table_name": "buttons",
+      "count": 17
+    },
+    {
+      "table_name": "locations",
+      "count": 3
+    },
+    {
+      "table_name": "page_versions",
+      "count": 0
+    },
+    {
+      "table_name": "analytics",
+      "count": 169
+    },
+    {
+      "table_name": "audit_logs",
+      "count": 3
+    },
+    {
+      "table_name": "shortlinks",
+      "count": 0
+    },
+    {
+      "table_name": "link_health",
+      "count": 0
+    }
+  ],
+  "duplicate_buttons_active": [],
+  "buttons_without_page": [],
+  "buttons_without_section": [
+    {
+      "id": 1,
+      "label": "Follow on Instagram",
+      "page_id": 2,
+      "section_id": null
+    },
+    {
+      "id": 6,
+      "label": "Visit Website",
+      "page_id": 2,
+      "section_id": null
+    },
+    {
+      "id": 8,
+      "label": "Facebook",
+      "page_id": 2,
+      "section_id": null
+    },
+    {
+      "id": 9,
+      "label": "Email Club & Offers",
+      "page_id": 2,
+      "section_id": null
+    },
+    {
+      "id": 14,
+      "label": "Text Updates & Offers",
+      "page_id": 2,
+      "section_id": null
+    },
+    {
+      "id": 19,
+      "label": "Training Videos Coming Soon",
+      "page_id": 4,
+      "section_id": null
+    },
+    {
+      "id": 20,
+      "label": "Training Videos Coming Soon (Copy)",
+      "page_id": 4,
+      "section_id": null
+    },
+    {
+      "id": 21,
+      "label": "YouTube Short: Bakudan Ramen 1",
+      "page_id": 2,
+      "section_id": null
+    },
+    {
+      "id": 22,
+      "label": "YouTube Short: Bakudan Ramen 2",
+      "page_id": 2,
+      "section_id": null
+    }
+  ],
+  "sections_without_page": [],
+  "duplicate_page_slugs": [],
+  "invalid_internal_page_id": [],
+  "expired_active_buttons": [],
+  "future_visible_buttons": [],
+  "multiple_published_pages_same_slug": [],
+  "link_type_counts": [
+    {
+      "link_type": "external",
+      "count": 14
+    },
+    {
+      "link_type": "youtube",
+      "count": 2
+    },
+    {
+      "link_type": "website",
+      "count": 1
+    }
+  ],
+  "location_records": [
+    {
+      "id": 1,
+      "name": "The Rim",
+      "slug": "the-rim",
+      "toast_order_url": "https://order.toasttab.com/online/bakudanramen/",
+      "toast_signup_url": "https://www.toasttab.com/bakudanramen/rewardsSignup",
+      "is_active": 1,
+      "sort_order": 10
+    },
+    {
+      "id": 2,
+      "name": "Stone Oak",
+      "slug": "stone-oak",
+      "toast_order_url": "https://order.toasttab.com/online/bakudan-ramen-stone-oak",
+      "toast_signup_url": "https://www.toasttab.com/bakudan-ramen-stone-oak/rewardsSignup",
+      "is_active": 1,
+      "sort_order": 20
+    },
+    {
+      "id": 3,
+      "name": "Bandera",
+      "slug": "bandera",
+      "toast_order_url": "https://order.toasttab.com/online/bakudan-bandera",
+      "toast_signup_url": "https://www.toasttab.com/bakudan-bandera/rewardsSignup",
+      "is_active": 1,
+      "sort_order": 30
+    }
+  ],
+  "recent_audit_logs": [
+    {
+      "id": 3,
+      "action": "button_created",
+      "entity_type": "button",
+      "entity_id": 22,
+      "page_id": 2,
+      "created_at": "2026-07-04 00:43:51"
+    },
+    {
+      "id": 2,
+      "action": "button_created",
+      "entity_type": "button",
+      "entity_id": 21,
+      "page_id": 2,
+      "created_at": "2026-07-04 00:43:51"
+    },
+    {
+      "id": 1,
+      "action": "button_updated",
+      "entity_type": "button",
+      "entity_id": 9,
+      "page_id": 2,
+      "created_at": "2026-07-04 00:14:10"
+    }
+  ]
+}

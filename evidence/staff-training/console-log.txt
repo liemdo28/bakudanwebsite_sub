@@ -1,0 +1,24 @@
+Browser console log — NOT CAPTURED for the live bakudanramen.com domain.
+
+Reason: this session's browser preview tool can only navigate to locally-started
+dev servers, not external live sites (confirmed by testing — window.location.href
+to https://www.bakudanramen.com/links/ silently did not navigate, document.location
+stayed on localhost). There is no way to open the real production URL in this
+sandbox's browser to capture a real console panel.
+
+What WAS captured instead, as the closest available substitute:
+- Local static-file-server browser testing of the exact same links/index.html and
+  links-admin/app.js files before deploy, with zero console errors (see the main
+  session transcript around the "static-preview" server checks earlier in this
+  work). That verified no JS runtime errors in the code being shipped.
+- Live HTTP-level verification of the deployed API responses (see network-log.txt),
+  which confirms the server-side behavior is correct.
+
+Recommended manual step for the user: open https://www.bakudanramen.com/links/ and
+the staff URL below in a real browser, open DevTools > Console, and confirm zero
+errors. This should take under a minute and is the one piece of evidence this
+session could not produce directly.
+
+Staff Training URL to check (contains a live access token — treat as sensitive,
+do not post publicly):
+https://www.bakudanramen.com/links/staff-training-videos?token=17c2eb3a60f84a51c6c0918d444b319697c7b9955a38a7ac

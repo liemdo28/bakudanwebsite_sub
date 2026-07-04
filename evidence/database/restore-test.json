@@ -1,0 +1,8 @@
+{
+  "source": "evidence\\database\\bakudan-audit-copy.db",
+  "restored_copy": "evidence\\database\\restore-test\\bakudan-restore-test.db",
+  "pages": 2,
+  "buttons": 17,
+  "integrity_check": "ok",
+  "pass": true
+}

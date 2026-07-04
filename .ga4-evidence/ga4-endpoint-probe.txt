@@ -1,0 +1,16 @@
+============================================================ 
+ 
+[1/3] Probing Google Tag Manager gtag.js endpoint... 
+ 
+  STATUS: HTTP/200  BYTES: 478654 
+ 
+[2/3] Probing Google Analytics 4 Measurement Protocol endpoint... 
+ 
+  STATUS: HTTP/204  BYTES: 0 
+ 
+[3/3] Probing Google Analytics 4 alternate endpoint... 
+ 
+  STATUS: HTTP/204 
+ 
+============================================================ 
+============================================================ 

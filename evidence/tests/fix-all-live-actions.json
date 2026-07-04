@@ -1,0 +1,203 @@
+[
+  {
+    "name": "login",
+    "status": 200,
+    "ok": true
+  },
+  {
+    "name": "before_staff_page",
+    "status": 200,
+    "ok": true,
+    "page": {
+      "id": 4,
+      "title": "Staff Training Videos",
+      "slug": "staff-training-videos",
+      "page_type": "link_hub",
+      "visibility": "public",
+      "status": "published",
+      "is_active": 1,
+      "preview_token": null
+    }
+  },
+  {
+    "name": "generate_staff_access_token",
+    "status": 200,
+    "ok": true,
+    "preview_url_has_token": true
+  },
+  {
+    "name": "update_staff_type_visibility",
+    "status": 200,
+    "ok": true,
+    "page": {
+      "id": 4,
+      "title": "Staff Training Videos",
+      "slug": "staff-training-videos",
+      "page_type": "staff_training",
+      "visibility": "staff_only",
+      "status": "published",
+      "is_active": 1,
+      "preview_token": "17c2eb3a60f84a51c6c0918d444b319697c7b9955a38a7ac"
+    }
+  },
+  {
+    "name": "publish_main_seed_version",
+    "status": 200,
+    "ok": true,
+    "page": {
+      "id": 2,
+      "title": "Bakudan links Main",
+      "slug": "bakudan-links-main",
+      "page_type": "link_hub",
+      "visibility": "public",
+      "status": "published",
+      "is_active": 1,
+      "preview_token": null
+    }
+  },
+  {
+    "name": "publish_staff_seed_version",
+    "status": 200,
+    "ok": true,
+    "page": {
+      "id": 4,
+      "title": "Staff Training Videos",
+      "slug": "staff-training-videos",
+      "page_type": "staff_training",
+      "visibility": "staff_only",
+      "status": "published",
+      "is_active": 1,
+      "preview_token": "17c2eb3a60f84a51c6c0918d444b319697c7b9955a38a7ac"
+    }
+  },
+  {
+    "name": "after_staff_page",
+    "status": 200,
+    "ok": true,
+    "page": {
+      "id": 4,
+      "title": "Staff Training Videos",
+      "slug": "staff-training-videos",
+      "page_type": "staff_training",
+      "visibility": "staff_only",
+      "status": "published",
+      "is_active": 1,
+      "preview_token": "17c2eb3a60f84a51c6c0918d444b319697c7b9955a38a7ac"
+    }
+  },
+  {
+    "name": "public_staff_without_token",
+    "status": 403,
+    "ok": false,
+    "message": "This page requires a staff access link."
+  },
+  {
+    "name": "public_staff_with_token",
+    "status": 200,
+    "ok": true,
+    "buttons_count": 3,
+    "page": {
+      "id": 4,
+      "title": "Staff Training Videos",
+      "slug": "staff-training-videos",
+      "page_type": "staff_training",
+      "visibility": "staff_only",
+      "status": "published",
+      "is_active": 1,
+      "preview_token": "17c2eb3a60f84a51c6c0918d444b319697c7b9955a38a7ac"
+    }
+  },
+  {
+    "name": "main_versions",
+    "status": 200,
+    "ok": true,
+    "versions_count": 1,
+    "versions_sample": [
+      {
+        "id": 4,
+        "version_number": 1,
+        "published_by": 1,
+        "created_at": "2026-07-04 01:30:01"
+      }
+    ]
+  },
+  {
+    "name": "staff_versions",
+    "status": 200,
+    "ok": true,
+    "versions_count": 1,
+    "versions_sample": [
+      {
+        "id": 5,
+        "version_number": 1,
+        "published_by": 1,
+        "created_at": "2026-07-04 01:30:03"
+      }
+    ]
+  },
+  {
+    "name": "run_link_health_check",
+    "status": 200,
+    "ok": true,
+    "checked": 14,
+    "results_count": 0
+  },
+  {
+    "name": "link_health_results",
+    "status": 200,
+    "ok": true,
+    "results_count": 14,
+    "results_sample": [
+      {
+        "id": 13,
+        "button_id": 22,
+        "url": "https://youtube.com/shorts/9tZobv-gB4A?is=MIECFTu1FBke9_mm",
+        "status": "redirected",
+        "http_code": 301,
+        "checked_at": "2026-07-04 01:30:22",
+        "label": "YouTube Short: Bakudan Ramen 2",
+        "page_id": 2
+      },
+      {
+        "id": 12,
+        "button_id": 21,
+        "url": "https://youtube.com/shorts/_qfiQL9phTk?is=UgYZuaCDNzpVLKwJ",
+        "status": "redirected",
+        "http_code": 301,
+        "checked_at": "2026-07-04 01:30:20",
+        "label": "YouTube Short: Bakudan Ramen 1",
+        "page_id": 2
+      },
+      {
+        "id": 6,
+        "button_id": 8,
+        "url": "https://www.facebook.com/profile.php?id=61583741613406",
+        "status": "redirected",
+        "http_code": 302,
+        "checked_at": "2026-07-04 01:30:17",
+        "label": "Facebook",
+        "page_id": 2
+      },
+      {
+        "id": 3,
+        "button_id": 4,
+        "url": "https://order.toasttab.com/online/bakudan-ramen-stone-oak",
+        "status": "broken",
+        "http_code": 403,
+        "checked_at": "2026-07-04 01:30:16",
+        "label": "Order Stone Oak",
+        "page_id": 2
+      },
+      {
+        "id": 4,
+        "button_id": 5,
+        "url": "https://order.toasttab.com/online/bakudanramen/",
+        "status": "broken",
+        "http_code": 403,
+        "checked_at": "2026-07-04 01:30:16",
+        "label": "Order The Rim",
+        "page_id": 2
+      }
+    ]
+  }
+]

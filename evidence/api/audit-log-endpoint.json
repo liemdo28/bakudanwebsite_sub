@@ -1,0 +1,68 @@
+{
+  "endpoint": "/admin/audit-logs?limit=20",
+  "status": 200,
+  "ok": true,
+  "logs_count": 20,
+  "logs_sample": [
+    {
+      "id": 35,
+      "user_id": 1,
+      "action": "page_deleted",
+      "entity_type": "page",
+      "entity_id": 5,
+      "before_json": "{\"id\":5,\"title\":\"Codex Audit Temporary Save 20\",\"slug\":\"codex-audit-20260704080136\",\"headline\":\"Audit Temp\",\"store_slug\":null,\"is_active\":1,\"sort_order\":0,\"theme\":null,\"created_at\":\"2026-07-04 01:01:37\",\"updated_at\":\"2026-07-04 01:02:05\",\"page_type\":\"link_hub\",\"visibility\":\"unlisted\",\"status\":\"published\",\"preview_token\":\"96c106f8cc18754034993790704970c4e28d18ea640e3733\",\"scheduled_publish_at\":null,\"staff_password_hash\":null}",
+      "after_json": null,
+      "page_id": 5,
+      "created_at": "2026-07-04 01:02:06",
+      "user_email": "admin@bakudanramen.com"
+    },
+    {
+      "id": 34,
+      "user_id": 1,
+      "action": "page_rolled_back",
+      "entity_type": "page",
+      "entity_id": 5,
+      "before_json": "{\"from_version\":2}",
+      "after_json": "{\"to_version\":1}",
+      "page_id": 5,
+      "created_at": "2026-07-04 01:02:05",
+      "user_email": "admin@bakudanramen.com"
+    },
+    {
+      "id": 33,
+      "user_id": 1,
+      "action": "page_published",
+      "entity_type": "page",
+      "entity_id": 5,
+      "before_json": "{\"id\":5,\"title\":\"Codex Audit Temporary Save 20\",\"slug\":\"codex-audit-20260704080136\",\"headline\":\"Audit Temp\",\"store_slug\":null,\"is_active\":1,\"sort_order\":0,\"theme\":null,\"created_at\":\"2026-07-04 01:01:37\",\"updated_at\":\"2026-07-04 01:02:00\",\"page_type\":\"link_hub\",\"visibility\":\"unlisted\",\"status\":\"published\",\"preview_token\":\"96c106f8cc18754034993790704970c4e28d18ea640e3733\",\"scheduled_publish_at\":null,\"staff_password_hash\":null}",
+      "after_json": "{\"id\":5,\"title\":\"Codex Audit Temporary Save 20\",\"slug\":\"codex-audit-20260704080136\",\"headline\":\"Audit Temp\",\"store_slug\":null,\"is_active\":1,\"sort_order\":0,\"theme\":null,\"created_at\":\"2026-07-04 01:01:37\",\"updated_at\":\"2026-07-04 01:02:02\",\"page_type\":\"link_hub\",\"visibility\":\"unlisted\",\"status\":\"published\",\"preview_token\":\"96c106f8cc18754034993790704970c4e28d18ea640e3733\",\"scheduled_publish_at\":null,\"staff_password_hash\":null}",
+      "page_id": 5,
+      "created_at": "2026-07-04 01:02:02",
+      "user_email": "admin@bakudanramen.com"
+    },
+    {
+      "id": 32,
+      "user_id": 1,
+      "action": "button_updated",
+      "entity_type": "button",
+      "entity_id": 23,
+      "before_json": "{\"id\":23,\"page_id\":5,\"label\":\"Audit External\",\"url\":\"https:\\/\\/example.com\\/page\",\"icon\":null,\"sort_order\":1,\"is_active\":1,\"is_featured\":0,\"enabled\":1,\"start_at\":null,\"end_at\":null,\"created_at\":\"2026-07-04 01:01:39\",\"updated_at\":\"2026-07-04 01:01:39\",\"section_id\":null,\"subtitle\":null,\"style_variant\":null,\"custom_icon_svg\":null,\"opens_in_new_tab\":1,\"link_type\":\"external\",\"internal_page_id\":null}",
+      "after_json": "{\"id\":23,\"page_id\":5,\"label\":\"Audit External Changed\",\"url\":\"https:\\/\\/example.com\\/changed\",\"icon\":null,\"sort_order\":1,\"is_active\":1,\"is_featured\":0,\"enabled\":1,\"start_at\":null,\"end_at\":null,\"created_at\":\"2026-07-04 01:01:39\",\"updated_at\":\"2026-07-04 01:02:02\",\"section_id\":null,\"subtitle\":null,\"style_variant\":null,\"custom_icon_svg\":null,\"opens_in_new_tab\":1,\"link_type\":\"external\",\"internal_page_id\":null}",
+      "page_id": 5,
+      "created_at": "2026-07-04 01:02:02",
+      "user_email": "admin@bakudanramen.com"
+    },
+    {
+      "id": 31,
+      "user_id": 1,
+      "action": "page_published",
+      "entity_type": "page",
+      "entity_id": 5,
+      "before_json": "{\"id\":5,\"title\":\"Codex Audit Temporary Save 20\",\"slug\":\"codex-audit-20260704080136\",\"headline\":\"Audit Temp\",\"store_slug\":null,\"is_active\":0,\"sort_order\":0,\"theme\":null,\"created_at\":\"2026-07-04 01:01:37\",\"updated_at\":\"2026-07-04 01:01:59\",\"page_type\":\"link_hub\",\"visibility\":\"unlisted\",\"status\":\"draft\",\"preview_token\":\"96c106f8cc18754034993790704970c4e28d18ea640e3733\",\"scheduled_publish_at\":null,\"staff_password_hash\":null}",
+      "after_json": "{\"id\":5,\"title\":\"Codex Audit Temporary Save 20\",\"slug\":\"codex-audit-20260704080136\",\"headline\":\"Audit Temp\",\"store_slug\":null,\"is_active\":1,\"sort_order\":0,\"theme\":null,\"created_at\":\"2026-07-04 01:01:37\",\"updated_at\":\"2026-07-04 01:02:00\",\"page_type\":\"link_hub\",\"visibility\":\"unlisted\",\"status\":\"published\",\"preview_token\":\"96c106f8cc18754034993790704970c4e28d18ea640e3733\",\"scheduled_publish_at\":null,\"staff_password_hash\":null}",
+      "page_id": 5,
+      "created_at": "2026-07-04 01:02:00",
+      "user_email": "admin@bakudanramen.com"
+    }
+  ]
+}

@@ -1,6 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3GZ2RYDR6M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3GZ2RYDR6M');
+    </script>
+    <script>
+    // Conversion event helper — Phase 34F
+    function trackEvent(eventName, params) {
+      if (typeof gtag !== 'undefined') { gtag('event', eventName, params); }
+    }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Best Ramen in San Antonio | Bakudan Ramen — 3 Locations</title>
@@ -104,7 +118,7 @@
                 <li><a href="happy-hour.html">Happy Hour</a></li>
                 <li><a href="about.html">Our Story</a></li>
                 <li><a href="blog.html">Blog</a></li>
-                <li><a href="order.html" class="nav-cta">Order Now</a></li>
+                <li><a href="order.html" class="nav-cta" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'nav_order_now','brand':'bakudan'})">Order Now</a></li>
             </ul>
         </nav>
 
@@ -123,7 +137,7 @@
         <a href="happy-hour.html">Happy Hour</a>
         <a href="about.html">Our Story</a>
         <a href="blog.html">Blog</a>
-        <a href="order.html" class="nav-cta" style="margin-top: 1rem;">Order Now</a>
+        <a href="order.html" class="nav-cta" style="margin-top: 1rem;" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'mobile_nav_order_now','brand':'bakudan'})">Order Now</a>
     </div>
 
     <!-- Main Content -->
@@ -143,8 +157,8 @@
                     Authentic Japanese ramen in San Antonio at three locations: Bandera, Stone Oak, and The Rim. Slow-simmered broths, fresh noodles daily, bold flavors. Order online for pickup or delivery.
                 </p>
                 <div class="hero-ctas">
-                    <a href="order.html" class="btn btn-primary">Order Online</a>
-                    <a href="menu.html" class="btn btn-outline">View Menu</a>
+                    <a href="order.html" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'hero_order_online','brand':'bakudan'})">Order Online</a>
+                    <a href="menu.html" class="btn btn-outline" onclick="trackEvent('menu_click',{'event_category':'conversion','event_label':'hero_view_menu','brand':'bakudan'})">View Menu</a>
                 </div>
             </div>
         </section>
@@ -233,7 +247,7 @@
                 </article>
             </div>
             <div class="text-center" style="margin-top: 3rem;">
-                <a href="menu.html" class="btn btn-outline">View Full Menu</a>
+                <a href="menu.html" class="btn btn-outline" onclick="trackEvent('menu_click',{'event_category':'conversion','event_label':'menu_section_view_full','brand':'bakudan'})">View Full Menu</a>
             </div>
         </section>
 
@@ -297,7 +311,7 @@
         <section class="cta-section" aria-label="Order online">
             <h2>READY TO EXPERIENCE THE BOLD?</h2>
             <p>Order online for pickup or delivery. Your perfect bowl awaits.</p>
-            <a href="order.html" class="btn btn-white">Order Now</a>
+            <a href="order.html" class="btn btn-white" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'cta_section_order_now','brand':'bakudan'})">Order Now</a>
         </section>
     </main>
 
@@ -318,19 +332,19 @@
                     <strong>Bandera</strong>
                     11309 Bandera Rd Ste 111<br>
                     San Antonio, TX 78254<br>
-                    <a href="tel:+12102777740">(210) 277-7740</a>
+                    <a href="tel:+12102777740" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'footer_bandera','brand':'bakudan'})">(210) 277-7740</a>
                 </address>
                 <address>
                     <strong>Stone Oak</strong>
                     22506 U.S. Hwy 281 N Ste 106<br>
                     San Antonio, TX 78258<br>
-                    <a href="tel:+12104370632">(210) 437-0632</a>
+                    <a href="tel:+12104370632" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'footer_stone_oak','brand':'bakudan'})">(210) 437-0632</a>
                 </address>
                 <address>
                     <strong>The Rim</strong>
                     17619 La Cantera Pkwy #208<br>
                     San Antonio, TX 78256<br>
-                    <a href="tel:+12102578080">(210) 257-8080</a>
+                    <a href="tel:+12102578080" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'footer_the_rim','brand':'bakudan'})">(210) 257-8080</a>
                 </address>
             </div>
 
@@ -352,8 +366,8 @@
             <div class="footer-col">
                 <h4>EXPLORE</h4>
                 <ul>
-                    <li><a href="menu.html">View Menu</a></li>
-                    <li><a href="order.html">Order Online</a></li>
+                    <li><a href="menu.html" onclick="trackEvent('menu_click',{'event_category':'conversion','event_label':'footer_view_menu','brand':'bakudan'})">View Menu</a></li>
+                    <li><a href="order.html" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'footer_order_online','brand':'bakudan'})">Order Online</a></li>
                     <li><a href="happy-hour.html">Happy Hour</a></li>
                     <li><a href="fundraiser.html">Fundraiser Program</a></li>
                     <li><a href="about.html">Our Story</a></li>
@@ -375,7 +389,7 @@
             <h2>WE NOW DELIVER!</h2>
             <p class="delivery-popup-subtitle">Fresh Ramen, Straight to Your Door</p>
             <p class="delivery-popup-desc">Great news! You can now order delivery directly from our website. Get Bakudan Ramen&rsquo;s bold, authentic flavors delivered hot to your home or office from all three San Antonio locations.</p>
-            <a href="order.html" class="delivery-popup-cta">Order Delivery Now</a>
+            <a href="order.html" class="delivery-popup-cta" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'popup_order_delivery','brand':'bakudan'})">Order Delivery Now</a>
             <button class="delivery-popup-close delivery-popup-dismiss">Maybe later</button>
         </div>
     </div>

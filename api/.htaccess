@@ -1,0 +1,23 @@
+RewriteEngine On
+
+# Pass Authorization header through Apache (DreamHost shared hosting strips it otherwise)
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
+# DreamHost's server-level default applies a 48h Cache-Control/Expires to
+# responses under this path (via mod_expires, a separate mechanism from
+# mod_headers below), silently overriding whatever index.php sends — this
+# caused Admin and the public /links/ page to show stale data after
+# publishing changes.
+<IfModule mod_expires.c>
+    ExpiresActive Off
+</IfModule>
+<IfModule mod_headers.c>
+    Header always unset Cache-Control
+    Header always unset Expires
+    Header always set Cache-Control "no-store"
+</IfModule>
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [QSA,L]
+

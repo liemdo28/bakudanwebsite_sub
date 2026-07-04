@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3GZ2RYDR6M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3GZ2RYDR6M');
+    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>Make a Reservation — Bakudan Ramen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: 'Noto Sans JP', system-ui, sans-serif;
+  background: #111;
+  color: #fafafa;
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 40px 20px 60px;
+}
+.links-container { width: 100%; max-width: 420px; }
+
+.links-logo { text-align: center; margin-bottom: 28px; }
+.links-logo-icon {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: linear-gradient(135deg, #EC4A5E, #A01830);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 40px; margin-bottom: 14px;
+  box-shadow: 0 4px 24px rgba(236,74,94,.3);
+}
+.links-headline { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; color: #fff; }
+.links-subheadline { font-size: 11px; letter-spacing: 2px; color: #888; margin-top: 4px; }
+
+.back-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: #555; font-size: 12px; text-decoration: none;
+  margin-bottom: 24px; letter-spacing: .5px; transition: color .15s;
+}
+.back-link:hover { color: #888; }
+.back-link svg { width: 14px; height: 14px; }
+
+/* Coming soon card */
+.coming-soon-card {
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 12px;
+  padding: 28px 24px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+.coming-soon-icon { font-size: 36px; margin-bottom: 14px; }
+.coming-soon-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px; letter-spacing: 2px; color: #fff; margin-bottom: 8px;
+}
+.coming-soon-body { font-size: 13px; color: #888; line-height: 1.6; }
+
+/* Section label */
+.section-label {
+  font-size: 10px; letter-spacing: 2px; color: #555;
+  text-transform: uppercase; margin-bottom: 12px; text-align: center;
+}
+
+/* Walk-in cards — same button component as /links */
+.btn-list { display: flex; flex-direction: column; gap: 10px; }
+.location-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 18px; border-radius: 12px; width: 100%;
+  text-decoration: none; color: inherit;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  transition: all .18s;
+}
+.location-card:hover, .location-card:focus-visible {
+  background: rgba(255,255,255,.1); transform: translateY(-1px);
+}
+.location-card:focus-visible { outline: 2px solid #EC4A5E; outline-offset: 2px; }
+.card-icon {
+  width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.08);
+}
+.card-icon svg { width: 20px; height: 20px; }
+.card-body { flex: 1; text-align: left; }
+.card-name    { font-size: 15px; font-weight: 700; }
+.card-address { font-size: 11px; opacity: .5; margin-top: 2px; line-height: 1.4; }
+.card-tag     { font-size: 10px; color: #EC4A5E; margin-top: 4px; letter-spacing: .5px; font-weight: 700; }
+
+.links-footer { margin-top: 40px; text-align: center; font-size: 11px; color: #444; }
+.links-footer a { color: #666; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="links-container">
+
+  <div class="links-logo">
+    <div class="links-logo-icon">&#29190;</div>
+    <div class="links-headline">RESERVATIONS</div>
+    <div class="links-subheadline">BAKUDAN RAMEN &middot; 3 LOCATIONS</div>
+  </div>
+
+  <a href="/links-temp" class="back-link">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+    Back
+  </a>
+
+  <div class="coming-soon-card">
+    <div class="coming-soon-icon">&#128197;</div>
+    <div class="coming-soon-title">Online Reservations Coming Soon</div>
+    <div class="coming-soon-body">
+      We&rsquo;re setting up online reservations. In the meantime,
+      walk-ins are always welcome &mdash; or call your nearest location directly.
+    </div>
+  </div>
+
+  <div class="section-label">Walk-ins welcome at all locations</div>
+
+  <div class="btn-list">
+
+    <div class="location-card">
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <div class="card-name">The Rim</div>
+        <div class="card-address">17619 La Cantera Pkwy UNIT 208<br>San Antonio, TX 78257</div>
+        <div class="card-tag">Walk-ins welcome</div>
+      </div>
+    </div>
+
+    <div class="location-card">
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <div class="card-name">Stone Oak</div>
+        <div class="card-address">22506 U.S. Hwy 281 N #106<br>San Antonio, TX 78259</div>
+        <div class="card-tag">Walk-ins welcome</div>
+      </div>
+    </div>
+
+    <div class="location-card">
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <div class="card-name">Bandera</div>
+        <div class="card-address">11309 Bandera Rd Suite 111<br>San Antonio, TX 78254</div>
+        <div class="card-tag">Walk-ins welcome</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="links-footer">
+  &copy; <span id="yr"></span> Bakudan Ramen &mdash; <a href="/">bakudanramen.com</a>
+</div>
+<script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
+</body>
+</html>

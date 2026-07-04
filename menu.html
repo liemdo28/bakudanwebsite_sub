@@ -1,6 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3GZ2RYDR6M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3GZ2RYDR6M');
+    </script>
+    <script>
+    function trackEvent(eventName, params) {
+      if (typeof gtag !== 'undefined') { gtag('event', eventName, params); }
+    }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Explore Bakudan Ramen's full menu — authentic Japanese ramen bowls, starters, entrées, cocktails, saké, beer, and more. Three San Antonio locations.">
@@ -84,7 +97,7 @@
                 <li><a href="happy-hour.html">Happy Hour</a></li>
                 <li><a href="about.html">Our Story</a></li>
                 <li><a href="blog.html">Blog</a></li>
-                <li><a href="order.html" class="nav-cta">Order Now</a></li>
+                <li><a href="order.html" class="nav-cta" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'nav_order_now','brand':'bakudan'})">Order Now</a></li>
             </ul>
         </nav>
         <button class="hamburger" aria-expanded="false" aria-controls="mobile-nav" aria-label="Open menu">
@@ -98,7 +111,7 @@
         <a href="happy-hour.html">Happy Hour</a>
         <a href="about.html">Our Story</a>
         <a href="blog.html">Blog</a>
-        <a href="order.html" class="nav-cta" style="margin-top: 1rem;">Order Now</a>
+        <a href="order.html" class="nav-cta" style="margin-top: 1rem;" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'mobile_nav_order_now','brand':'bakudan'})">Order Now</a>
     </div>
 
     <main id="main-content">
@@ -939,9 +952,9 @@
             </div>
             <div class="footer-col">
                 <h4>LOCATIONS</h4>
-                <address><strong><a href="locations/bandera.html">Bandera</a></strong>11309 Bandera Rd Ste 111<br>San Antonio, TX 78254<br><a href="tel:+12102777740">(210) 277-7740</a></address>
-                <address><strong><a href="locations/stone-oak.html">Stone Oak</a></strong>22506 U.S. Hwy 281 N Ste 106<br>San Antonio, TX 78258<br><a href="tel:+12104370632">(210) 437-0632</a></address>
-                <address><strong><a href="locations/the-rim.html">The Rim</a></strong>17619 La Cantera Pkwy #208<br>San Antonio, TX 78256<br><a href="tel:+12102578080">(210) 257-8080</a></address>
+                <address><strong><a href="locations/bandera.html">Bandera</a></strong>11309 Bandera Rd Ste 111<br>San Antonio, TX 78254<br><a href="tel:+12102777740" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'footer_bandera','brand':'bakudan'})">(210) 277-7740</a></address>
+                <address><strong><a href="locations/stone-oak.html">Stone Oak</a></strong>22506 U.S. Hwy 281 N Ste 106<br>San Antonio, TX 78258<br><a href="tel:+12104370632" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'footer_stone_oak','brand':'bakudan'})">(210) 437-0632</a></address>
+                <address><strong><a href="locations/the-rim.html">The Rim</a></strong>17619 La Cantera Pkwy #208<br>San Antonio, TX 78256<br><a href="tel:+12102578080" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'footer_the_rim','brand':'bakudan'})">(210) 257-8080</a></address>
             </div>
             <div class="footer-col">
                 <h4>HOURS</h4>
@@ -960,8 +973,8 @@
             <div class="footer-col">
                 <h4>EXPLORE</h4>
                 <ul>
-                    <li><a href="menu.html">View Menu</a></li>
-                    <li><a href="order.html">Order Online</a></li>
+                    <li><a href="menu.html" onclick="trackEvent('menu_click',{'event_category':'conversion','event_label':'footer_view_menu','brand':'bakudan'})">View Menu</a></li>
+                    <li><a href="order.html" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'footer_order_online','brand':'bakudan'})">Order Online</a></li>
                     <li><a href="happy-hour.html">Happy Hour</a></li>
                     <li><a href="fundraiser.html">Fundraiser Program</a></li>
                     <li><a href="about.html">Our Story</a></li>

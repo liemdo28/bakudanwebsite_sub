@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3GZ2RYDR6M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3GZ2RYDR6M');
+    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>Order Delivery — Bakudan Ramen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: 'Noto Sans JP', system-ui, sans-serif;
+  background: #111;
+  color: #fafafa;
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 40px 20px 60px;
+}
+.links-container { width: 100%; max-width: 420px; }
+.links-logo { text-align: center; margin-bottom: 28px; }
+.links-logo-icon {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: linear-gradient(135deg, #EC4A5E, #A01830);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 40px; margin-bottom: 14px;
+  box-shadow: 0 4px 24px rgba(236,74,94,.3);
+}
+.links-headline { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; color: #fff; }
+.links-subheadline { font-size: 11px; letter-spacing: 2px; color: #888; margin-top: 4px; }
+
+.back-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: #555; font-size: 12px; text-decoration: none;
+  margin-bottom: 24px; letter-spacing: .5px; transition: color .15s;
+}
+.back-link:hover { color: #888; }
+.back-link svg { width: 14px; height: 14px; }
+
+/* ── States ── */
+.state { display: none; }
+.state.active { display: block; }
+
+/* Loading */
+.loading-wrap {
+  text-align: center; padding: 32px 0;
+}
+.spinner {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,.1);
+  border-top-color: #EC4A5E;
+  animation: spin .8s linear infinite;
+  margin: 0 auto 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-label { font-size: 14px; color: #888; letter-spacing: .5px; }
+
+/* Nearest result */
+.nearest-wrap { text-align: center; padding: 8px 0 20px; }
+.nearest-tag {
+  display: inline-block;
+  font-size: 10px; letter-spacing: 2px; color: #888; text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.nearest-name {
+  font-family: 'Bebas Neue', sans-serif; font-size: 32px;
+  letter-spacing: 2px; color: #fff; margin-bottom: 4px;
+}
+.nearest-dist { font-size: 12px; color: #555; margin-bottom: 20px; }
+
+/* Primary CTA button */
+.cta-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 16px 20px; border-radius: 12px;
+  background: #EC4A5E; color: #fff; font-family: inherit;
+  font-size: 15px; font-weight: 700; text-decoration: none; border: none;
+  cursor: pointer; transition: all .18s;
+  box-shadow: 0 4px 16px rgba(236,74,94,.35);
+}
+.cta-btn:hover { background: #c73a4c; transform: translateY(-1px); }
+.cta-btn svg { width: 18px; height: 18px; }
+
+/* Redirect countdown */
+.redirect-note {
+  text-align: center; margin-top: 14px;
+  font-size: 11px; color: #444;
+}
+#countdown { color: #666; font-weight: 700; }
+
+/* Section label */
+.section-label {
+  font-size: 10px; letter-spacing: 2px; color: #555;
+  text-transform: uppercase; margin-bottom: 12px; text-align: center;
+}
+
+/* Store list cards */
+.btn-list { display: flex; flex-direction: column; gap: 10px; }
+.store-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 18px; border-radius: 12px; width: 100%;
+  text-decoration: none; color: inherit;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  transition: all .18s; cursor: pointer;
+}
+.store-card:hover, .store-card:focus-visible {
+  background: rgba(255,255,255,.1); transform: translateY(-1px);
+  border-color: rgba(255,255,255,.22);
+}
+.store-card:focus-visible { outline: 2px solid #EC4A5E; outline-offset: 2px; }
+.store-icon {
+  width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.08);
+}
+.store-icon svg { width: 20px; height: 20px; }
+.store-body { flex: 1; text-align: left; }
+.store-name    { font-size: 15px; font-weight: 700; }
+.store-address { font-size: 11px; opacity: .5; margin-top: 2px; }
+
+/* Error state */
+.error-icon { text-align: center; font-size: 32px; margin-bottom: 12px; }
+.error-msg  { text-align: center; font-size: 13px; color: #888; margin-bottom: 24px; }
+
+.links-footer { margin-top: 40px; text-align: center; font-size: 11px; color: #444; }
+.links-footer a { color: #666; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="links-container">
+
+  <div class="links-logo">
+    <div class="links-logo-icon">&#29190;</div>
+    <div class="links-headline">ORDER DELIVERY</div>
+    <div class="links-subheadline">BAKUDAN RAMEN &middot; 3 LOCATIONS</div>
+  </div>
+
+  <a href="/links-temp" class="back-link">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+    Back
+  </a>
+
+  <!-- State: detecting location -->
+  <div id="state-loading" class="state active">
+    <div class="loading-wrap">
+      <div class="spinner"></div>
+      <div class="loading-label">Finding nearest location&hellip;</div>
+    </div>
+  </div>
+
+  <!-- State: nearest found -->
+  <div id="state-nearest" class="state">
+    <div class="nearest-wrap">
+      <div class="nearest-tag">Nearest location detected</div>
+      <div class="nearest-name" id="nearest-name">&mdash;</div>
+      <div class="nearest-dist" id="nearest-dist"></div>
+    </div>
+    <a id="nearest-btn" href="#" class="cta-btn" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>
+        <path d="M5 17H3v-4l2-5h7l2 4h4l1 5h-2"/><path d="M12 12V7"/>
+      </svg>
+      Order Now
+    </a>
+    <div class="redirect-note">Redirecting in <span id="countdown">2</span>s&hellip;</div>
+  </div>
+
+  <!-- State: manual (permission denied / timeout) -->
+  <div id="state-manual" class="state">
+    <div class="error-icon">&#128205;</div>
+    <div class="error-msg" id="manual-msg">Choose your store to order:</div>
+    <div class="section-label">Select your location</div>
+    <div class="btn-list" id="store-list"></div>
+  </div>
+
+</div>
+
+<div class="links-footer">
+  &copy; <span id="yr"></span> Bakudan Ramen &mdash; <a href="/">bakudanramen.com</a>
+</div>
+
+<script>
+/**
+ * Verified store data — coordinates extracted from CEO-provided Google Maps URLs.
+ * Toast order URLs confirmed by CEO.
+ */
+var stores = [
+  {
+    key:      'rim',
+    name:     'The Rim',
+    address:  '17619 La Cantera Pkwy UNIT 208, San Antonio, TX',
+    lat:      29.6102573,
+    lng:      -98.5986817,
+    orderUrl: 'https://order.toasttab.com/online/bakudanramen'
+  },
+  {
+    key:      'stone-oak',
+    name:     'Stone Oak',
+    address:  '22506 U.S. Hwy 281 N #106, San Antonio, TX',
+    lat:      29.6507067,
+    lng:      -98.4481635,
+    orderUrl: 'https://order.toasttab.com/online/bakudan-ramen-stone-oak'
+  },
+  {
+    key:      'bandera',
+    name:     'Bandera',
+    address:  '11309 Bandera Rd Suite 111, San Antonio, TX',
+    lat:      29.5484131,
+    lng:      -98.6627874,
+    orderUrl: 'https://order.toasttab.com/online/bakudan-bandera'
+  }
+];
+
+document.getElementById('yr').textContent = new Date().getFullYear();
+
+/* ── Haversine distance in km ── */
+function getDistance(lat1, lon1, lat2, lon2) {
+  var R = 6371;
+  var dLat = (lat2 - lat1) * Math.PI / 180;
+  var dLon = (lon2 - lon1) * Math.PI / 180;
+  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+        + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180)
+        * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function findNearestStore(userLat, userLng) {
+  var nearest = null;
+  var minDist = Infinity;
+  stores.forEach(function(s) {
+    var d = getDistance(userLat, userLng, s.lat, s.lng);
+    if (d < minDist) { minDist = d; nearest = s; }
+  });
+  return { store: nearest, distKm: minDist };
+}
+
+/* ── State helpers ── */
+function showState(id) {
+  ['state-loading', 'state-nearest', 'state-manual'].forEach(function(s) {
+    document.getElementById(s).classList.remove('active');
+  });
+  document.getElementById(id).classList.add('active');
+}
+
+/* ── Build manual store list ── */
+function buildManualList() {
+  var scooterSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M5 17H3v-4l2-5h7l2 4h4l1 5h-2"/><path d="M12 12V7"/></svg>';
+  var list = document.getElementById('store-list');
+  list.innerHTML = stores.map(function(s) {
+    return '<a href="' + s.orderUrl + '" target="_blank" rel="noopener noreferrer" class="store-card">'
+      + '<div class="store-icon">' + scooterSvg + '</div>'
+      + '<div class="store-body">'
+      + '<div class="store-name">' + s.name + '</div>'
+      + '<div class="store-address">' + s.address + '</div>'
+      + '</div>'
+      + '</a>';
+  }).join('');
+}
+
+/* ── Success: nearest store found ── */
+var _redirectTimer = null;
+var _countdownTimer = null;
+
+function showNearest(store, distKm) {
+  document.getElementById('nearest-name').textContent = store.name;
+  var miles = (distKm * 0.621371).toFixed(1);
+  document.getElementById('nearest-dist').textContent = miles + ' mi away';
+  var btn = document.getElementById('nearest-btn');
+  btn.href = store.orderUrl;
+
+  showState('state-nearest');
+
+  /* Countdown + auto-redirect */
+  var secs = 2;
+  var countEl = document.getElementById('countdown');
+  countEl.textContent = secs;
+
+  _countdownTimer = setInterval(function() {
+    secs -= 1;
+    countEl.textContent = secs;
+    if (secs <= 0) {
+      clearInterval(_countdownTimer);
+    }
+  }, 1000);
+
+  _redirectTimer = setTimeout(function() {
+    window.location.href = store.orderUrl;
+  }, 2200);
+
+  /* Allow user to cancel auto-redirect by clicking early */
+  btn.addEventListener('click', function() {
+    clearTimeout(_redirectTimer);
+    clearInterval(_countdownTimer);
+  }, { once: true });
+}
+
+/* ── Fallback: show manual selector ── */
+function showManual(msg) {
+  if (msg) document.getElementById('manual-msg').textContent = msg;
+  buildManualList();
+  showState('state-manual');
+}
+
+/* ── Geolocation flow ── */
+var _geoTimeout = setTimeout(function() {
+  /* Timeout after 3 s — permission dialog still open or browser slow */
+  showManual("We couldn't access your location.\nPlease choose your store:");
+}, 3000);
+
+if (!navigator.geolocation) {
+  clearTimeout(_geoTimeout);
+  showManual('Location not available. Choose your store:');
+} else {
+  navigator.geolocation.getCurrentPosition(
+    /* success */
+    function(pos) {
+      clearTimeout(_geoTimeout);
+      var result = findNearestStore(pos.coords.latitude, pos.coords.longitude);
+      showNearest(result.store, result.distKm);
+    },
+    /* error */
+    function(err) {
+      clearTimeout(_geoTimeout);
+      var msg = (err.code === 1)
+        ? "Location access was denied.\nChoose your store:"
+        : "Couldn't determine your location.\nChoose your store:";
+      showManual(msg);
+    },
+    { timeout: 5000, maximumAge: 60000 }
+  );
+}
+</script>
+</body>
+</html>

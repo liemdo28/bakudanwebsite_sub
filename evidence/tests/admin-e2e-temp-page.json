@@ -1,0 +1,1704 @@
+{
+  "slug": "codex-audit-20260704080136",
+  "page_id": 5,
+  "assertions": [
+    {
+      "name": "draft_not_public",
+      "pass": true
+    },
+    {
+      "name": "create_page_section_buttons",
+      "pass": true
+    },
+    {
+      "name": "validation_rejects_duplicate_and_bad_url",
+      "pass": true
+    },
+    {
+      "name": "twenty_saves_no_forced_logout",
+      "pass": true
+    },
+    {
+      "name": "preview_token_generated",
+      "pass": true
+    },
+    {
+      "name": "publish_public_visible",
+      "pass": true
+    },
+    {
+      "name": "versions_created",
+      "pass": true
+    },
+    {
+      "name": "rollback_restored_button_snapshot",
+      "pass": true
+    },
+    {
+      "name": "cleanup_deleted_temp_page",
+      "pass": true
+    }
+  ],
+  "steps": [
+    {
+      "name": "login",
+      "result": {
+        "method": "POST",
+        "path": "/auth/login",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "success": true,
+          "user": {
+            "id": 1,
+            "email": "admin@bakudanramen.com",
+            "name": "Administrator",
+            "role": "super_admin",
+            "store_slug": null
+          }
+        }
+      }
+    },
+    {
+      "name": "create_page",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "id": 5,
+          "title": "Codex Audit Temporary",
+          "slug": "codex-audit-20260704080136",
+          "headline": "Audit Temp",
+          "store_slug": null,
+          "is_active": 0,
+          "sort_order": 0,
+          "theme": null,
+          "created_at": "2026-07-04 01:01:37",
+          "updated_at": "2026-07-04 01:01:37",
+          "page_type": "link_hub",
+          "visibility": "unlisted",
+          "status": "draft",
+          "preview_token": null,
+          "scheduled_publish_at": null,
+          "staff_password_hash": null
+        }
+      }
+    },
+    {
+      "name": "draft_public_404",
+      "result": {
+        "method": "GET",
+        "path": "/public/links/codex-audit-20260704080136",
+        "status": 404,
+        "ok": false,
+        "json": {
+          "ok": false,
+          "message": "Page not found."
+        }
+      }
+    },
+    {
+      "name": "create_section",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/sections",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "section": {
+            "id": 10,
+            "page_id": 5,
+            "title": "Audit Section",
+            "section_key": "audit",
+            "sort_order": 1,
+            "is_active": 1,
+            "created_at": "2026-07-04 01:01:38",
+            "updated_at": "2026-07-04 01:01:38",
+            "status": "active",
+            "start_at": null,
+            "end_at": null
+          }
+        }
+      }
+    },
+    {
+      "name": "create_external_button",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/buttons",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "id": 23,
+          "button": {
+            "id": 23,
+            "page_id": 5,
+            "label": "Audit External",
+            "url": "https://example.com/page",
+            "icon": null,
+            "sort_order": 1,
+            "is_active": 1,
+            "is_featured": 0,
+            "enabled": 1,
+            "start_at": null,
+            "end_at": null,
+            "created_at": "2026-07-04 01:01:39",
+            "updated_at": "2026-07-04 01:01:39",
+            "section_id": null,
+            "subtitle": null,
+            "style_variant": null,
+            "custom_icon_svg": null,
+            "opens_in_new_tab": 1,
+            "link_type": "external",
+            "internal_page_id": null,
+            "title": "Audit External",
+            "icon_key": null,
+            "visible": 1,
+            "section_title": null,
+            "section_key": null,
+            "section_sort_order": null,
+            "section_is_active": null
+          },
+          "page_id": 5,
+          "label": "Audit External",
+          "url": "https://example.com/page",
+          "icon": null,
+          "sort_order": 1,
+          "is_active": 1,
+          "is_featured": 0,
+          "enabled": 1,
+          "start_at": null,
+          "end_at": null,
+          "created_at": "2026-07-04 01:01:39",
+          "updated_at": "2026-07-04 01:01:39",
+          "section_id": null,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "external",
+          "internal_page_id": null
+        }
+      }
+    },
+    {
+      "name": "create_youtube_button",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/buttons",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "id": 24,
+          "button": {
+            "id": 24,
+            "page_id": 5,
+            "label": "Audit YouTube",
+            "url": "https://youtu.be/dQw4w9WgXcQ",
+            "icon": null,
+            "sort_order": 2,
+            "is_active": 1,
+            "is_featured": 0,
+            "enabled": 1,
+            "start_at": null,
+            "end_at": null,
+            "created_at": "2026-07-04 01:01:39",
+            "updated_at": "2026-07-04 01:01:39",
+            "section_id": null,
+            "subtitle": null,
+            "style_variant": null,
+            "custom_icon_svg": null,
+            "opens_in_new_tab": 1,
+            "link_type": "youtube",
+            "internal_page_id": null,
+            "title": "Audit YouTube",
+            "icon_key": null,
+            "visible": 1,
+            "section_title": null,
+            "section_key": null,
+            "section_sort_order": null,
+            "section_is_active": null
+          },
+          "page_id": 5,
+          "label": "Audit YouTube",
+          "url": "https://youtu.be/dQw4w9WgXcQ",
+          "icon": null,
+          "sort_order": 2,
+          "is_active": 1,
+          "is_featured": 0,
+          "enabled": 1,
+          "start_at": null,
+          "end_at": null,
+          "created_at": "2026-07-04 01:01:39",
+          "updated_at": "2026-07-04 01:01:39",
+          "section_id": null,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "youtube",
+          "internal_page_id": null
+        }
+      }
+    },
+    {
+      "name": "create_phone_button",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/buttons",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "id": 25,
+          "button": {
+            "id": 25,
+            "page_id": 5,
+            "label": "Audit Phone",
+            "url": "tel:+12105551212",
+            "icon": null,
+            "sort_order": 3,
+            "is_active": 1,
+            "is_featured": 0,
+            "enabled": 1,
+            "start_at": null,
+            "end_at": null,
+            "created_at": "2026-07-04 01:01:40",
+            "updated_at": "2026-07-04 01:01:40",
+            "section_id": null,
+            "subtitle": null,
+            "style_variant": null,
+            "custom_icon_svg": null,
+            "opens_in_new_tab": 1,
+            "link_type": "phone",
+            "internal_page_id": null,
+            "title": "Audit Phone",
+            "icon_key": null,
+            "visible": 1,
+            "section_title": null,
+            "section_key": null,
+            "section_sort_order": null,
+            "section_is_active": null
+          },
+          "page_id": 5,
+          "label": "Audit Phone",
+          "url": "tel:+12105551212",
+          "icon": null,
+          "sort_order": 3,
+          "is_active": 1,
+          "is_featured": 0,
+          "enabled": 1,
+          "start_at": null,
+          "end_at": null,
+          "created_at": "2026-07-04 01:01:40",
+          "updated_at": "2026-07-04 01:01:40",
+          "section_id": null,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "phone",
+          "internal_page_id": null
+        }
+      }
+    },
+    {
+      "name": "create_email_button",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/buttons",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "id": 26,
+          "button": {
+            "id": 26,
+            "page_id": 5,
+            "label": "Audit Email",
+            "url": "mailto:audit@example.com",
+            "icon": null,
+            "sort_order": 4,
+            "is_active": 1,
+            "is_featured": 0,
+            "enabled": 1,
+            "start_at": null,
+            "end_at": null,
+            "created_at": "2026-07-04 01:01:41",
+            "updated_at": "2026-07-04 01:01:41",
+            "section_id": null,
+            "subtitle": null,
+            "style_variant": null,
+            "custom_icon_svg": null,
+            "opens_in_new_tab": 1,
+            "link_type": "email",
+            "internal_page_id": null,
+            "title": "Audit Email",
+            "icon_key": null,
+            "visible": 1,
+            "section_title": null,
+            "section_key": null,
+            "section_sort_order": null,
+            "section_is_active": null
+          },
+          "page_id": 5,
+          "label": "Audit Email",
+          "url": "mailto:audit@example.com",
+          "icon": null,
+          "sort_order": 4,
+          "is_active": 1,
+          "is_featured": 0,
+          "enabled": 1,
+          "start_at": null,
+          "end_at": null,
+          "created_at": "2026-07-04 01:01:41",
+          "updated_at": "2026-07-04 01:01:41",
+          "section_id": null,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "email",
+          "internal_page_id": null
+        }
+      }
+    },
+    {
+      "name": "create_internal_button",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/buttons",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "id": 27,
+          "button": {
+            "id": 27,
+            "page_id": 5,
+            "label": "Audit Internal",
+            "url": "",
+            "icon": null,
+            "sort_order": 5,
+            "is_active": 1,
+            "is_featured": 0,
+            "enabled": 1,
+            "start_at": null,
+            "end_at": null,
+            "created_at": "2026-07-04 01:01:42",
+            "updated_at": "2026-07-04 01:01:42",
+            "section_id": null,
+            "subtitle": null,
+            "style_variant": null,
+            "custom_icon_svg": null,
+            "opens_in_new_tab": 1,
+            "link_type": "internal_page",
+            "internal_page_id": 2,
+            "title": "Audit Internal",
+            "icon_key": null,
+            "visible": 1,
+            "section_title": null,
+            "section_key": null,
+            "section_sort_order": null,
+            "section_is_active": null
+          },
+          "page_id": 5,
+          "label": "Audit Internal",
+          "url": "",
+          "icon": null,
+          "sort_order": 5,
+          "is_active": 1,
+          "is_featured": 0,
+          "enabled": 1,
+          "start_at": null,
+          "end_at": null,
+          "created_at": "2026-07-04 01:01:42",
+          "updated_at": "2026-07-04 01:01:42",
+          "section_id": null,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "internal_page",
+          "internal_page_id": 2
+        }
+      }
+    },
+    {
+      "name": "duplicate_url_rejected",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/buttons",
+        "status": 409,
+        "ok": false,
+        "json": {
+          "ok": false,
+          "message": "That destination is already used by another button on this page.",
+          "error": "That destination is already used by another button on this page."
+        }
+      }
+    },
+    {
+      "name": "invalid_url_rejected",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/buttons",
+        "status": 400,
+        "ok": false,
+        "json": {
+          "ok": false,
+          "message": "External destinations must be a valid https:// URL.",
+          "error": "External destinations must be a valid https:// URL."
+        }
+      }
+    },
+    {
+      "name": "save_loop_1",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 1",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:44",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_2",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 2",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:45",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_3",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 3",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:46",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_4",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 4",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:47",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_5",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 5",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:47",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_6",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 6",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:48",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_7",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 7",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:49",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_8",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 8",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:49",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_9",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 9",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:50",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_10",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 10",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:51",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_11",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 11",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:51",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_12",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 12",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:52",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_13",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 13",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:54",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_14",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 14",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:54",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_15",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 15",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:55",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_16",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 16",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:55",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_17",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 17",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:56",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_18",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 18",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:57",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_19",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 19",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:58",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_20",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 20",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 0,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:01:59",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "draft",
+            "preview_token": null,
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "slug_changed": false
+        }
+      }
+    },
+    {
+      "name": "save_loop_summary",
+      "result": {
+        "ok": true,
+        "forced_logout": 0,
+        "lost_title": 0,
+        "json": null
+      }
+    },
+    {
+      "name": "generate_preview_token",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/generate-preview-token",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "preview_url": "https://bakudanramen.com/links/preview/codex-audit-20260704080136?token=96c106f8cc18754034993790704970c4e28d18ea640e3733"
+        }
+      }
+    },
+    {
+      "name": "publish_v1",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/publish",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 20",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 1,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:02:00",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "published",
+            "preview_token": "96c106f8cc18754034993790704970c4e28d18ea640e3733",
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "version": 1
+        }
+      }
+    },
+    {
+      "name": "public_after_publish",
+      "result": {
+        "method": "GET",
+        "path": "/public/links/codex-audit-20260704080136",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "data": {
+            "page": {
+              "id": 5,
+              "title": "Codex Audit Temporary Save 20",
+              "slug": "codex-audit-20260704080136",
+              "headline": "Audit Temp",
+              "store_slug": null,
+              "is_active": 1,
+              "sort_order": 0,
+              "theme": null,
+              "created_at": "2026-07-04 01:01:37",
+              "updated_at": "2026-07-04 01:02:00",
+              "page_type": "link_hub",
+              "visibility": "unlisted",
+              "status": "published",
+              "preview_token": "96c106f8cc18754034993790704970c4e28d18ea640e3733",
+              "scheduled_publish_at": null,
+              "staff_password_hash": null
+            },
+            "buttons": [
+              {
+                "id": 23,
+                "page_id": 5,
+                "label": "Audit External",
+                "url": "https://example.com/page",
+                "icon": null,
+                "sort_order": 1,
+                "is_active": 1,
+                "is_featured": 0,
+                "enabled": 1,
+                "start_at": null,
+                "end_at": null,
+                "created_at": "2026-07-04 01:01:39",
+                "updated_at": "2026-07-04 01:01:39",
+                "section_id": null,
+                "subtitle": null,
+                "style_variant": null,
+                "custom_icon_svg": null,
+                "opens_in_new_tab": 1,
+                "link_type": "external",
+                "internal_page_id": null,
+                "title": "Audit External",
+                "icon_key": null,
+                "visible": 1,
+                "section_title": null,
+                "section_key": null,
+                "section_sort_order": null,
+                "section_is_active": null
+              },
+              {
+                "id": 24,
+                "page_id": 5,
+                "label": "Audit YouTube",
+                "url": "https://youtu.be/dQw4w9WgXcQ",
+                "icon": null,
+                "sort_order": 2,
+                "is_active": 1,
+                "is_featured": 0,
+                "enabled": 1,
+                "start_at": null,
+                "end_at": null,
+                "created_at": "2026-07-04 01:01:39",
+                "updated_at": "2026-07-04 01:01:39",
+                "section_id": null,
+                "subtitle": null,
+                "style_variant": null,
+                "custom_icon_svg": null,
+                "opens_in_new_tab": 1,
+                "link_type": "youtube",
+                "internal_page_id": null,
+                "title": "Audit YouTube",
+                "icon_key": null,
+                "visible": 1,
+                "section_title": null,
+                "section_key": null,
+                "section_sort_order": null,
+                "section_is_active": null
+              },
+              {
+                "id": 25,
+                "page_id": 5,
+                "label": "Audit Phone",
+                "url": "tel:+12105551212",
+                "icon": null,
+                "sort_order": 3,
+                "is_active": 1,
+                "is_featured": 0,
+                "enabled": 1,
+                "start_at": null,
+                "end_at": null,
+                "created_at": "2026-07-04 01:01:40",
+                "updated_at": "2026-07-04 01:01:40",
+                "section_id": null,
+                "subtitle": null,
+                "style_variant": null,
+                "custom_icon_svg": null,
+                "opens_in_new_tab": 1,
+                "link_type": "phone",
+                "internal_page_id": null,
+                "title": "Audit Phone",
+                "icon_key": null,
+                "visible": 1,
+                "section_title": null,
+                "section_key": null,
+                "section_sort_order": null,
+                "section_is_active": null
+              }
+            ],
+            "sections": [
+              {
+                "id": 10,
+                "page_id": 5,
+                "title": "Audit Section",
+                "section_key": "audit",
+                "sort_order": 1,
+                "is_active": 1,
+                "created_at": "2026-07-04 01:01:38",
+                "updated_at": "2026-07-04 01:01:38",
+                "status": "active",
+                "start_at": null,
+                "end_at": null
+              },
+              {
+                "id": 7,
+                "page_id": 5,
+                "title": "Order Online",
+                "section_key": "order",
+                "sort_order": 10,
+                "is_active": 1,
+                "created_at": "2026-07-04 01:01:37",
+                "updated_at": "2026-07-04 01:01:37",
+                "status": "active",
+                "start_at": null,
+                "end_at": null
+              },
+              {
+                "id": 8,
+                "page_id": 5,
+                "title": "Rewards & Loyalty",
+                "section_key": "rewards",
+                "sort_order": 20,
+                "is_active": 1,
+                "created_at": "2026-07-04 01:01:37",
+                "updated_at": "2026-07-04 01:01:37",
+                "status": "active",
+                "start_at": null,
+                "end_at": null
+              }
+            ],
+            "settings": {
+              "site_name": "Bakudan Ramen",
+              "site_url": "https://bakudanramen.com",
+              "theme_primary": "#dc2626",
+              "theme_bg": "#0f172a",
+              "footer_text": "\u00a9 Bakudan Ramen. All rights reserved.",
+              "show_subscriber_form": "0",
+              "order_rim": "https://order.toasttab.com/online/bakudanramen/",
+              "order_stone_oak": "https://order.toasttab.com/online/bakudan-ramen-stone-oak",
+              "order_bandera": "https://order.toasttab.com/online/bakudan-bandera/",
+              "instagram_url": "https://www.instagram.com/bakudanramen/",
+              "facebook_url": "https://www.facebook.com/profile.php?id=61583741613406",
+              "email_club_enabled": "1",
+              "events_enabled": "0",
+              "signup_form_enabled": "1"
+            },
+            "buttons_count": 5,
+            "sections_count": 4
+          }
+        }
+      }
+    },
+    {
+      "name": "update_button_before_v2",
+      "result": {
+        "method": "PUT",
+        "path": "/admin/buttons/23",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "button": {
+            "id": 23,
+            "page_id": 5,
+            "label": "Audit External Changed",
+            "url": "https://example.com/changed",
+            "icon": null,
+            "sort_order": 1,
+            "is_active": 1,
+            "is_featured": 0,
+            "enabled": 1,
+            "start_at": null,
+            "end_at": null,
+            "created_at": "2026-07-04 01:01:39",
+            "updated_at": "2026-07-04 01:02:02",
+            "section_id": null,
+            "subtitle": null,
+            "style_variant": null,
+            "custom_icon_svg": null,
+            "opens_in_new_tab": 1,
+            "link_type": "external",
+            "internal_page_id": null,
+            "title": "Audit External Changed",
+            "icon_key": null,
+            "visible": 1,
+            "section_title": null,
+            "section_key": null,
+            "section_sort_order": null,
+            "section_is_active": null
+          }
+        }
+      }
+    },
+    {
+      "name": "publish_v2",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/publish",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 20",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 1,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:02:02",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "published",
+            "preview_token": "96c106f8cc18754034993790704970c4e28d18ea640e3733",
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "version": 2
+        }
+      }
+    },
+    {
+      "name": "versions",
+      "result": {
+        "method": "GET",
+        "path": "/admin/pages/5/versions",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "versions": [
+            {
+              "id": 2,
+              "version_number": 2,
+              "published_by": 1,
+              "created_at": "2026-07-04 01:02:02"
+            },
+            {
+              "id": 1,
+              "version_number": 1,
+              "published_by": 1,
+              "created_at": "2026-07-04 01:02:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "rollback_v1",
+      "result": {
+        "method": "POST",
+        "path": "/admin/pages/5/rollback/1",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 20",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 1,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:02:05",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "published",
+            "preview_token": "96c106f8cc18754034993790704970c4e28d18ea640e3733",
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          }
+        }
+      }
+    },
+    {
+      "name": "after_rollback_page",
+      "result": {
+        "method": "GET",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "page": {
+            "id": 5,
+            "title": "Codex Audit Temporary Save 20",
+            "slug": "codex-audit-20260704080136",
+            "headline": "Audit Temp",
+            "store_slug": null,
+            "is_active": 1,
+            "sort_order": 0,
+            "theme": null,
+            "created_at": "2026-07-04 01:01:37",
+            "updated_at": "2026-07-04 01:02:05",
+            "page_type": "link_hub",
+            "visibility": "unlisted",
+            "status": "published",
+            "preview_token": "96c106f8cc18754034993790704970c4e28d18ea640e3733",
+            "scheduled_publish_at": null,
+            "staff_password_hash": null
+          },
+          "sections": [
+            {
+              "id": 14,
+              "page_id": 5,
+              "title": "Audit Section",
+              "section_key": "audit",
+              "sort_order": 1,
+              "is_active": 1,
+              "created_at": "2026-07-04 01:02:05",
+              "updated_at": "2026-07-04 01:02:05",
+              "status": "active",
+              "start_at": null,
+              "end_at": null
+            },
+            {
+              "id": 11,
+              "page_id": 5,
+              "title": "Order Online",
+              "section_key": "order",
+              "sort_order": 10,
+              "is_active": 1,
+              "created_at": "2026-07-04 01:02:05",
+              "updated_at": "2026-07-04 01:02:05",
+              "status": "active",
+              "start_at": null,
+              "end_at": null
+            },
+            {
+              "id": 12,
+              "page_id": 5,
+              "title": "Rewards & Loyalty",
+              "section_key": "rewards",
+              "sort_order": 20,
+              "is_active": 1,
+              "created_at": "2026-07-04 01:02:05",
+              "updated_at": "2026-07-04 01:02:05",
+              "status": "active",
+              "start_at": null,
+              "end_at": null
+            },
+            {
+              "id": 13,
+              "page_id": 5,
+              "title": "Merchandise",
+              "section_key": "merchandise",
+              "sort_order": 30,
+              "is_active": 1,
+              "created_at": "2026-07-04 01:02:05",
+              "updated_at": "2026-07-04 01:02:05",
+              "status": "active",
+              "start_at": null,
+              "end_at": null
+            }
+          ],
+          "buttons": [
+            {
+              "id": 28,
+              "page_id": 5,
+              "label": "Audit External",
+              "url": "https://example.com/page",
+              "icon": null,
+              "sort_order": 1,
+              "is_active": 1,
+              "is_featured": 0,
+              "enabled": 1,
+              "start_at": null,
+              "end_at": null,
+              "created_at": "2026-07-04 01:02:05",
+              "updated_at": "2026-07-04 01:02:05",
+              "section_id": null,
+              "subtitle": null,
+              "style_variant": null,
+              "custom_icon_svg": null,
+              "opens_in_new_tab": 1,
+              "link_type": "external",
+              "internal_page_id": null,
+              "title": "Audit External",
+              "icon_key": null,
+              "visible": 1,
+              "section_title": null,
+              "section_key": null,
+              "section_sort_order": null,
+              "section_is_active": null
+            },
+            {
+              "id": 29,
+              "page_id": 5,
+              "label": "Audit YouTube",
+              "url": "https://youtu.be/dQw4w9WgXcQ",
+              "icon": null,
+              "sort_order": 2,
+              "is_active": 1,
+              "is_featured": 0,
+              "enabled": 1,
+              "start_at": null,
+              "end_at": null,
+              "created_at": "2026-07-04 01:02:05",
+              "updated_at": "2026-07-04 01:02:05",
+              "section_id": null,
+              "subtitle": null,
+              "style_variant": null,
+              "custom_icon_svg": null,
+              "opens_in_new_tab": 1,
+              "link_type": "youtube",
+              "internal_page_id": null,
+              "title": "Audit YouTube",
+              "icon_key": null,
+              "visible": 1,
+              "section_title": null,
+              "section_key": null,
+              "section_sort_order": null,
+              "section_is_active": null
+            },
+            {
+              "id": 30,
+              "page_id": 5,
+              "label": "Audit Phone",
+              "url": "tel:+12105551212",
+              "icon": null,
+              "sort_order": 3,
+              "is_active": 1,
+              "is_featured": 0,
+              "enabled": 1,
+              "start_at": null,
+              "end_at": null,
+              "created_at": "2026-07-04 01:02:05",
+              "updated_at": "2026-07-04 01:02:05",
+              "section_id": null,
+              "subtitle": null,
+              "style_variant": null,
+              "custom_icon_svg": null,
+              "opens_in_new_tab": 1,
+              "link_type": "phone",
+              "internal_page_id": null,
+              "title": "Audit Phone",
+              "icon_key": null,
+              "visible": 1,
+              "section_title": null,
+              "section_key": null,
+              "section_sort_order": null,
+              "section_is_active": null
+            },
+            {
+              "id": 31,
+              "page_id": 5,
+              "label": "Audit Email",
+              "url": "mailto:audit@example.com",
+              "icon": null,
+              "sort_order": 4,
+              "is_active": 1,
+              "is_featured": 0,
+              "enabled": 1,
+              "start_at": null,
+              "end_at": null,
+              "created_at": "2026-07-04 01:02:05",
+              "updated_at": "2026-07-04 01:02:05",
+              "section_id": null,
+              "subtitle": null,
+              "style_variant": null,
+              "custom_icon_svg": null,
+              "opens_in_new_tab": 1,
+              "link_type": "email",
+              "internal_page_id": null,
+              "title": "Audit Email",
+              "icon_key": null,
+              "visible": 1,
+              "section_title": null,
+              "section_key": null,
+              "section_sort_order": null,
+              "section_is_active": null
+            },
+            {
+              "id": 32,
+              "page_id": 5,
+              "label": "Audit Internal",
+              "url": "",
+              "icon": null,
+              "sort_order": 5,
+              "is_active": 1,
+              "is_featured": 0,
+              "enabled": 1,
+              "start_at": null,
+              "end_at": null,
+              "created_at": "2026-07-04 01:02:05",
+              "updated_at": "2026-07-04 01:02:05",
+              "section_id": null,
+              "subtitle": null,
+              "style_variant": null,
+              "custom_icon_svg": null,
+              "opens_in_new_tab": 1,
+              "link_type": "internal_page",
+              "internal_page_id": 2,
+              "title": "Audit Internal",
+              "icon_key": null,
+              "visible": 1,
+              "section_title": null,
+              "section_key": null,
+              "section_sort_order": null,
+              "section_is_active": null
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "delete_temp_page",
+      "result": {
+        "method": "DELETE",
+        "path": "/admin/pages/5",
+        "status": 200,
+        "ok": true,
+        "json": {
+          "ok": true,
+          "success": true
+        }
+      }
+    },
+    {
+      "name": "verify_deleted_404",
+      "result": {
+        "method": "GET",
+        "path": "/admin/pages/5",
+        "status": 404,
+        "ok": false,
+        "json": {
+          "ok": false,
+          "message": "Page not found.",
+          "error": "Page not found."
+        }
+      }
+    }
+  ]
+}

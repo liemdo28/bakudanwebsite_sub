@@ -1,6 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3GZ2RYDR6M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3GZ2RYDR6M');
+    </script>
+    <script>
+    function trackEvent(eventName, params) {
+      if (typeof gtag !== 'undefined') { gtag('event', eventName, params); }
+    }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Visit Bakudan Ramen at one of our three San Antonio locations: Bandera, Stone Oak, or The Rim.">
@@ -86,7 +99,7 @@
                     <div class="location-card-body">
                         <h3><a href="locations/bandera.html" style="color: inherit; text-decoration: none;">Bandera</a></h3>
                         <address>11309 Bandera Rd Ste 111<br>San Antonio, TX 78254</address>
-                        <a href="tel:+12102777740" class="phone">(210) 277-7740</a>
+                        <a href="tel:+12102777740" class="phone" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'locations_bandera','brand':'bakudan'})">(210) 277-7740</a>
                         <dl class="location-hours">
                             <dt>Monday – Thursday</dt>
                             <dd>11:00 AM – 8:30 PM</dd>
@@ -95,8 +108,8 @@
                             <dt>Sunday</dt>
                             <dd>11:00 AM – 8:00 PM</dd>
                         </dl>
-                        <a href="https://order.toasttab.com/online/bakudan-bandera" class="btn btn-primary">Order from Here</a>
-                        <a href="https://www.google.com/maps/dir//11309+Bandera+Rd+Ste+111,+San+Antonio,+TX+78254" class="btn btn-outline" style="margin-top: 0.5rem;">Get Directions</a>
+                        <a href="https://order.toasttab.com/online/bakudan-bandera" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'toast_bandera','brand':'bakudan'})">Order from Here</a>
+                        <a href="https://www.google.com/maps/dir//11309+Bandera+Rd+Ste+111,+San+Antonio,+TX+78254" class="btn btn-outline" style="margin-top: 0.5rem;" onclick="trackEvent('directions_click',{'event_category':'conversion','event_label':'locations_bandera','brand':'bakudan'})">Get Directions</a>
                         <a href="locations/bandera.html" style="display: block; text-align: center; margin-top: 1rem; color: var(--color-gold); font-size: 0.9rem;">View Location Details &rarr;</a>
                     </div>
                 </article>
@@ -109,7 +122,7 @@
                     <div class="location-card-body">
                         <h3><a href="locations/stone-oak.html" style="color: inherit; text-decoration: none;">Stone Oak</a></h3>
                         <address>22506 U.S. Hwy 281 N Ste 106<br>San Antonio, TX 78258</address>
-                        <a href="tel:+12104370632" class="phone">(210) 437-0632</a>
+                        <a href="tel:+12104370632" class="phone" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'locations_stone_oak','brand':'bakudan'})">(210) 437-0632</a>
                         <dl class="location-hours">
                             <dt>Monday – Thursday</dt>
                             <dd>11:00 AM – 8:30 PM</dd>
@@ -118,8 +131,8 @@
                             <dt>Sunday</dt>
                             <dd>11:00 AM – 8:00 PM</dd>
                         </dl>
-                        <a href="https://order.toasttab.com/online/bakudan-stone-oak" class="btn btn-primary">Order from Here</a>
-                        <a href="https://www.google.com/maps/dir//22506+U.S.+Hwy+281+N+Ste+106,+San+Antonio,+TX+78258" class="btn btn-outline" style="margin-top: 0.5rem;">Get Directions</a>
+                        <a href="https://order.toasttab.com/online/bakudan-stone-oak" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'toast_stone_oak','brand':'bakudan'})">Order from Here</a>
+                        <a href="https://www.google.com/maps/dir//22506+U.S.+Hwy+281+N+Ste+106,+San+Antonio,+TX+78258" class="btn btn-outline" style="margin-top: 0.5rem;" onclick="trackEvent('directions_click',{'event_category':'conversion','event_label':'locations_stone_oak','brand':'bakudan'})">Get Directions</a>
                         <a href="locations/stone-oak.html" style="display: block; text-align: center; margin-top: 1rem; color: var(--color-gold); font-size: 0.9rem;">View Location Details &rarr;</a>
                     </div>
                 </article>
@@ -132,7 +145,7 @@
                     <div class="location-card-body">
                         <h3><a href="locations/the-rim.html" style="color: inherit; text-decoration: none;">The Rim</a></h3>
                         <address>17619 La Cantera Pkwy Unit 208<br>San Antonio, TX 78256</address>
-                        <a href="tel:+12102578080" class="phone">(210) 257-8080</a>
+                        <a href="tel:+12102578080" class="phone" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'locations_the_rim','brand':'bakudan'})">(210) 257-8080</a>
                         <dl class="location-hours">
                             <dt>Monday – Thursday</dt>
                             <dd>11:00 AM – 8:30 PM</dd>
@@ -141,8 +154,8 @@
                             <dt>Sunday</dt>
                             <dd>11:00 AM – 8:00 PM</dd>
                         </dl>
-                        <a href="https://order.toasttab.com/online/bakudan-the-rim" class="btn btn-primary">Order from Here</a>
-                        <a href="https://www.google.com/maps/dir//17619+La+Cantera+Pkwy+Unit+208,+San+Antonio,+TX+78256" class="btn btn-outline" style="margin-top: 0.5rem;">Get Directions</a>
+                        <a href="https://order.toasttab.com/online/bakudan-the-rim" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'toast_the_rim','brand':'bakudan'})">Order from Here</a>
+                        <a href="https://www.google.com/maps/dir//17619+La+Cantera+Pkwy+Unit+208,+San+Antonio,+TX+78256" class="btn btn-outline" style="margin-top: 0.5rem;" onclick="trackEvent('directions_click',{'event_category':'conversion','event_label':'locations_the_rim','brand':'bakudan'})">Get Directions</a>
                         <a href="locations/the-rim.html" style="display: block; text-align: center; margin-top: 1rem; color: var(--color-gold); font-size: 0.9rem;">View Location Details &rarr;</a>
                     </div>
                 </article>
@@ -161,9 +174,9 @@
             </div>
             <div class="footer-col">
                 <h4>LOCATIONS</h4>
-                <address><strong>Bandera</strong>11309 Bandera Rd Ste 111<br>San Antonio, TX 78254<br><a href="tel:+12102777740">(210) 277-7740</a></address>
-                <address><strong>Stone Oak</strong>22506 U.S. Hwy 281 N Ste 106<br>San Antonio, TX 78258<br><a href="tel:+12104370632">(210) 437-0632</a></address>
-                <address><strong>The Rim</strong>17619 La Cantera Pkwy #208<br>San Antonio, TX 78256<br><a href="tel:+12102578080">(210) 257-8080</a></address>
+                <address><strong>Bandera</strong>11309 Bandera Rd Ste 111<br>San Antonio, TX 78254<br><a href="tel:+12102777740" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'footer_bandera','brand':'bakudan'})">(210) 277-7740</a></address>
+                <address><strong>Stone Oak</strong>22506 U.S. Hwy 281 N Ste 106<br>San Antonio, TX 78258<br><a href="tel:+12104370632" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'footer_stone_oak','brand':'bakudan'})">(210) 437-0632</a></address>
+                <address><strong>The Rim</strong>17619 La Cantera Pkwy #208<br>San Antonio, TX 78256<br><a href="tel:+12102578080" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'footer_the_rim','brand':'bakudan'})">(210) 257-8080</a></address>
             </div>
             <div class="footer-col">
                 <h4>HOURS</h4>
@@ -208,5 +221,6 @@
 
     <script src="js/consent.js"></script>
     <script src="js/main.js"></script>
+    <script>trackEvent('location_view',{'event_category':'engagement','event_label':'locations_page','brand':'bakudan'});</script>
 </body>
 </html>

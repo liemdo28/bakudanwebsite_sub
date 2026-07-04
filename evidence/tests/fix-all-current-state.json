@@ -1,0 +1,74 @@
+{
+  "staff_admin": {
+    "status": 200,
+    "ok": true,
+    "page": {
+      "id": 4,
+      "slug": "staff-training-videos",
+      "page_type": "staff_training",
+      "visibility": "staff_only",
+      "status": "published",
+      "is_active": 1,
+      "preview_token": "17c2eb3a60f84a51c6c0918d444b319697c7b9955a38a7ac"
+    }
+  },
+  "staff_public_no_token": {
+    "status": 403,
+    "ok": false,
+    "message": "This page requires a staff access link."
+  },
+  "main_versions": {
+    "status": 200,
+    "ok": true,
+    "versions_count": 1,
+    "versions_sample": [
+      {
+        "id": 4,
+        "version_number": 1,
+        "published_by": 1,
+        "created_at": "2026-07-04 01:30:01"
+      }
+    ]
+  },
+  "staff_versions": {
+    "status": 200,
+    "ok": true,
+    "versions_count": 1,
+    "versions_sample": [
+      {
+        "id": 5,
+        "version_number": 1,
+        "published_by": 1,
+        "created_at": "2026-07-04 01:30:03"
+      }
+    ]
+  },
+  "link_health": {
+    "status": 200,
+    "ok": true,
+    "results_count": 14,
+    "status_counts": {
+      "redirected": 4,
+      "needs_review": 3,
+      "healthy": 7
+    }
+  },
+  "shortlinks": {
+    "status": 200,
+    "ok": true,
+    "shortlinks_count": 0
+  },
+  "public_links": {
+    "status": 200,
+    "ok": true,
+    "page": {
+      "id": 2,
+      "slug": "bakudan-links-main",
+      "page_type": "link_hub",
+      "visibility": "public",
+      "status": "published",
+      "is_active": 1
+    },
+    "buttons_count": 12
+  }
+}

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3GZ2RYDR6M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3GZ2RYDR6M');
+    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>Bakudan Ramen — Links</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: 'Noto Sans JP', system-ui, sans-serif;
+  background: #111;
+  color: #fafafa;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px 60px;
+}
+.links-container { width: 100%; max-width: 420px; }
+.links-logo { text-align: center; margin-bottom: 28px; }
+.links-logo-icon {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: linear-gradient(135deg, #EC4A5E, #A01830);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 40px; margin-bottom: 14px;
+  box-shadow: 0 4px 24px rgba(236,74,94,.3);
+}
+.links-headline { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; color: #fff; }
+.links-subheadline { font-size: 11px; letter-spacing: 2px; color: #888; margin-top: 4px; }
+.btn-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.links-btn {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px; border-radius: 12px; width: 100%;
+  text-decoration: none; color: inherit; cursor: pointer;
+  transition: all .18s; border: none; font-family: inherit;
+  position: relative; background: none;
+}
+.links-btn.primary {
+  background: #EC4A5E;
+  box-shadow: 0 4px 16px rgba(236,74,94,.35);
+}
+.links-btn.primary:hover, .links-btn.primary:focus-visible { background: #c73a4c; transform: translateY(-1px); }
+.links-btn.secondary { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); }
+.links-btn.secondary:hover, .links-btn.secondary:focus-visible { background: rgba(255,255,255,.1); transform: translateY(-1px); }
+.links-btn-icon {
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.1);
+}
+.links-btn-icon svg { width: 20px; height: 20px; }
+.links-btn.primary .links-btn-icon { background: rgba(0,0,0,.15); }
+.links-btn-text { flex: 1; text-align: left; }
+.links-btn-title { font-size: 14px; font-weight: 700; line-height: 1.3; }
+.links-btn.primary .links-btn-title { font-size: 15px; }
+.links-btn-subtitle { font-size: 11px; opacity: .7; margin-top: 1px; }
+.links-btn-featured::after {
+  content: '\2605'; position: absolute; right: 14px; top: 50%;
+  transform: translateY(-50%); color: #DEB864; font-size: 12px;
+}
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #1e3a5f; color: #93c5fd; border: 1px solid #2563eb;
+  padding: 10px 20px; border-radius: 8px; font-size: 13px; z-index: 9999;
+  white-space: nowrap; pointer-events: none;
+  font-family: 'Noto Sans JP', system-ui, sans-serif;
+}
+.links-footer { margin-top: 40px; text-align: center; font-size: 11px; color: #444; }
+.links-footer a { color: #666; text-decoration: none; }
+.links-btn:focus-visible { outline: 2px solid #EC4A5E; outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<div class="links-container">
+  <div class="links-logo">
+    <div class="links-logo-icon">&#29190;</div>
+    <div class="links-headline">BAKUDAN RAMEN</div>
+    <div class="links-subheadline">AUTHENTIC JAPANESE RAMEN &middot; SAN ANTONIO</div>
+  </div>
+  <div class="btn-list" id="btn-list"></div>
+</div>
+
+<div class="links-footer">
+  &copy; <span id="yr"></span> Bakudan Ramen &mdash; <a href="/">bakudanramen.com</a>
+</div>
+
+<script>
+/* SVG icon set — identical to /links/index.html ICONS map */
+var ICONS = {
+  ramen:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M8 12h8M8 9s1 2 4 2 4-2 4-2"/><path d="M9 15s.5 1 3 1 3-1 3-1"/></svg>',
+  location:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+  ticket:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 9a3 3 0 010 6v2a2 2 0 002 2h16a2 2 0 002-2v-2a3 3 0 010-6V7a2 2 0 00-2-2H4a2 2 0 00-2 2v2z"/></svg>',
+  scooter:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M5 17H3v-4l2-5h7l2 4h4l1 5h-2"/><path d="M12 12V7"/></svg>',
+  calendar:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+  gift:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg>',
+  instagram: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>'
+};
+
+/**
+ * Link data — all fields match future /links-admin DB schema.
+ *
+ * openInNewTab: true  = external URLs (rim.bakudanramen.com, toasttab, instagram)
+ * openInNewTab: false = internal pages (/store-locations, /order-smart, /reservations)
+ *
+ * enabled: false + toastMsg = placeholder, does not navigate
+ * enabled: true             = live link
+ */
+var links = [
+  {
+    title:           'MIDWEEK RAMEN NIGHT \u2014 $22 Mon/Tue/Wed',
+    subtitle:        'Limited-time weekly special',
+    iconKey:         'ramen',
+    url:             'https://rim.bakudanramen.com/',
+    openInNewTab:    true,
+    toastMsg:        null,
+    featured:        true,
+    primary:         true,
+    visible:         true,
+    enabled:         true,
+    sortOrder:       1,
+    start_at:        null,
+    end_at:          null,
+    destinationType: 'campaign_landing_or_instagram_highlight',
+    destinationNote: 'Landing page — currently pointing to rim.bakudanramen.com'
+  },
+  {
+    title:           'Find Your Bakudan',
+    subtitle:        'RIM \u00B7 Stone Oak \u00B7 Bandera',
+    iconKey:         'location',
+    url:             '/store-locations',
+    openInNewTab:    false,
+    toastMsg:        null,
+    featured:        false,
+    primary:         false,
+    visible:         true,
+    enabled:         true,
+    sortOrder:       2,
+    start_at:        null,
+    end_at:          null,
+    destinationType: 'location_selector_with_google_maps',
+    destinationNote: 'Internal selector — verified Google Maps links for all 3 stores'
+  },
+  {
+    title:           'Join Bakudan Rewards',
+    subtitle:        'Earn Double on Midweek',
+    iconKey:         'ticket',
+    url:             'https://www.toasttab.com/bakudanramen/rewardsSignup',
+    openInNewTab:    true,
+    toastMsg:        null,
+    featured:        false,
+    primary:         false,
+    visible:         true,
+    enabled:         true,
+    sortOrder:       3,
+    start_at:        null,
+    end_at:          null,
+    destinationType: 'toast_loyalty_signup',
+    destinationNote: 'Toast Loyalty direct sign-up link'
+  },
+  {
+    title:           'Order Delivery',
+    subtitle:        'Choose the best location near you',
+    iconKey:         'scooter',
+    url:             '/order-smart',
+    openInNewTab:    false,
+    toastMsg:        null,
+    featured:        false,
+    primary:         false,
+    visible:         true,
+    enabled:         true,
+    sortOrder:       4,
+    start_at:        null,
+    end_at:          null,
+    destinationType: 'smart_delivery_router',
+    destinationNote: 'Smart delivery router — DoorDash/UberEats/Toast URLs pending per store'
+  },
+  {
+    title:           'Make a Reservation',
+    subtitle:        'Book your table',
+    iconKey:         'calendar',
+    url:             '/reservations',
+    openInNewTab:    false,
+    toastMsg:        null,
+    featured:        false,
+    primary:         false,
+    visible:         true,
+    enabled:         true,
+    sortOrder:       5,
+    start_at:        null,
+    end_at:          null,
+    destinationType: 'reservation_provider',
+    destinationNote: 'OpenTable or Yelp Reservations — provider confirmation pending'
+  },
+  {
+    title:           'Gift Cards',
+    subtitle:        'Give the gift of Bakudan',
+    iconKey:         'gift',
+    url:             '#',
+    openInNewTab:    false,
+    toastMsg:        'Link coming soon: Gift Cards',
+    featured:        false,
+    primary:         false,
+    visible:         true,
+    enabled:         false,
+    sortOrder:       6,
+    start_at:        null,
+    end_at:          null,
+    destinationType: 'toast_gift_card_purchase',
+    destinationNote: 'Toast gift card purchase page — URL pending'
+  },
+  {
+    title:           'Tag Us \u2014 @bakudanramen',
+    subtitle:        'Share your Bakudan moment',
+    iconKey:         'instagram',
+    url:             'https://www.instagram.com/bakudanramen',
+    openInNewTab:    true,
+    toastMsg:        null,
+    featured:        false,
+    primary:         false,
+    visible:         true,
+    enabled:         true,
+    sortOrder:       7,
+    start_at:        null,
+    end_at:          null,
+    destinationType: 'instagram_profile_ugc',
+    destinationNote: 'Instagram profile to drive UGC and brand tagging'
+  }
+];
+
+document.getElementById('yr').textContent = new Date().getFullYear();
+
+var _toastTimer = null;
+function showToast(msg) {
+  var ex = document.querySelector('.toast');
+  if (ex) ex.remove();
+  if (_toastTimer) clearTimeout(_toastTimer);
+  var t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  _toastTimer = setTimeout(function() { t.remove(); }, 2500);
+}
+
+function render() {
+  var list = document.getElementById('btn-list');
+  list.innerHTML = links.map(function(b) {
+    var isPrimary     = !!b.primary;
+    var isFeatured    = !!b.featured;
+    var isPlaceholder = (!b.enabled) || (!b.url) || (b.url === '#');
+    var href          = isPlaceholder ? '#' : b.url;
+    /* External URLs get new tab; internal pages stay in same tab */
+    var targetAttr    = (!isPlaceholder && b.openInNewTab)
+                          ? ' target="_blank" rel="noopener noreferrer"' : '';
+    var safeMsg       = (b.toastMsg || 'Link coming soon').replace(/'/g, "\\'");
+    var onclickAttr   = isPlaceholder
+                          ? ' onclick="event.preventDefault();showToast(\'' + safeMsg + '\')"' : '';
+
+    var cls = 'links-btn ' + (isPrimary ? 'primary' : 'secondary');
+    if (isFeatured) cls += ' links-btn-featured';
+
+    var iconSvg = ICONS[b.iconKey] || ICONS.gift;
+
+    return '<a href="' + href + '"' + targetAttr + onclickAttr
+      + ' class="' + cls + '" role="button"'
+      + ' data-destination-type="' + (b.destinationType || '') + '"'
+      + ' data-sort-order="' + b.sortOrder + '">'
+      + '<div class="links-btn-icon">' + iconSvg + '</div>'
+      + '<div class="links-btn-text">'
+      + '<div class="links-btn-title">' + b.title + '</div>'
+      + (b.subtitle ? '<div class="links-btn-subtitle">' + b.subtitle + '</div>' : '')
+      + '</div>'
+      + '</a>';
+  }).join('');
+}
+
+render();
+</script>
+</body>
+</html>

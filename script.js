@@ -1,0 +1,1 @@
+const fs=require("fs");const c=fs.readFileSync("api/index.php","utf8");console.log("len:"+c.length);

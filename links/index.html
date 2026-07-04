@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3GZ2RYDR6M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3GZ2RYDR6M');
+    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" id="meta-robots" content="index, follow">
+<title>Bakudan Ramen — Links</title>
+<meta name="description" content="Quick links for Bakudan Ramen — order online, view menu, find us on social media.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: 'Noto Sans JP', system-ui, sans-serif;
+  background: #111;
+  color: #fafafa;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px 60px;
+}
+
+.links-container { width: 100%; max-width: 420px; }
+
+.links-logo {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.links-logo-icon {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: linear-gradient(135deg, #EC4A5E, #A01830);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 40px; margin-bottom: 14px;
+  box-shadow: 0 4px 24px rgba(236,74,94,.3);
+}
+.links-headline    { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; color: #fff; }
+.links-subheadline { font-size: 11px; letter-spacing: 2px; color: #888; margin-top: 4px; }
+
+/* Buttons */
+.btn-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.link-section { display: flex; flex-direction: column; gap: 10px; }
+.link-section + .link-section { margin-top: 22px; }
+.link-section-title {
+  color: #aaa; font-size: 11px; font-weight: 700; letter-spacing: 1.4px;
+  text-transform: uppercase; padding: 0 4px;
+}
+
+.links-btn {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px; border-radius: 12px; width: 100%;
+  text-decoration: none; color: inherit; cursor: pointer;
+  transition: all .18s; border: none; font-family: inherit;
+  position: relative;
+}
+.links-btn.primary {
+  background: #EC4A5E;
+  box-shadow: 0 4px 16px rgba(236,74,94,.35);
+}
+.links-btn.primary:hover  { background: #c73a4c; transform: translateY(-1px); }
+.links-btn.secondary      { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); }
+.links-btn.secondary:hover { background: rgba(255,255,255,.1); transform: translateY(-1px); }
+
+.links-btn-icon {
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.1); font-size: 18px;
+}
+.links-btn.primary .links-btn-icon { background: rgba(0,0,0,.15); }
+.links-btn-icon svg { width: 20px; height: 20px; }
+
+.links-btn-text { flex: 1; text-align: left; }
+.links-btn-title    { font-size: 14px; font-weight: 700; }
+.links-btn.primary .links-btn-title { font-size: 15px; }
+.links-btn-subtitle { font-size: 11px; opacity: .7; margin-top: 1px; }
+
+.links-btn-featured::after { content: '★'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: #DEB864; font-size: 12px; }
+
+/* Footer */
+.links-footer { margin-top: 40px; text-align: center; font-size: 11px; color: #444; }
+.links-footer a { color: #666; text-decoration: none; }
+
+/* Loading state */
+#links-loading { text-align: center; padding: 60px 20px; color: #555; }
+#links-error   { text-align: center; padding: 40px 20px; color: #888; }
+
+/* Preview mode */
+.preview-banner {
+  background: #1e3a5f; border: 1px solid #2563eb;
+  border-radius: 8px; padding: 8px 14px; margin-bottom: 20px;
+  font-size: 11px; color: #93c5fd; text-align: center; letter-spacing: .5px;
+}
+.btn-hidden-indicator {
+  font-size: 10px; color: #64748b; margin-left: 8px;
+  background: rgba(255,255,255,.06); padding: 2px 6px; border-radius: 4px;
+}
+.links-btn.disabled-preview {
+  opacity: .45; cursor: default; pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<div class="links-container">
+  <div id="links-loading">Loading...</div>
+  <div id="links-content" style="display:none">
+    <div class="links-logo">
+      <div class="links-logo-icon" id="links-icon">爆</div>
+      <div class="links-headline" id="links-headline">BAKUDAN RAMEN</div>
+      <div class="links-subheadline" id="links-subheadline">AUTHENTIC JAPANESE RAMEN &middot; SAN ANTONIO</div>
+    </div>
+    <div class="btn-list" id="links-buttons"></div>
+  </div>
+  <div id="links-error" style="display:none">
+    <div style="font-size:28px;margin-bottom:12px">爆</div>
+    <div style="color:#EC4A5E;font-weight:700;margin-bottom:8px">Page not found</div>
+    <div style="font-size:13px" data-error-detail>This link page is not available.</div>
+  </div>
+</div>
+
+<div class="links-footer">
+  &copy; <span id="links-year"></span> Bakudan Ramen &mdash; <a href="/">bakudanramen.com</a>
+</div>
+
+<script>
+(function() {
+  document.getElementById('links-year').textContent = new Date().getFullYear();
+
+  // Detect preview mode: /links/preview/:slug?token=xxx
+  const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
+  const isPreview = pathParts.includes('preview');
+  const previewToken = new URLSearchParams(window.location.search).get('token');
+
+  // Slug: last path segment (unless it's 'links' or 'preview' -> default public customer page)
+  const lastSeg = pathParts[pathParts.length - 1];
+  const slug = (lastSeg === 'links' || lastSeg === 'preview' || !lastSeg) ? 'bakudan-links-main' : lastSeg;
+
+  // Apply noindex for preview pages
+  if (isPreview) {
+    document.getElementById('meta-robots').content = 'noindex, nofollow';
+  }
+
+  // Icon map (SVG for known platforms)
+  const ICONS = {
+    order:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+    website:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10A15.3 15.3 0 0112 2z"/></svg>',
+    instagram:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>',
+    facebook:    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>',
+    menu:        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>',
+    email:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+    events:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+    gift:        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg>',
+    shopping:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2l1.5 4h9L18 2"/><path d="M3 6h18l-2 15H5L3 6z"/><path d="M9 10a3 3 0 006 0"/></svg>',
+    youtube:     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 00-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 00.5 6.2 31.4 31.4 0 000 12a31.4 31.4 0 00.5 5.8 3 3 0 002.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 002.1-2.1A31.4 31.4 0 0024 12a31.4 31.4 0 00-.5-5.8zM9.6 15.5v-7l6.2 3.5-6.2 3.5z"/></svg>',
+    ticket:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 9a3 3 0 010 6v2a2 2 0 002 2h16a2 2 0 002-2v-2a3 3 0 010-6V7a2 2 0 00-2-2H4a2 2 0 00-2 2v2z"/></svg>',
+    directions:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>',
+    phone:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.82 19.79 19.79 0 01.01 1.19 2 2 0 012 .01h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14.92v2z"/></svg>',
+    external:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+  };
+
+  function getIcon(b) {
+    if (b.custom_icon_svg) return b.custom_icon_svg;
+    const key = b.icon_key || b.icon;
+    if (key && ICONS[key]) return ICONS[key];
+    return ICONS.external;
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    }[ch]));
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/`/g, '&#096;');
+  }
+
+  function inferLocation(href) {
+    const url = String(href || '').toLowerCase();
+    if (url.includes('stone-oak')) {
+      return { name: 'Stone Oak', detail: '22506 US-281 N' };
+    }
+    if (url.includes('bandera')) {
+      return { name: 'Bandera', detail: '11309 Bandera Rd' };
+    }
+    if (url.includes('the-rim') || url.includes('bakudanramen')) {
+      return { name: 'The Rim', detail: '17619 La Cantera Pkwy' };
+    }
+    return null;
+  }
+
+  function polishButtonCopy(title, subtitle, href) {
+    const lowerTitle = String(title || '').toLowerCase();
+    const lowerHref = String(href || '').toLowerCase();
+    const location = inferLocation(href);
+
+    if (lowerHref.includes('/smsoptin')) {
+      return {
+        title: 'Text Updates & Offers',
+        subtitle: subtitle || 'Bakudan deals and news by SMS',
+      };
+    }
+
+    if (lowerHref.includes('order.toasttab.com') && location) {
+      return {
+        title: `Order ${location.name}`,
+        subtitle: subtitle || location.detail,
+      };
+    }
+
+    if (lowerHref.includes('/rewardssignup') && location) {
+      return {
+        title: lowerTitle.includes(location.name.toLowerCase()) ? title : `${location.name} Rewards`,
+        subtitle: subtitle || `Earn rewards at ${location.name}`,
+      };
+    }
+
+    if (lowerTitle === 'email us' || lowerHref.includes('/marketing-signup')) {
+      return {
+        title: lowerTitle.includes('offer') ? title : 'Email Club & Offers',
+        subtitle: subtitle || 'Bakudan updates and offers',
+      };
+    }
+
+    return { title, subtitle };
+  }
+
+  function normalizeButton(b) {
+    const rawTitle = b.title || b.label || 'Untitled link';
+    const rawSubtitle = b.subtitle || '';
+    const isEnabled = b.enabled === undefined ? true : Number(b.enabled) === 1 || b.enabled === true;
+    const isVisible = b.visible === undefined ? Number(b.is_active ?? 1) === 1 : !!b.visible;
+    const href = b.url && b.url !== '#' ? b.url : '#';
+    const isExternal = /^https?:\/\//i.test(href) || /^mailto:|^tel:/i.test(href);
+    const copy = polishButtonCopy(rawTitle, rawSubtitle, href);
+    return {
+      ...b,
+      title: copy.title,
+      subtitle: copy.subtitle,
+      href,
+      enabled: isEnabled,
+      visible: isVisible,
+      isPrimary: b.style_variant === 'primary' || Number(b.is_featured) === 1,
+      isFeatured: Number(b.is_featured) === 1 || b.is_featured === true,
+      opensInNewTab: b.opens_in_new_tab === undefined ? isExternal : !!b.opens_in_new_tab,
+    };
+  }
+
+  function trackClick(pageId, btnId) {
+    fetch('/api/public/analytics/click', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_id: pageId, button_id: btnId }),
+    }).catch(() => {});
+  }
+
+  async function load() {
+    // Real path-based API — hits api/index.php's DB-backed handler directly.
+    // The old /api/index-lite.php?r=... route was a legacy shim that never
+    // returned `sections`, so section headers silently never rendered; see
+    // LINK_HUB_2_AUDIT.md §3.
+    const route = isPreview && previewToken
+      ? `/api/public/links/preview/${encodeURIComponent(slug)}`
+      : `/api/public/links/${encodeURIComponent(slug)}`;
+    const apiUrl = route + (isPreview && previewToken ? `?token=${encodeURIComponent(previewToken)}` : '');
+    const cacheBustedApiUrl = apiUrl + (apiUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+
+    let res, data, networkFailure = false;
+    try {
+      res = await fetch(cacheBustedApiUrl, { cache: 'no-store' });
+    } catch (e) {
+      networkFailure = true; // fetch itself threw: offline/DNS/CORS — no server response at all
+    }
+
+    if (!networkFailure) {
+      try {
+        data = await res.json();
+      } catch (e) {
+        // Got an HTTP response but it wasn't JSON (e.g. a raw server error
+        // page). This is a real server-side failure, not "offline" — it must
+        // not be silently replaced with stale hardcoded buttons.
+        data = { ok: false, message: 'The server returned an unexpected response.' };
+      }
+    }
+
+    document.getElementById('links-loading').style.display = 'none';
+
+    // Only fall back to the offline snapshot when the network request itself
+    // failed to reach a server. Any real HTTP response (even an error one)
+    // must be shown as an error, never silently replaced with stale
+    // hardcoded buttons — that masking is what caused Admin edits to look
+    // "duplicated" on the public page. See LINK_HUB_2_AUDIT.md §3.
+    if (networkFailure) {
+      data = fallbackLinksData();
+    } else if (!res.ok || !data.ok) {
+      document.getElementById('links-error').style.display = 'block';
+      const msgEl = document.getElementById('links-error').querySelector('[data-error-detail]');
+      if (msgEl) msgEl.textContent = data?.message || 'This link page is not available.';
+      return;
+    }
+
+    const { page, buttons, sections, settings } = data.data;
+    const isPreviewMode = !!data.preview;
+
+    // Non-public pages (staff training, unlisted, etc.) must never be indexed,
+    // regardless of preview mode.
+    if (isPreviewMode || (page.visibility && page.visibility !== 'public')) {
+      document.getElementById('meta-robots').content = 'noindex, nofollow';
+    }
+
+    // Update meta
+    document.title = (page.headline || page.title) + ' — Bakudan Ramen';
+    if (page.handle) {
+      document.getElementById('links-headline').textContent = page.handle;
+    } else {
+      document.getElementById('links-headline').textContent = page.headline || settings.links_headline || 'BAKUDAN RAMEN';
+    }
+    document.getElementById('links-subheadline').textContent = page.subheadline || settings.links_subheadline || '';
+
+    // Preview banner
+    if (isPreviewMode) {
+      const banner = document.createElement('div');
+      banner.className = 'preview-banner';
+      banner.innerHTML = '&#128274; PREVIEW &mdash; Internal Use Only &mdash; Not publicly indexed';
+      document.querySelector('.links-logo').insertAdjacentElement('beforebegin', banner);
+    }
+
+    // Track view (only for published pages, not preview)
+    if (!isPreviewMode) {
+      fetch('/api/public/analytics/view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page_id: page.id, user_agent: navigator.userAgent, referer: document.referrer }),
+      }).catch(() => {});
+    }
+
+    const listEl = document.getElementById('links-buttons');
+    if (!buttons.length) {
+      listEl.innerHTML = '<div style="text-align:center;color:#555;padding:24px">No links available yet.</div>';
+    } else {
+      const now = new Date().toISOString();
+      const renderButton = (b) => {
+        const button = normalizeButton(b);
+        const isPrimary  = button.isPrimary;
+        const isFeatured = button.isFeatured;
+
+        // In preview mode show all buttons, even hidden/disabled (with indicators)
+        const isHidden   = isPreviewMode && !button.visible;
+        const isDisabled = isPreviewMode && !button.enabled;
+        const isScheduled = button.start_at && now < button.start_at;
+
+        const target = button.opensInNewTab ? '_blank' : '_self';
+        const rel = target === '_blank' ? ' rel="noopener noreferrer"' : '';
+        const href = button.href;
+
+        let indicator = '';
+        if (isPreviewMode) {
+          if (isHidden)    indicator = '<span class="btn-hidden-indicator">Hidden</span>';
+          if (isDisabled)  indicator = '<span class="btn-hidden-indicator">Disabled</span>';
+          if (isScheduled) indicator = '<span class="btn-hidden-indicator">Scheduled</span>';
+        }
+
+        return `
+        <a href="${escapeAttr(href)}" target="${target}"${rel}
+           class="links-btn ${isPrimary?'primary':'secondary'}${isFeatured?' links-btn-featured':''}${(isHidden||isDisabled)?' disabled-preview':''}"
+           onclick="${href==='#'?'event.preventDefault();showComingSoon()':''}${!isPreviewMode&&href!=='#'?`fetch('/api/public/analytics/click',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page_id:${Number(page.id)},button_id:${Number(button.id)}})}).catch(()=>{})`:''}" >
+          <div class="links-btn-icon">${getIcon(b)}</div>
+          <div class="links-btn-text" style="flex:1">
+            <div class="links-btn-title">${escapeHtml(button.title)}${indicator}</div>
+            ${button.subtitle ? `<div class="links-btn-subtitle">${escapeHtml(button.subtitle)}</div>` : ''}
+          </div>
+        </a>`;
+      };
+
+      const grouped = [];
+      const bySectionId = new Map();
+      (sections || []).forEach(s => {
+        const section = { section: s, buttons: [] };
+        grouped.push(section);
+        bySectionId.set(String(s.id), section);
+      });
+      buttons.forEach(b => {
+        const key = b.section_id == null ? '' : String(b.section_id);
+        if (key && bySectionId.has(key)) {
+          bySectionId.get(key).buttons.push(b);
+          return;
+        }
+        const fallbackTitle = b.section_title || '';
+        if (fallbackTitle) {
+          let section = grouped.find(g => g.section.title === fallbackTitle);
+          if (!section) {
+            section = { section: { title: fallbackTitle }, buttons: [] };
+            grouped.push(section);
+          }
+          section.buttons.push(b);
+          return;
+        }
+        let loose = grouped.find(g => !g.section.title);
+        if (!loose) {
+          loose = { section: { title: '' }, buttons: [] };
+          grouped.push(loose);
+        }
+        loose.buttons.push(b);
+      });
+
+      const visibleGroups = grouped.filter(g => g.buttons.length);
+      listEl.innerHTML = visibleGroups.map(g => `
+        <div class="link-section">
+          ${g.section.title ? `<div class="link-section-title">${escapeHtml(g.section.title)}</div>` : ''}
+          ${g.buttons.map(renderButton).join('')}
+        </div>
+      `).join('');
+    }
+
+    document.getElementById('links-content').style.display = 'block';
+  }
+
+  function showComingSoon() {
+    const t = document.createElement('div');
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e3a5f;color:#93c5fd;border:1px solid #2563eb;padding:10px 20px;border-radius:8px;font-size:13px;z-index:9999';
+    t.textContent = 'Link coming soon';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2500);
+  }
+
+  function fallbackLinksData() {
+    return {
+      ok: true,
+      data: {
+        page: {
+          id: 2,
+          headline: 'BAKUDAN RAMEN',
+          subheadline: 'AUTHENTIC JAPANESE RAMEN · SAN ANTONIO'
+        },
+        sections: [
+          { id: 1, title: 'Order Online' },
+          { id: 2, title: 'Rewards & Loyalty' },
+          { id: 3, title: 'Social' }
+        ],
+        settings: {
+          links_headline: 'BAKUDAN RAMEN',
+          links_subheadline: 'AUTHENTIC JAPANESE RAMEN · SAN ANTONIO'
+        },
+        buttons: [
+          { id: 2, section_id: 1, title: 'Order Bandera', url: 'https://order.toasttab.com/online/bakudan-bandera', is_featured: 1, visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 4, section_id: 1, title: 'Order Stone Oak', url: 'https://order.toasttab.com/online/bakudan-ramen-stone-oak', is_featured: 1, visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 5, section_id: 1, title: 'Order The Rim', url: 'https://order.toasttab.com/online/bakudanramen/', is_featured: 1, visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 10, section_id: 2, title: 'Stone Oak Rewards', url: 'https://www.toasttab.com/bakudan-ramen-stone-oak/rewardsSignup', visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 12, section_id: 2, title: 'The Rim Rewards', url: 'https://www.toasttab.com/bakudanramen/rewardsSignup', visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 18, section_id: 2, title: 'Bandera Rewards', url: 'https://www.toasttab.com/bakudan-bandera/rewardsSignup', visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 1, section_id: 3, title: 'Follow on Instagram', url: 'https://www.instagram.com/bakudanramen/', icon_key: 'instagram', visible: 1, enabled: 1, opens_in_new_tab: 1 },
+          { id: 19, section_id: 3, title: 'Visit Website', url: 'https://www.bakudanramen.com/', icon_key: 'website', visible: 1, enabled: 1, opens_in_new_tab: 0 }
+        ]
+      }
+    };
+  }
+
+  load().catch(err => {
+    document.getElementById('links-loading').style.display = 'none';
+    document.getElementById('links-error').style.display = 'block';
+    console.error('Links load error:', err);
+  });
+})();
+</script>
+</body>
+</html>

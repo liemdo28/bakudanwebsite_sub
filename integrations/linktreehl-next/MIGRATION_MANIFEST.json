@@ -1,0 +1,17 @@
+{
+  "source": "E:\\Project\\Master\\Other\\LinkTreeHL",
+  "canonicalOwner": "E:\\Project\\Master\\Bakudan\\bakudanramen.com-current",
+  "target": "E:\\Project\\Master\\Bakudan\\bakudanramen.com-current\\integrations\\linktreehl-next",
+  "status": "migrated_source_copy",
+  "runtimeActive": false,
+  "excluded": [
+    ".git",
+    ".next",
+    "node_modules",
+    ".local-agent",
+    ".env",
+    "package-lock.json",
+    "tsconfig.tsbuildinfo"
+  ],
+  "rollback": "Use E:\\Project\\Master\\Other\\LinkTreeHL until this integration is promoted and archived by approval."
+}

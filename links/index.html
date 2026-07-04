@@ -103,6 +103,20 @@ body {
 #links-loading { text-align: center; padding: 60px 20px; color: #555; }
 #links-error   { text-align: center; padding: 40px 20px; color: #888; }
 
+/* Password gate */
+#links-password-gate { display: none; text-align: center; padding: 40px 20px; }
+#links-password-gate .pw-icon { font-size: 40px; margin-bottom: 16px; color: #EC4A5E; }
+#links-password-gate .pw-title { font-size: 16px; font-weight: 700; color: #fafafa; margin-bottom: 8px; }
+#links-password-gate .pw-subtitle { font-size: 13px; color: #888; margin-bottom: 24px; }
+#links-password-gate .pw-form { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+#links-password-gate .pw-input { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 12px 16px; color: #fafafa; font-size: 14px; width: 240px; outline: none; transition: border-color .2s; }
+#links-password-gate .pw-input:focus { border-color: #EC4A5E; }
+#links-password-gate .pw-input::placeholder { color: #555; }
+#links-password-gate .pw-submit { background: #EC4A5E; color: #fff; border: none; border-radius: 8px; padding: 12px 28px; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s; }
+#links-password-gate .pw-submit:hover { background: #c73a4c; }
+#links-password-gate .pw-submit:disabled { opacity: .5; cursor: not-allowed; }
+#links-password-gate .pw-error { font-size: 12px; color: #f87171; margin-top: -4px; }
+
 /* Preview mode */
 .preview-banner {
   background: #1e3a5f; border: 1px solid #2563eb;
@@ -149,6 +163,16 @@ body {
     <div style="font-size:28px;margin-bottom:12px">爆</div>
     <div style="color:#EC4A5E;font-weight:700;margin-bottom:8px">Page not found</div>
     <div style="font-size:13px" data-error-detail>This link page is not available.</div>
+  </div>
+  <div id="links-password-gate">
+    <div class="pw-icon">🔒</div>
+    <div class="pw-title">This page is password protected</div>
+    <div class="pw-subtitle">Enter the password to view this content</div>
+    <div class="pw-form">
+      <input id="pw-input" class="pw-input" type="password" placeholder="Enter password" autocomplete="off">
+      <div id="pw-msg" class="pw-error" style="display:none"></div>
+      <button id="pw-submit" class="pw-submit" type="button">Unlock Page</button>
+    </div>
   </div>
 </div>
 
@@ -333,6 +357,14 @@ body {
     }
 
     document.getElementById('links-loading').style.display = 'none';
+
+    // Password-protected page: show the unlock gate instead of an error.
+    if (!networkFailure && res.status === 401) {
+      document.getElementById('links-loading').style.display = 'none';
+      document.getElementById('links-password-gate').style.display = 'block';
+      setupPasswordGate(slug, isPreview, previewToken);
+      return;
+    }
 
     // Only fall back to the offline snapshot when the network request itself
     // failed to reach a server. Any real HTTP response (even an error one)
@@ -521,6 +553,61 @@ body {
     }
 
     document.getElementById('links-content').style.display = 'block';
+  }
+
+  function setupPasswordGate(slug, isPreview, previewToken) {
+    const input = document.getElementById('pw-input');
+    const submitBtn = document.getElementById('pw-submit');
+    const msgEl = document.getElementById('pw-msg');
+
+    function submitPassword() {
+      const pw = input.value;
+      if (!pw) { msgEl.textContent = 'Please enter a password.'; msgEl.style.display = 'block'; return; }
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Checking...';
+      msgEl.style.display = 'none';
+
+      const route = isPreview && previewToken
+        ? `/api/public/links/preview/${encodeURIComponent(slug)}`
+        : `/api/public/links/${encodeURIComponent(slug)}`;
+      const baseParams = isPreview && previewToken ? `?token=${encodeURIComponent(previewToken)}` : '?';
+      const url = route + baseParams + '&password=' + encodeURIComponent(pw);
+
+      fetch(url, { cache: 'no-store' }).then(res => {
+        if (res.ok) {
+          // Re-run the full load flow with password baked into the URL so the
+          // page content and all sub-renders (sections, buttons, notices, SEO)
+          // are fetched in one authenticated request.
+          window.location.href = window.location.pathname + '?password=' + encodeURIComponent(pw) + (previewToken ? '&token=' + encodeURIComponent(previewToken) : '');
+        } else if (res.status === 401) {
+          msgEl.textContent = 'Incorrect password. Please try again.';
+          msgEl.style.display = 'block';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Unlock Page';
+          input.value = '';
+          input.focus();
+        } else {
+          msgEl.textContent = 'Something went wrong. Please try again.';
+          msgEl.style.display = 'block';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Unlock Page';
+        }
+      }).catch(() => {
+        msgEl.textContent = 'Network error. Please try again.';
+        msgEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Unlock Page';
+      });
+    }
+
+    submitBtn.addEventListener('click', submitPassword);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submitPassword(); });
+    input.focus();
+
+    // If a password was already provided via query param (from redirect above),
+    // submit immediately.
+    const urlPw = new URLSearchParams(window.location.search).get('password');
+    if (urlPw) { input.value = urlPw; submitPassword(); }
   }
 
   function showComingSoon() {

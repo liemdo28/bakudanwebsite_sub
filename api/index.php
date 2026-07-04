@@ -365,7 +365,7 @@ function migrate_staff_training_v2(SQLite3 $db): void {
     $db->exec("INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES ('migration_staff_training_v2','1',datetime('now'))");
 }
 
-const // v3: rename staff-training-videos -> staff-training so the .htaccess slug route works.
+// v3: rename staff-training-videos -> staff-training so the .htaccess slug route works.
 function migrate_staff_training_v3(SQLite3 $db): void {
     if ($db->querySingle("SELECT value FROM settings WHERE key='migration_staff_training_v3'") === '1') return;
     $oldSlug = 'staff-training-videos';
@@ -374,6 +374,19 @@ function migrate_staff_training_v3(SQLite3 $db): void {
     if (!$pageId) return;
     $db->exec("UPDATE pages SET slug='$newSlug', updated_at=datetime('now') WHERE id=$pageId");
     $db->exec("INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES ('migration_staff_training_v3','1',datetime('now'))");
+}
+
+// v4: force slug = 'staff-training' AND visibility = 'unlisted' on the staff page.
+// Idempotent: only writes when the current state is wrong. Runs after v1/v2/v3.
+function migrate_staff_training_v4(SQLite3 $db): void {
+    $row = $db->querySingle("SELECT id, slug, visibility FROM pages WHERE slug IN ('staff-training','staff-training-videos') AND page_type='staff_training' LIMIT 1", true);
+    if (!$row) return;
+    $needsUpdate = false;
+    if ($row['slug'] !== 'staff-training') $needsUpdate = true;
+    if ($row['visibility'] !== 'unlisted') $needsUpdate = true;
+    if (!$needsUpdate) return;
+    $pid = (int)$row['id'];
+    $db->exec("UPDATE pages SET slug='staff-training', visibility='unlisted', updated_at=datetime('now') WHERE id=$pid");
 }
 
 const VALID_PAGE_TYPES  = ['link_hub','staff_training','marketing_signup','campaign','location','custom'];

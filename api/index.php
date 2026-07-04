@@ -866,12 +866,19 @@ if (preg_match('#^/admin/pages/(\d+)$#', $path, $m)) {
         $showOnHub = array_key_exists('show_on_hub', $BODY) ? (int)(bool)$BODY['show_on_hub'] : $page['show_on_hub'];
         $allowIndexing = array_key_exists('allow_indexing', $BODY) ? (int)(bool)$BODY['allow_indexing'] : $page['allow_indexing'];
         try {
-            run("UPDATE pages SET title=?,slug=?,headline=?,store_slug=?,is_active=?,theme=?,page_type=?,visibility=?,status=?,show_on_hub=?,allow_indexing=?,seo_title=?,meta_description=?,og_image=?,canonical_url=?,updated_at=datetime('now') WHERE id=?",
-                [$BODY['title']??$page['title'], $slug, $BODY['headline']??$page['headline'],
+            // Password hash: only set when a new password is provided (never returned in responses)
+            $pwHash = null;
+            if (!empty($BODY['page_password'])) {
+                $pwHash = password_hash($BODY['page_password'], PASSWORD_DEFAULT);
+            }
+            $pwField = $pwHash ? ',staff_password_hash=?' : '';
+            $pwVal   = $pwHash ? [$pwHash, $pid] : [$pid];
+            run("UPDATE pages SET title=?,slug=?,headline=?,store_slug=?,is_active=?,theme=?,page_type=?,visibility=?,status=?,show_on_hub=?,allow_indexing=?,seo_title=?,meta_description=?,og_image=?,canonical_url=?$pwField,updated_at=datetime('now') WHERE id=?",
+                array_merge([$BODY['title']??$page['title'], $slug, $BODY['headline']??$page['headline'],
                  $BODY['store_slug']??$page['store_slug'], $BODY['is_active']??$page['is_active'],
                  $BODY['theme']??$page['theme'], $pageType, $visibility, $status, $showOnHub, $allowIndexing,
                  $BODY['seo_title']??$page['seo_title'], $BODY['meta_description']??$page['meta_description'],
-                 $BODY['og_image']??$page['og_image'], $BODY['canonical_url']??$page['canonical_url'], $pid]);
+                 $BODY['og_image']??$page['og_image'], $BODY['canonical_url']??$page['canonical_url']], $pwVal));
             if ($slugChanged) {
                 run("INSERT INTO redirects (page_id,source,destination,is_permanent) VALUES (?,?,?,1)",
                     [$pid, '/links/' . $page['slug'], '/links/' . $slug]);

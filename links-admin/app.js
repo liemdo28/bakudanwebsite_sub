@@ -2068,6 +2068,22 @@ async function viewPageEditor(pageId) {
             </select>
           </div>
         </div>
+        <div id="pe-pw-row" style="margin-bottom:12px;${p.visibility!=='password_protected'?'display:none':''}">
+          <div class="form-group" style="margin-bottom:6px">
+            <label class="form-label">Page Password</label>
+            <div style="position:relative">
+              <input id="pe-password" type="password" class="form-control" placeholder="Leave blank to keep current password">
+              <button type="button" onclick="BKDN.togglePasswordVisibility('pe-password', this)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#94a3b8;padding:4px">${iconEyeOpen()}</button>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Confirm Password</label>
+            <div style="position:relative">
+              <input id="pe-password-confirm" type="password" class="form-control" placeholder="Re-enter password to confirm">
+              <button type="button" onclick="BKDN.togglePasswordVisibility('pe-password-confirm', this)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#94a3b8;padding:4px">${iconEyeOpen()}</button>
+            </div>
+          </div>
+        </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
           <label class="toggle"><input id="pe-show-on-hub" type="checkbox" ${p.show_on_hub!==0?'checked':''}><span class="toggle-slider"></span></label>
           <span class="form-label" style="margin:0">Show on Customer Link Hub</span>
@@ -2078,6 +2094,7 @@ async function viewPageEditor(pageId) {
         </div>
         <div style="font-size:11px;color:#64748b;margin-bottom:12px">Staff Training pages should normally be Unlisted, hidden from the Customer Link Hub, and excluded from search indexing — the page stays reachable at its direct URL but is never linked or listed publicly.</div>
         <button class="btn btn-primary" onclick="BKDN.savePageVisibility(${pageId})">${iconSave()} Save Type &amp; Visibility</button>
+        <script>document.getElementById('pe-visibility').addEventListener('change', function(){document.getElementById('pe-pw-row').style.display=this.value==='password_protected'?'block':'none';});</script>
       </div>
 
       <div class="card">
@@ -2679,12 +2696,22 @@ async function savePage(pageId) {
 }
 
 async function savePageVisibility(pageId) {
+  const vis = document.getElementById('pe-visibility').value;
+  const pw  = document.getElementById('pe-password')?.value || '';
+  const pwc = document.getElementById('pe-password-confirm')?.value || '';
+  if (vis === 'password_protected' && pw && pw !== pwc) {
+    toast('Password and confirmation do not match.', 'error'); return;
+  }
+  if (vis === 'password_protected' && pw && pw.length < 4) {
+    toast('Password must be at least 4 characters.', 'error'); return;
+  }
   const body = {
     page_type: document.getElementById('pe-type').value,
-    visibility: document.getElementById('pe-visibility').value,
+    visibility: vis,
     show_on_hub: document.getElementById('pe-show-on-hub').checked ? 1 : 0,
     allow_indexing: document.getElementById('pe-allow-indexing').checked ? 1 : 0,
   };
+  if (pw) body.page_password = pw;
   const res = await PUT('/admin/pages/' + pageId, body);
   if (res?.ok) { toast('Page type & visibility saved.', 'success'); viewPageEditor(pageId); }
   else toast(res?.error || 'Save failed.', 'error');

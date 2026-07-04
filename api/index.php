@@ -1990,6 +1990,8 @@ if (preg_match('#^/public/links/(.+)$#', $path, $m) && $METHOD === 'GET') {
     // Record pageview
     run("INSERT INTO analytics (page_id,event_type,referrer,user_agent,ip) VALUES (?,?,?,?,?)",
         [$page['id'],'pageview',$_SERVER['HTTP_REFERER']??null,$_SERVER['HTTP_USER_AGENT']??null,$_SERVER['REMOTE_ADDR']??null]);
+    // Strip sensitive fields before exposing page data publicly.
+    unset($page['staff_password_hash'], $page['preview_token']);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     http_response_code(200);

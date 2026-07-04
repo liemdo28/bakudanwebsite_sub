@@ -109,7 +109,7 @@ sftp.close()
 
 # Test
 print('\nTesting /api/public/links/bakudan-links-main ...')
-_, o, _ = ssh.exec_command(
+_stdin, o, _stderr = ssh.exec_command(
     'curl -s https://www.bakudanramen.com/api/public/links/bakudan-links-main | head -c 200'
 )
 print(o.read().decode('utf-8', errors='replace'))

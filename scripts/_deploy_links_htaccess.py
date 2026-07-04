@@ -21,7 +21,7 @@ sftp.close()
 
 # Test QR URL
 print('\nTesting /links/bakudan-links-main ...')
-_, o, _ = ssh.exec_command(
+_stdin, o, _stderr = ssh.exec_command(
     'curl -s -o /dev/null -w "%{http_code}" https://www.bakudanramen.com/links/bakudan-links-main'
 )
 code = o.read().decode().strip()

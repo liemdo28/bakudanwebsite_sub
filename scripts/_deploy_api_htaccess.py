@@ -21,7 +21,7 @@ stat = sftp.stat(remote_file)
 print(f'OK  api/.htaccess  ({stat.st_size} bytes)')
 
 # Verify
-_, o, _ = ssh.exec_command(f'cat {remote_file}')
+_stdin, o, _stderr = ssh.exec_command(f'cat {remote_file}')
 content = o.read().decode('utf-8', errors='replace')
 print(f'\nContent on server:\n{content}')
 
@@ -29,7 +29,7 @@ sftp.close()
 
 # Quick test
 print('\nTesting /api/admin/dashboard (expect JSON, not 404)...')
-_, o, _ = ssh.exec_command(
+_stdin, o, _stderr = ssh.exec_command(
     'curl -s -o /dev/null -w "%{http_code}" https://www.bakudanramen.com/api/admin/dashboard'
 )
 code = o.read().decode().strip()

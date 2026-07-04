@@ -471,6 +471,75 @@ select.form-control   { appearance: none; }
 ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
 /* ── Responsive ──────────────────────────────────── */
+/* ── Campaign Manager ─────────────────────────────── */
+.campaign-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.campaign-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px; transition: border-color .15s; }
+.campaign-card:hover { border-color: #2563eb; }
+.campaign-card-title { font-size: 15px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+.campaign-card-desc { font-size: 12px; color: #475569; margin-top: 4px; line-height: 1.4; }
+.campaign-card-dates { font-size: 11px; color: #475569; margin-top: 6px; }
+.campaign-stat-value { font-size: 18px; font-weight: 700; color: #f1f5f9; }
+.campaign-stat-label { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .5px; }
+.campaign-badge-active { background: #14532d; color: #86efac; }
+.campaign-badge-draft { background: #422006; color: #fde68a; }
+.campaign-badge-expired { background: #1e293b; color: #64748b; }
+.campaign-badge-scheduled { background: #1e3a5f; color: #93c5fd; }
+.campaign-badge-paused { background: #450a0a; color: #fca5a5; }
+
+/* ── SEO Manager ────────────────────────────────── */
+.seo-preview-google { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; max-width: 600px; margin-bottom: 16px; }
+.seo-preview-title { font-size: 18px; color: #1a0dab; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seo-preview-url { font-size: 12px; color: #006621; margin-bottom: 2px; }
+.seo-preview-desc { font-size: 13px; color: #545454; line-height: 1.4; }
+.seo-checklist { display: flex; flex-direction: column; gap: 4px; }
+.seo-check-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; font-size: 12px; }
+.seo-check-ok { background: #14532d; color: #86efac; }
+.seo-check-warn { background: #422006; color: #fde68a; }
+.seo-check-err { background: #450a0a; color: #fca5a5; }
+.seo-field-group { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+
+/* ── Forms Builder ──────────────────────────────── */
+.form-builder-field { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 10px 14px; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; margin-bottom: 6px; }
+.form-builder-field-label { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+.field-type-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; background: #1e3a5f; color: #93c5fd; }
+
+/* ── Customer Service Hub ─────────────────────────── */
+.cs-routing-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+.cs-routing-title { font-size: 14px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
+.cs-routing-desc { font-size: 12px; color: #475569; margin-top: 4px; }
+.cs-routing-options { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.cs-option-btn { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; cursor: pointer; transition: all .15s; color: #94a3b8; font-size: 13px; }
+.cs-option-btn:hover { border-color: #2563eb; color: #e2e8f0; }
+
+/* ── Template Library ────────────────────────────── */
+.template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.template-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px; cursor: pointer; transition: all .15s; }
+.template-card:hover { border-color: #2563eb; transform: translateY(-2px); }
+.template-card.selected { border-color: #2563eb; background: #1a2f5a; }
+.template-card-icon { font-size: 28px; margin-bottom: 8px; }
+.template-card-title { font-size: 13px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+.template-card-desc { font-size: 11px; color: #475569; }
+
+/* ── UTM Builder ─────────────────────────────────── */
+.utm-preview { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; font-size: 12px; font-family: monospace; color: #86efac; word-break: break-all; margin-top: 12px; }
+.utm-param-row { display: grid; grid-template-columns: 100px 1fr; gap: 12px; align-items: center; margin-bottom: 8px; }
+.utm-param-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; }
+
+/* ── Automation Rules ─────────────────────────────── */
+.rule-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+.rule-card-title { font-size: 13px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+.rule-badge-active { background: #14532d; color: #86efac; }
+.rule-badge-paused { background: #422006; color: #fde68a; }
+
+/* ── Notice Banner ─────────────────────────────── */
+.notice-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+.notice-info { border-left: 3px solid #3b82f6; }
+.notice-warn { border-left: 3px solid #eab308; }
+.notice-error { border-left: 3px solid #ef4444; }
+.notice-title { font-size: 13px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+.notice-body { font-size: 12px; color: #94a3b8; line-height: 1.5; }
+
+/* ── Responsive ──────────────────────────────────── */
 @media (max-width: 768px) {
   .sidebar     { width: 56px; }
   .sidebar-logo-text, .sidebar-user-name, .sidebar-user-role, .sidebar-meta, .sidebar-section-label, .sidebar-link span { display: none; }
@@ -479,4 +548,6 @@ select.form-control   { appearance: none; }
   .topbar   { padding: 0 14px; }
   .blog-editor-layout { grid-template-columns: 1fr; }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .campaign-grid { grid-template-columns: 1fr; }
+  .template-grid { grid-template-columns: 1fr; }
 }

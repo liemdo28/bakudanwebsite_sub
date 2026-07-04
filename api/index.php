@@ -1881,6 +1881,10 @@ if ($path === '/public/subscribe' && $METHOD === 'POST') {
 if ((preg_match('#^/public/shortlinks/(.+)$#', $path, $m) || preg_match('#^/go/(.+)$#', $path, $m)) && $METHOD === 'GET') {
     $sl = q1("SELECT * FROM shortlinks WHERE code=? AND is_active=1", [$m[1]]);
     if (!$sl) err('Shortlink not found.', 404);
+    // Validate scheme at redirect time — defense-in-depth against malformed/stale DB values
+    if (!preg_match('#^https?://#i', $sl['destination'])) {
+        err('Invalid shortlink destination.', 400);
+    }
     run("UPDATE shortlinks SET clicks=clicks+1, updated_at=datetime('now') WHERE id=?", [$sl['id']]);
     run("INSERT INTO analytics (shortlink_id,event_type,referrer,user_agent,ip) VALUES (?,?,?,?,?)",
         [$sl['id'],'click',$_SERVER['HTTP_REFERER']??null,$_SERVER['HTTP_USER_AGENT']??null,$_SERVER['REMOTE_ADDR']??null]);

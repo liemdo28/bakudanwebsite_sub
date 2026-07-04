@@ -523,7 +523,12 @@ async function viewDashboard() {
   }
   const d = res.data;
   const warnings = [];
-  d.pages.forEach(p => { if (!p.last_published_at) warnings.push(`"${p.title}" has never been published`); });
+  d.pages.forEach(p => { if (p.status !== 'published') warnings.push(`"${p.title}" is ${p.status || 'draft'} — not live yet`); });
+  const w = d.warnings || {};
+  (w.misplaced_staff_content || []).forEach(m => warnings.push(`"${m.button_label}" (${m.link_type}) looks like staff/training content on the public page "${m.page_title}"`));
+  (w.broken_links || []).forEach(b => warnings.push(`Broken link: "${b.label}" on "${b.page_title}" — ${b.status}${b.http_code ? ' (HTTP ' + b.http_code + ')' : ''}`));
+  (w.duplicate_buttons || []).forEach(dp => warnings.push(`${dp.count} duplicate button${dp.count!==1?'s':''} on "${dp.page_title}"`));
+  (w.draft_changes || []).forEach(dc => warnings.push(`"${dc.title}" has unpublished draft changes`));
 
   setContent(`
     ${pageTitle('Dashboard', 'Here\'s your Links Hub at a glance.')}
@@ -832,9 +837,13 @@ function openPageModal() {
         <select id="pf-visibility" class="form-control">${visOpts}</select>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <label class="toggle"><input id="pf-show-on-hub" type="checkbox" checked><span class="toggle-slider"></span></label>
       <span class="form-label" style="margin:0">Show on Customer Link Hub</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <label class="toggle"><input id="pf-allow-indexing" type="checkbox" checked><span class="toggle-slider"></span></label>
+      <span class="form-label" style="margin:0">Search Engine Indexing</span>
     </div>
     <div class="form-group">
       <label class="form-label">Headline</label>
@@ -849,15 +858,17 @@ function openPageModal() {
    <button class="btn btn-primary" onclick="BKDN.savePageModal()">${iconSave()} Create Page</button>`);
 }
 
-// Staff Training pages default to Unlisted + hidden from the customer hub —
-// matches the server-side default in api/index.php's POST /admin/pages.
+// Staff Training pages default to Unlisted + hidden from the customer hub +
+// noindex — matches the server-side default in api/index.php's POST /admin/pages.
 function onPageTypeChange() {
   const type = document.getElementById('pf-type')?.value;
   const visSelect = document.getElementById('pf-visibility');
   const hubCheck = document.getElementById('pf-show-on-hub');
+  const indexCheck = document.getElementById('pf-allow-indexing');
   if (type === 'staff_training' && visSelect && hubCheck) {
     visSelect.value = 'unlisted';
     hubCheck.checked = false;
+    if (indexCheck) indexCheck.checked = false;
   }
 }
 
@@ -870,6 +881,7 @@ async function savePageModal() {
     page_type: document.getElementById('pf-type').value,
     visibility: document.getElementById('pf-visibility').value,
     show_on_hub: document.getElementById('pf-show-on-hub').checked ? 1 : 0,
+    allow_indexing: document.getElementById('pf-allow-indexing').checked ? 1 : 0,
     headline: document.getElementById('pf-headline').value.trim() || null,
     store_slug: document.getElementById('pf-store').value.trim() || null,
   };
@@ -1030,11 +1042,15 @@ async function viewPageEditor(pageId) {
             </select>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
           <label class="toggle"><input id="pe-show-on-hub" type="checkbox" ${p.show_on_hub!==0?'checked':''}><span class="toggle-slider"></span></label>
           <span class="form-label" style="margin:0">Show on Customer Link Hub</span>
         </div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:12px">Staff Training pages should normally be Unlisted with "Show on Customer Link Hub" off — the page stays reachable at its direct URL but is never linked from /links/ or listed publicly.</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+          <label class="toggle"><input id="pe-allow-indexing" type="checkbox" ${p.allow_indexing!==0?'checked':''}><span class="toggle-slider"></span></label>
+          <span class="form-label" style="margin:0">Search Engine Indexing</span>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:12px">Staff Training pages should normally be Unlisted, hidden from the Customer Link Hub, and excluded from search indexing — the page stays reachable at its direct URL but is never linked or listed publicly.</div>
         <button class="btn btn-primary" onclick="BKDN.savePageVisibility(${pageId})">${iconSave()} Save Type &amp; Visibility</button>
       </div>
     </div>
@@ -1160,6 +1176,7 @@ function renderBtnRow(b, pageId, i) {
     <div class="btn-row-actions">
       <button class="btn btn-ghost btn-sm" onclick="BKDN.openEditButton(${b.id},${pageId})" title="Edit">${iconEdit()}</button>
       <button class="btn btn-ghost btn-sm" onclick="BKDN.duplicateButton(${b.id},${pageId})" title="Duplicate">${iconDuplicate()}</button>
+      <button class="btn btn-ghost btn-sm" onclick="BKDN.openMoveModal('button',${b.id},${pageId})" title="Move or copy to another page">${iconExternal()}</button>
       <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteButton(${b.id},${pageId})" title="Delete" style="color:#ef4444">${iconTrash()}</button>
     </div>
   </div>`;
@@ -1184,10 +1201,62 @@ function renderSectionList(sections, pageId) {
         </div>
         <div class="btn-row-actions">
           <button class="btn btn-ghost btn-sm" onclick="BKDN.openSectionModal(${s.id},${pageId})" title="Edit">${iconEdit()}</button>
+          <button class="btn btn-ghost btn-sm" onclick="BKDN.openMoveModal('section',${s.id},${pageId})" title="Move or copy to another page">${iconExternal()}</button>
           <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteSection(${s.id},${pageId})" title="Delete" style="color:#ef4444">${iconTrash()}</button>
         </div>
       </div>`).join('')}
   </div>`;
+}
+
+/* ── Move / Copy to another page ─────────────────── */
+async function openMoveModal(kind, itemId, currentPageId) {
+  if (!window._allPages) {
+    const pagesRes = await GET('/admin/pages');
+    window._allPages = pagesRes?.data?.pages || [];
+  }
+  const targets = window._allPages.filter(p => Number(p.id) !== Number(currentPageId));
+  if (!targets.length) { toast('No other pages to move or copy to yet.', 'info'); return; }
+  const opts = targets.map(p => `<option value="${p.id}" data-type="${esc(p.page_type||'')}">${esc(p.title)} (${esc(getPageTypeMeta(p.page_type).label)})</option>`).join('');
+  openModal(`Move or Copy ${kind === 'section' ? 'Section' : 'Button'}`, `
+    <div class="form-group">
+      <label class="form-label">Destination Page</label>
+      <select id="mv-target-page" class="form-control">${opts}</select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Action</label>
+      <select id="mv-action" class="form-control">
+        <option value="move">Move (remove from current page)</option>
+        <option value="copy">Copy (keep on current page too)</option>
+      </select>
+    </div>
+  `,
+  `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="BKDN.confirmMove('${kind}',${itemId},${currentPageId})">Continue</button>`);
+}
+
+async function confirmMove(kind, itemId, currentPageId) {
+  const targetPageId = Number(document.getElementById('mv-target-page').value);
+  const action = document.getElementById('mv-action').value;
+  const currentPage = (window._allPages || []).find(p => Number(p.id) === Number(currentPageId));
+  const targetPage = (window._allPages || []).find(p => Number(p.id) === Number(targetPageId));
+  const crossesStaffBoundary = currentPage && targetPage && isStaffPage(currentPage.page_type) !== isStaffPage(targetPage.page_type);
+  if (crossesStaffBoundary) {
+    const fromLabel = isStaffPage(currentPage.page_type) ? 'Staff Training' : 'Customer Link Hub';
+    const toLabel = isStaffPage(targetPage.page_type) ? 'Staff Training' : 'Customer Link Hub';
+    const warned = confirm(`You are ${action === 'move' ? 'moving' : 'copying'} this ${kind} from ${fromLabel} to ${toLabel}. ${toLabel === 'Customer Link Hub' ? 'This may expose internal content publicly.' : 'This will hide it from customers.'}\n\nContinue?`);
+    if (!warned) return;
+  }
+  const endpoint = kind === 'section'
+    ? `/admin/sections/${itemId}/${action === 'move' ? 'move' : 'copy'}`
+    : `/admin/buttons/${itemId}/${action === 'move' ? 'move' : 'copy-to-page'}`;
+  const res = await POST(endpoint, { target_page_id: targetPageId });
+  if (res?.ok) {
+    toast(`${kind === 'section' ? 'Section' : 'Button'} ${action === 'move' ? 'moved' : 'copied'}.`, 'success');
+    closeModal();
+    viewPageEditor(currentPageId);
+  } else {
+    toast(res?.error || `Failed to ${action} ${kind}.`, 'error');
+  }
 }
 
 /* ── Drag-and-drop reorder ────────────────────────── */
@@ -1253,7 +1322,13 @@ const LINK_TYPES = [
   { value: 'facebook',      label: 'Facebook',                 placeholder: 'https://www.facebook.com/...' },
   { value: 'website',       label: 'Website',                  placeholder: 'https://...' },
   { value: 'custom',        label: 'Custom',                   placeholder: 'https://...' },
+  { value: 'heading',       label: 'Heading (no link)',        placeholder: '' },
+  { value: 'text_block',    label: 'Text Block (no link)',     placeholder: '' },
+  { value: 'image',         label: 'Image',                    placeholder: 'https://.../image.jpg' },
 ];
+
+// Content blocks that don't link anywhere — no destination URL needed.
+const NO_DESTINATION_LINK_TYPES = ['heading', 'text_block'];
 
 function openAddButton(pageId) {
   window._currentPageId = pageId;
@@ -1292,7 +1367,7 @@ async function openBtnModal(btn, pageId) {
       <input id="bf-title" class="form-control" placeholder="Button text" value="${esc(btn?.title||'')}">
     </div>
     <div class="form-group">
-      <label class="form-label">Subtitle</label>
+      <label class="form-label" id="bf-subtitle-label">Subtitle</label>
       <input id="bf-subtitle" class="form-control" placeholder="Optional tagline" value="${esc(btn?.subtitle||'')}">
     </div>
     <div class="form-group">
@@ -1367,14 +1442,22 @@ function onLinkTypeChange() {
   const type = document.getElementById('bf-linktype')?.value || 'external';
   const meta = LINK_TYPES.find(t => t.value === type) || LINK_TYPES[0];
   const isInternal = type === 'internal_page';
+  const noDestination = NO_DESTINATION_LINK_TYPES.includes(type);
   const internalWrap = document.getElementById('bf-internal-wrap');
   const urlWrap = document.getElementById('bf-url-wrap');
   if (internalWrap) internalWrap.style.display = isInternal ? '' : 'none';
-  if (urlWrap) urlWrap.style.display = isInternal ? 'none' : '';
+  if (urlWrap) urlWrap.style.display = (isInternal || noDestination) ? 'none' : '';
   const label = document.getElementById('bf-url-label');
   const input = document.getElementById('bf-url');
   if (label) label.textContent = meta.label;
   if (input) input.placeholder = meta.placeholder;
+
+  // Heading/Text Block store their actual content in the Subtitle field
+  // (there's no separate "destination" for content blocks).
+  const subtitleLabel = document.getElementById('bf-subtitle-label');
+  const subtitleInput = document.getElementById('bf-subtitle');
+  if (subtitleLabel) subtitleLabel.textContent = type === 'heading' ? 'Heading Text' : type === 'text_block' ? 'Body Text' : 'Subtitle';
+  if (subtitleInput) subtitleInput.placeholder = type === 'text_block' ? 'The paragraph text shown on the page' : type === 'heading' ? 'Optional smaller line under the heading' : 'Optional tagline';
 }
 
 function testButtonUrl() {
@@ -1393,7 +1476,7 @@ async function saveBtnModal(btnId, pageId) {
     title:           document.getElementById('bf-title').value.trim(),
     subtitle:        document.getElementById('bf-subtitle').value.trim() || null,
     link_type:       linkType,
-    url:             linkType === 'internal_page' ? '' : document.getElementById('bf-url').value.trim(),
+    url:             (linkType === 'internal_page' || NO_DESTINATION_LINK_TYPES.includes(linkType)) ? '' : document.getElementById('bf-url').value.trim(),
     internal_page_id:linkType === 'internal_page' ? (document.getElementById('bf-internal-page').value || null) : null,
     icon_key:        document.getElementById('bf-icon').value || null,
     style_variant:   document.getElementById('bf-style').value,
@@ -1408,7 +1491,7 @@ async function saveBtnModal(btnId, pageId) {
   };
   if (!data.title) { toast('Title is required.', 'error'); return; }
   if (linkType === 'internal_page' && !data.internal_page_id) { toast('Select an internal page.', 'error'); return; }
-  if (linkType !== 'internal_page' && !data.url) { toast('Enter a destination.', 'error'); return; }
+  if (linkType !== 'internal_page' && !NO_DESTINATION_LINK_TYPES.includes(linkType) && !data.url) { toast('Enter a destination.', 'error'); return; }
   const res = btnId
     ? await PUT('/admin/buttons/' + btnId, data)
     : await POST('/admin/pages/' + pageId + '/buttons', data);
@@ -1523,6 +1606,7 @@ async function savePageVisibility(pageId) {
     page_type: document.getElementById('pe-type').value,
     visibility: document.getElementById('pe-visibility').value,
     show_on_hub: document.getElementById('pe-show-on-hub').checked ? 1 : 0,
+    allow_indexing: document.getElementById('pe-allow-indexing').checked ? 1 : 0,
   };
   const res = await PUT('/admin/pages/' + pageId, body);
   if (res?.ok) { toast('Page type & visibility saved.', 'success'); viewPageEditor(pageId); }
@@ -1553,14 +1637,18 @@ function onStatusChange() {
   if (row) row.style.display = status === 'scheduled' ? '' : 'none';
 }
 
-async function publishPage(pageId) {
-  const res = await POST('/admin/pages/' + pageId + '/publish');
+async function publishPage(pageId, force) {
+  const res = await POST('/admin/pages/' + pageId + '/publish', force ? { force: true } : undefined);
   if (res?.ok) {
     const p = res.data?.page;
     const ptMeta = getPageTypeMeta(p?.page_type || window._currentPageType || 'custom');
     toast(`Published: ${ptMeta.label} — live at /links/${p?.slug || ''}`, 'success');
     viewPageEditor(pageId);
-  } else toast(res?.error || 'Publish failed.', 'error');
+  } else if (!force && res?.error && confirm(res.error + '\n\nPublish anyway?')) {
+    publishPage(pageId, true);
+  } else {
+    toast(res?.error || 'Publish failed.', 'error');
+  }
 }
 
 async function unpublishPage(pageId) {
@@ -2656,6 +2744,7 @@ window.BKDN = {
   onLinkTypeChange, testButtonUrl,
   // Section CRUD
   openSectionModal, saveSectionModal, toggleSection, deleteSection,
+  openMoveModal, confirmMove,
   // Blog
   saveBlogPost, schedulePost, saveAndCreateAnother, publishPost, duplicatePost, archivePost,
   applyTemplate, toggleEmoji, insertEmoji,

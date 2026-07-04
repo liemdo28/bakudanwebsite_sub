@@ -85,6 +85,12 @@ body {
 
 .links-btn-featured::after { content: '★'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: #DEB864; font-size: 12px; }
 
+/* Content blocks (non-link items: heading, text, image) */
+.links-content-heading { font-weight: 700; font-size: 15px; color: #fff; padding: 4px 4px 0; }
+.links-content-heading-sub { font-weight: 400; font-size: 12px; color: #999; margin-top: 2px; }
+.links-content-text { font-size: 13px; color: #ccc; line-height: 1.5; padding: 2px 4px; white-space: pre-wrap; }
+.links-content-image { width: 100%; border-radius: 12px; display: block; }
+
 /* Footer */
 .links-footer { margin-top: 40px; text-align: center; font-size: 11px; color: #444; }
 .links-footer a { color: #666; text-decoration: none; }
@@ -315,9 +321,13 @@ body {
     const { page, buttons, sections, settings } = data.data;
     const isPreviewMode = !!data.preview;
 
-    // Non-public pages (staff training, unlisted, etc.) must never be indexed,
-    // regardless of preview mode.
-    if (isPreviewMode || (page.visibility && page.visibility !== 'public')) {
+    // The server computes the authoritative noindex decision (visibility +
+    // allow_indexing combined) — fall back to the same logic client-side
+    // only if that field is missing (e.g. an older cached API response).
+    const shouldNoindex = typeof data.data.noindex === 'boolean'
+      ? data.data.noindex
+      : (page.visibility && page.visibility !== 'public') || page.allow_indexing === 0;
+    if (isPreviewMode || shouldNoindex) {
       document.getElementById('meta-robots').content = 'noindex, nofollow';
     }
 
@@ -353,6 +363,18 @@ body {
     } else {
       const now = new Date().toISOString();
       const renderButton = (b) => {
+        // Content blocks (heading / text_block / image) aren't links — render
+        // them as plain content instead of a clickable button.
+        if (b.link_type === 'heading') {
+          return `<div class="links-content-heading">${escapeHtml(b.title || b.label || '')}${b.subtitle ? `<div class="links-content-heading-sub">${escapeHtml(b.subtitle)}</div>` : ''}</div>`;
+        }
+        if (b.link_type === 'text_block') {
+          return `<div class="links-content-text">${escapeHtml(b.subtitle || '')}</div>`;
+        }
+        if (b.link_type === 'image') {
+          return `<img class="links-content-image" src="${escapeAttr(b.url || '')}" alt="${escapeAttr(b.title || b.label || '')}" loading="lazy">`;
+        }
+
         const button = normalizeButton(b);
         const isPrimary  = button.isPrimary;
         const isFeatured = button.isFeatured;

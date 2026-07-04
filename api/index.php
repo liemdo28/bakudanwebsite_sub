@@ -225,6 +225,7 @@ function db_migrate(SQLite3 $db): void {
         "ALTER TABLE pages ADD COLUMN scheduled_publish_at TEXT",
         "ALTER TABLE pages ADD COLUMN staff_password_hash TEXT",
         "ALTER TABLE pages ADD COLUMN show_on_hub INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE pages ADD COLUMN allow_indexing INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE link_sections ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
         "ALTER TABLE link_sections ADD COLUMN start_at TEXT",
         "ALTER TABLE link_sections ADD COLUMN end_at TEXT",
@@ -279,6 +280,8 @@ function db_migrate(SQLite3 $db): void {
     }
     // Backfill status for pages created before the status column existed
     try { $db->exec("UPDATE pages SET status='published' WHERE is_active=1 AND status='draft'"); } catch (Throwable $e) {}
+    // Backfill allow_indexing for staff training pages created before this column existed
+    try { $db->exec("UPDATE pages SET allow_indexing=0 WHERE page_type='staff_training' AND allow_indexing=1"); } catch (Throwable $e) {}
     seed_link_sections($db);
     migrate_staff_training_v1($db);
     migrate_staff_training_v2($db);
@@ -392,6 +395,7 @@ function migrate_staff_training_v4(SQLite3 $db): void {
 const VALID_PAGE_TYPES  = ['link_hub','staff_training','marketing_signup','campaign','location','custom'];
 const VALID_VISIBILITY  = ['public','unlisted','staff_only','password_protected','inactive'];
 const VALID_PAGE_STATUS = ['draft','scheduled','published','archived'];
+const CUSTOMER_FACING_PAGE_TYPES = ['link_hub','marketing_signup','campaign','location','custom'];
 
 function seed_link_sections(SQLite3 $db): void {
     $pageRows = $db->query("SELECT id, slug FROM pages");
@@ -476,7 +480,11 @@ function button_select_sql(string $where): string {
 
 // ── Destination-type model (fixes "external URL becomes internal slug") ──
 const VALID_LINK_TYPES = ['external','internal_page','youtube','phone','email','maps',
-    'pdf','download','toast_order','toast_signup','instagram','facebook','website','custom'];
+    'pdf','download','toast_order','toast_signup','instagram','facebook','website','custom',
+    'heading','text_block','image'];
+
+// Content blocks that don't link anywhere — no destination URL required.
+const NO_DESTINATION_LINK_TYPES = ['heading','text_block'];
 
 function button_link_type_from_body(array $body, ?array $fallback = null): string {
     $t = $body['link_type'] ?? ($fallback['link_type'] ?? 'external');
@@ -506,6 +514,9 @@ function normalize_destination_url(string $linkType, string $url): string {
 }
 
 function validate_button_destination(string $linkType, string $url, ?int $internalPageId): void {
+    if (in_array($linkType, NO_DESTINATION_LINK_TYPES, true)) {
+        return; // heading / text_block are content, not links — no URL to validate
+    }
     if ($linkType === 'internal_page') {
         if (!$internalPageId) err('Select an internal Link Hub page for this destination type.');
         if (!q1("SELECT id FROM pages WHERE id=?", [$internalPageId])) err('Selected internal page does not exist.');
@@ -682,6 +693,35 @@ if ($path === '/admin/dashboard' && $METHOD === 'GET') {
     $featured  = db()->querySingle("SELECT COUNT(*) FROM buttons WHERE is_featured=1");
     $pages     = q("SELECT p.*, (SELECT COUNT(*) FROM buttons b WHERE b.page_id=p.id) AS button_count
                     FROM pages p ORDER BY p.sort_order ASC, p.id ASC");
+
+    // Broken links: latest health check per button — only genuinely broken
+    // statuses surface here. 'redirected' and 'needs_review' are ambiguous
+    // (often a bot-detection false positive, e.g. Toast blocking a bare HEAD
+    // request) and stay on the dedicated Link Health page instead of
+    // alarming the dashboard.
+    $brokenLinks = q("SELECT h.button_id, b.label, b.page_id, p.title AS page_title, h.status, h.http_code
+                       FROM link_health h
+                       JOIN buttons b ON b.id=h.button_id
+                       JOIN pages p ON p.id=b.page_id
+                       WHERE h.id IN (SELECT MAX(id) FROM link_health GROUP BY button_id) AND h.status IN ('broken','removed','timed_out')");
+
+    // Staff-oriented content (YouTube/PDF/download) sitting on a live public customer page
+    $misplacedStaffContent = [];
+    foreach (q("SELECT id, title FROM pages WHERE is_active=1 AND visibility='public' AND page_type IN ('" . implode("','", CUSTOMER_FACING_PAGE_TYPES) . "')") as $pg) {
+        foreach (find_misplaced_staff_content((int)$pg['id']) as $b) {
+            $misplacedStaffContent[] = ['page_id' => (int)$pg['id'], 'page_title' => $pg['title'], 'button_label' => $b['label'], 'link_type' => $b['link_type']];
+        }
+    }
+
+    // Duplicate buttons per active page
+    $duplicateButtons = [];
+    foreach (q("SELECT id, title FROM pages WHERE is_active=1") as $pg) {
+        $d = find_duplicate_buttons((int)$pg['id']);
+        if ($d) $duplicateButtons[] = ['page_id' => (int)$pg['id'], 'page_title' => $pg['title'], 'count' => count($d)];
+    }
+
+    $draftChangePages = find_pages_with_draft_changes();
+
     ok([
         'total'      => (int)$total,
         'live'       => (int)$live,
@@ -692,6 +732,12 @@ if ($path === '/admin/dashboard' && $METHOD === 'GET') {
         'views_24h'  => (int)$views24h,
         'clicks_24h' => (int)$clicks24h,
         'pages'      => $pages,
+        'warnings'   => [
+            'broken_links' => $brokenLinks,
+            'misplaced_staff_content' => $misplacedStaffContent,
+            'duplicate_buttons' => $duplicateButtons,
+            'draft_changes' => $draftChangePages,
+        ],
     ]);
 }
 
@@ -712,9 +758,10 @@ if ($path === '/admin/pages' && $METHOD === 'POST') {
     $defaultVisibility = $pageType === 'staff_training' ? 'unlisted' : 'public';
     $visibility = in_array($BODY['visibility'] ?? '', VALID_VISIBILITY, true) ? $BODY['visibility'] : $defaultVisibility;
     $showOnHub = array_key_exists('show_on_hub', $BODY) ? (int)(bool)$BODY['show_on_hub'] : ($pageType === 'staff_training' ? 0 : 1);
+    $allowIndexing = array_key_exists('allow_indexing', $BODY) ? (int)(bool)$BODY['allow_indexing'] : ($pageType === 'staff_training' ? 0 : 1);
     try {
-        $id = run("INSERT INTO pages (title,slug,headline,store_slug,page_type,visibility,show_on_hub) VALUES (?,?,?,?,?,?,?)",
-            [$title, $slug, $BODY['headline']??null, $BODY['store_slug']??null, $pageType, $visibility, $showOnHub]);
+        $id = run("INSERT INTO pages (title,slug,headline,store_slug,page_type,visibility,show_on_hub,allow_indexing) VALUES (?,?,?,?,?,?,?,?)",
+            [$title, $slug, $BODY['headline']??null, $BODY['store_slug']??null, $pageType, $visibility, $showOnHub, $allowIndexing]);
         // SPA uses res.data.id to navigate
         $page = q1("SELECT * FROM pages WHERE id=?", [$id]);
         audit_log($user, 'page_created', 'page', $id, null, $page, $id);
@@ -741,11 +788,12 @@ if (preg_match('#^/admin/pages/(\d+)$#', $path, $m)) {
         $visibility = in_array($BODY['visibility'] ?? '', VALID_VISIBILITY, true) ? $BODY['visibility'] : $page['visibility'];
         $status = in_array($BODY['status'] ?? '', VALID_PAGE_STATUS, true) ? $BODY['status'] : $page['status'];
         $showOnHub = array_key_exists('show_on_hub', $BODY) ? (int)(bool)$BODY['show_on_hub'] : $page['show_on_hub'];
+        $allowIndexing = array_key_exists('allow_indexing', $BODY) ? (int)(bool)$BODY['allow_indexing'] : $page['allow_indexing'];
         try {
-            run("UPDATE pages SET title=?,slug=?,headline=?,store_slug=?,is_active=?,theme=?,page_type=?,visibility=?,status=?,show_on_hub=?,updated_at=datetime('now') WHERE id=?",
+            run("UPDATE pages SET title=?,slug=?,headline=?,store_slug=?,is_active=?,theme=?,page_type=?,visibility=?,status=?,show_on_hub=?,allow_indexing=?,updated_at=datetime('now') WHERE id=?",
                 [$BODY['title']??$page['title'], $slug, $BODY['headline']??$page['headline'],
                  $BODY['store_slug']??$page['store_slug'], $BODY['is_active']??$page['is_active'],
-                 $BODY['theme']??$page['theme'], $pageType, $visibility, $status, $showOnHub, $pid]);
+                 $BODY['theme']??$page['theme'], $pageType, $visibility, $status, $showOnHub, $allowIndexing, $pid]);
             if ($slugChanged) {
                 run("INSERT INTO redirects (page_id,source,destination,is_permanent) VALUES (?,?,?,1)",
                     [$pid, '/links/' . $page['slug'], '/links/' . $slug]);
@@ -804,6 +852,24 @@ function find_duplicate_buttons(int $pid): array {
     }
     return $dupes;
 }
+
+// Buttons that look like staff/training content (YouTube, PDF, downloads) sitting
+// on a page — used both for the Dashboard warning and the publish-time safety gate.
+function find_misplaced_staff_content(int $pid): array {
+    return q("SELECT id,label,link_type,url FROM buttons WHERE page_id=? AND is_active=1 AND link_type IN ('youtube','pdf','download')", [$pid]);
+}
+
+// Pages that have been published before but have section/button/page edits
+// newer than their last published snapshot (i.e. unpublished draft changes).
+function find_pages_with_draft_changes(): array {
+    return q("SELECT p.id, p.title, p.slug FROM pages p
+              WHERE p.is_active=1 AND EXISTS (SELECT 1 FROM page_versions v WHERE v.page_id=p.id)
+              AND (
+                p.updated_at > (SELECT MAX(created_at) FROM page_versions v2 WHERE v2.page_id=p.id)
+                OR EXISTS (SELECT 1 FROM buttons b WHERE b.page_id=p.id AND b.updated_at > (SELECT MAX(created_at) FROM page_versions v3 WHERE v3.page_id=p.id))
+                OR EXISTS (SELECT 1 FROM link_sections s WHERE s.page_id=p.id AND s.updated_at > (SELECT MAX(created_at) FROM page_versions v4 WHERE v4.page_id=p.id))
+              )");
+}
 if (preg_match('#^/admin/pages/(\d+)/publish$#', $path, $m) && $METHOD === 'POST') {
     $user = auth(); role_check($user, $EDIT); $pid = (int)$m[1];
     $page = q1("SELECT * FROM pages WHERE id=?", [$pid]);
@@ -811,6 +877,15 @@ if (preg_match('#^/admin/pages/(\d+)/publish$#', $path, $m) && $METHOD === 'POST
     $dupes = find_duplicate_buttons($pid);
     if ($dupes && empty($BODY['force'])) {
         err('Duplicate buttons found on this page (same label + destination). Review them before publishing, or resubmit with force=true.', 409);
+    }
+    // Safety gate: don't let staff/training content (YouTube, PDF, downloads)
+    // go live on a public customer-facing page without an explicit override.
+    if ($page['visibility'] === 'public' && in_array($page['page_type'], CUSTOMER_FACING_PAGE_TYPES, true)) {
+        $misplaced = find_misplaced_staff_content($pid);
+        if ($misplaced && empty($BODY['force'])) {
+            $labels = implode(', ', array_map(fn($b) => $b['label'], $misplaced));
+            err("This page is public, but contains staff/training-looking content ($labels). Move it to a Staff Training page, or resubmit with force=true to publish anyway.", 409);
+        }
     }
     db()->exec('BEGIN');
     try {
@@ -947,6 +1022,47 @@ if (preg_match('#^/admin/sections/(\d+)$#', $path, $m)) {
         ok(['success' => true]);
     }
 }
+if (preg_match('#^/admin/sections/(\d+)/move$#', $path, $m) && $METHOD === 'POST') {
+    $user = auth(); role_check($user, $EDIT); $sid = (int)$m[1];
+    $section = q1("SELECT * FROM link_sections WHERE id=?", [$sid]);
+    if (!$section) err('Section not found.', 404);
+    $targetPageId = (int)($BODY['target_page_id'] ?? 0);
+    if (!q1("SELECT id FROM pages WHERE id=?", [$targetPageId])) err('Target page not found.', 404);
+    db()->exec('BEGIN');
+    try {
+        run("UPDATE link_sections SET page_id=?,updated_at=datetime('now') WHERE id=?", [$targetPageId, $sid]);
+        run("UPDATE buttons SET page_id=?,updated_at=datetime('now') WHERE section_id=?", [$targetPageId, $sid]);
+        db()->exec('COMMIT');
+    } catch (Throwable $e) {
+        db()->exec('ROLLBACK');
+        err('Move failed: ' . $e->getMessage(), 500);
+    }
+    audit_log($user, 'section_moved', 'section', $sid, ['page_id'=>$section['page_id']], ['page_id'=>$targetPageId], $targetPageId);
+    ok(['section' => q1("SELECT * FROM link_sections WHERE id=?", [$sid])]);
+}
+if (preg_match('#^/admin/sections/(\d+)/copy$#', $path, $m) && $METHOD === 'POST') {
+    $user = auth(); role_check($user, $EDIT); $sid = (int)$m[1];
+    $section = q1("SELECT * FROM link_sections WHERE id=?", [$sid]);
+    if (!$section) err('Section not found.', 404);
+    $targetPageId = (int)($BODY['target_page_id'] ?? 0);
+    if (!q1("SELECT id FROM pages WHERE id=?", [$targetPageId])) err('Target page not found.', 404);
+    $newSectionId = null;
+    db()->exec('BEGIN');
+    try {
+        $newSectionId = run("INSERT INTO link_sections (page_id,title,section_key,sort_order,is_active,status,start_at,end_at) VALUES (?,?,?,?,?,?,?,?)",
+            [$targetPageId,$section['title'],$section['section_key'],$section['sort_order'],$section['is_active'],$section['status']??'active',$section['start_at'],$section['end_at']]);
+        foreach (q("SELECT * FROM buttons WHERE section_id=?", [$sid]) as $b) {
+            run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [$targetPageId,$newSectionId,$b['label'],$b['url'],$b['link_type']??'external',$b['internal_page_id']??null,$b['icon'],$b['subtitle']??null,$b['style_variant']??null,$b['custom_icon_svg']??null,$b['opens_in_new_tab']??1,$b['sort_order'],$b['is_active'],$b['is_featured'],$b['enabled'],$b['start_at'],$b['end_at']]);
+        }
+        db()->exec('COMMIT');
+    } catch (Throwable $e) {
+        db()->exec('ROLLBACK');
+        err('Copy failed: ' . $e->getMessage(), 500);
+    }
+    audit_log($user, 'section_copied', 'section', $sid, null, ['new_section_id'=>$newSectionId], $targetPageId);
+    ok(['section' => q1("SELECT * FROM link_sections WHERE id=?", [$newSectionId])]);
+}
 
 // ── BUTTONS ───────────────────────────────────────────────────────────
 if (preg_match('#^/admin/pages/(\d+)/buttons$#', $path, $m)) {
@@ -959,7 +1075,8 @@ if (preg_match('#^/admin/pages/(\d+)/buttons$#', $path, $m)) {
         $label = button_label_from_body($BODY);
         $linkType = button_link_type_from_body($BODY);
         $internalPageId = button_internal_page_id_from_body($BODY);
-        $url = $linkType === 'internal_page' ? '' : normalize_destination_url($linkType, (string)($BODY['url'] ?? ''));
+        $url = (in_array($linkType, NO_DESTINATION_LINK_TYPES, true) || $linkType === 'internal_page')
+            ? '' : normalize_destination_url($linkType, (string)($BODY['url'] ?? ''));
         if (!$label) err('Title is required.');
         validate_button_destination($linkType, $url, $internalPageId);
         if ($url) check_duplicate_button_url($pid, $url);
@@ -1002,7 +1119,8 @@ if (preg_match('#^/admin/buttons/(\d+)$#', $path, $m)) {
         role_check($user, $EDIT);
         $linkType = button_link_type_from_body($BODY, $btn);
         $internalPageId = button_internal_page_id_from_body($BODY, $btn);
-        $rawUrl = $linkType === 'internal_page' ? '' : normalize_destination_url($linkType, (string)($BODY['url'] ?? $btn['url'] ?? ''));
+        $rawUrl = (in_array($linkType, NO_DESTINATION_LINK_TYPES, true) || $linkType === 'internal_page')
+            ? '' : normalize_destination_url($linkType, (string)($BODY['url'] ?? $btn['url'] ?? ''));
         validate_button_destination($linkType, $rawUrl, $internalPageId);
         if ($rawUrl) check_duplicate_button_url((int)$btn['page_id'], $rawUrl, $bid);
         run("UPDATE buttons SET section_id=?,label=?,url=?,link_type=?,internal_page_id=?,icon=?,subtitle=?,style_variant=?,custom_icon_svg=?,opens_in_new_tab=?,sort_order=?,is_active=?,is_featured=?,enabled=?,start_at=?,end_at=?,updated_at=datetime('now') WHERE id=?",
@@ -1030,6 +1148,29 @@ if (preg_match('#^/admin/buttons/(\d+)$#', $path, $m)) {
         audit_log($user, 'button_deleted', 'button', $bid, $btn, null, (int)$btn['page_id']);
         ok(['success' => true]);
     }
+}
+if (preg_match('#^/admin/buttons/(\d+)/move$#', $path, $m) && $METHOD === 'POST') {
+    $user = auth(); role_check($user, $EDIT); $bid = (int)$m[1];
+    $btn = q1("SELECT * FROM buttons WHERE id=?", [$bid]);
+    if (!$btn) err('Button not found.', 404);
+    $targetPageId = (int)($BODY['target_page_id'] ?? 0);
+    if (!q1("SELECT id FROM pages WHERE id=?", [$targetPageId])) err('Target page not found.', 404);
+    $targetSectionId = (array_key_exists('target_section_id', $BODY) && $BODY['target_section_id'] !== '') ? (int)$BODY['target_section_id'] : null;
+    run("UPDATE buttons SET page_id=?,section_id=?,updated_at=datetime('now') WHERE id=?", [$targetPageId, $targetSectionId, $bid]);
+    audit_log($user, 'button_moved', 'button', $bid, ['page_id'=>$btn['page_id']], ['page_id'=>$targetPageId], $targetPageId);
+    ok(['button' => q1(button_select_sql("b.id=?"), [$bid])]);
+}
+if (preg_match('#^/admin/buttons/(\d+)/copy-to-page$#', $path, $m) && $METHOD === 'POST') {
+    $user = auth(); role_check($user, $EDIT); $bid = (int)$m[1];
+    $btn = q1("SELECT * FROM buttons WHERE id=?", [$bid]);
+    if (!$btn) err('Button not found.', 404);
+    $targetPageId = (int)($BODY['target_page_id'] ?? 0);
+    if (!q1("SELECT id FROM pages WHERE id=?", [$targetPageId])) err('Target page not found.', 404);
+    $targetSectionId = (array_key_exists('target_section_id', $BODY) && $BODY['target_section_id'] !== '') ? (int)$BODY['target_section_id'] : null;
+    $id = run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [$targetPageId,$targetSectionId,$btn['label'],$btn['url'],$btn['link_type']??'external',$btn['internal_page_id']??null,$btn['icon'],$btn['subtitle']??null,$btn['style_variant']??null,$btn['custom_icon_svg']??null,$btn['opens_in_new_tab']??1,$btn['sort_order'],$btn['is_active'],$btn['is_featured'],$btn['enabled'],$btn['start_at'],$btn['end_at']]);
+    audit_log($user, 'button_copied_to_page', 'button', $bid, null, ['new_button_id'=>$id], $targetPageId);
+    ok(['id' => $id, 'button' => q1(button_select_sql("b.id=?"), [$id])]);
 }
 
 // ── REDIRECTS ─────────────────────────────────────────────────────────
@@ -1174,15 +1315,25 @@ if ($path === '/admin/link-health/check' && $METHOD === 'POST') {
     foreach ($buttons as $b) {
         if (!preg_match('#^https?://#i', $b['url'])) continue; // skip tel:/mailto:/internal
         $status = 'broken'; $code = 0;
-        $ctx = stream_context_create(['http' => ['method' => 'HEAD', 'timeout' => 6, 'ignore_errors' => true]]);
+        // A bare HEAD request with no User-Agent gets bot-blocked (403) by
+        // many real sites (Toast included) even though the link works fine
+        // for actual customers in a browser — send a realistic UA to avoid
+        // false "broken" reports, and retry with GET if HEAD is rejected
+        // outright (some servers don't support HEAD at all).
+        $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+        $ctx = stream_context_create(['http' => ['method' => 'HEAD', 'timeout' => 8, 'ignore_errors' => true, 'header' => "User-Agent: $ua\r\n"]]);
         $headers = @get_headers($b['url'], true, $ctx);
+        if ($headers && isset($headers[0]) && preg_match('#\s(\d{3})\s#', $headers[0], $cm) && (int)$cm[1] === 403) {
+            $ctx2 = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 8, 'ignore_errors' => true, 'header' => "User-Agent: $ua\r\n"]]);
+            $headers2 = @get_headers($b['url'], true, $ctx2);
+            if ($headers2 && isset($headers2[0])) $headers = $headers2;
+        }
         if ($headers && isset($headers[0])) {
             if (preg_match('#\s(\d{3})\s#', $headers[0], $cm)) $code = (int)$cm[1];
             if ($code >= 200 && $code < 300) $status = 'healthy';
             elseif ($code >= 300 && $code < 400) $status = 'redirected';
             elseif ($code === 404) $status = 'removed';
-            elseif ($code === 403 && str_contains(parse_url($b['url'], PHP_URL_HOST) ?? '', 'toasttab.com')) $status = 'needs_review';
-            elseif ($code >= 400) $status = 'broken';
+            elseif ($code >= 400) $status = 'needs_review'; // could be real bot-blocking, not necessarily broken for customers
             else $status = 'needs_review';
         } else {
             $status = 'timed_out';
@@ -1526,6 +1677,12 @@ function page_visibility_check(array $page, array $query): void {
     }
 }
 
+// Server-side authoritative noindex flag — combines visibility and the
+// explicit allow_indexing override, so the client never has to guess.
+function page_noindex(array $page): bool {
+    return !$page['allow_indexing'] || in_array($page['visibility'], ['unlisted','staff_only','password_protected'], true);
+}
+
 if (preg_match('#^/public/links/preview/(.+)$#', $path, $m) && $METHOD === 'GET') {
     $slug  = $m[1];
     $token = $QUERY['token'] ?? '';
@@ -1540,13 +1697,9 @@ if (preg_match('#^/public/links/preview/(.+)$#', $path, $m) && $METHOD === 'GET'
     $sets = q("SELECT key, value FROM settings");
     $settings = []; foreach ($sets as $r) $settings[$r['key']] = $r['value'];
     header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
     http_response_code(200);
-        $noindex = in_array($page['visibility'], ['unlisted','staff_only'], true);
-    header('Content-Type: application/json; charset=utf-8');
-    http_response_code(200);
-    echo json_encode(['ok'=>true,'preview'=>true,'data'=>['page'=>$page,'buttons'=>$buttons,'sections'=>$sections,'settings'=>$settings,'noindex'=>$noindex]]);
-    exit;
-}
+    echo json_encode(['ok'=>true,'preview'=>true,'data'=>['page'=>$page,'buttons'=>$buttons,'sections'=>$sections,'settings'=>$settings,'noindex'=>page_noindex($page)]]);
     exit;
 }
 
@@ -1565,13 +1718,9 @@ if (preg_match('#^/public/links/(.+)$#', $path, $m) && $METHOD === 'GET') {
     run("INSERT INTO analytics (page_id,event_type,referrer,user_agent,ip) VALUES (?,?,?,?,?)",
         [$page['id'],'pageview',$_SERVER['HTTP_REFERER']??null,$_SERVER['HTTP_USER_AGENT']??null,$_SERVER['REMOTE_ADDR']??null]);
     header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
     http_response_code(200);
-        $noindex = in_array($page['visibility'], ['unlisted','staff_only'], true);
-    header('Content-Type: application/json; charset=utf-8');
-    http_response_code(200);
-    echo json_encode(['ok'=>true,'data'=>['page'=>$page,'buttons'=>$buttons,'sections'=>$sections,'settings'=>$settings,'noindex'=>$noindex]]);
-    exit;
-}
+    echo json_encode(['ok'=>true,'data'=>['page'=>$page,'buttons'=>$buttons,'sections'=>$sections,'settings'=>$settings,'noindex'=>page_noindex($page)]]);
     exit;
 }
 

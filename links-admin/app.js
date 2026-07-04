@@ -2177,6 +2177,14 @@ async function viewPageEditor(pageId) {
         `}
         <div style="font-size:11px;color:#334155;margin-top:12px">Preview shows ALL buttons including hidden/disabled ones. Regenerate token to invalidate old links.</div>
       </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="font-weight:600;color:#94a3b8;font-size:12px;letter-spacing:.5px">VERSION HISTORY</div>
+          <button class="btn btn-ghost btn-sm" onclick="BKDN.loadVersionHistory(${pageId})" style="font-size:11px;padding:2px 8px">&#8635; Load</button>
+        </div>
+        <div id="pe-version-list" style="font-size:13px;color:#475569">Click Load to view published versions.</div>
+      </div>
     </div>
   `);
 
@@ -2780,6 +2788,54 @@ async function generatePreviewToken(pageId) {
     toast('Preview token generated!', 'success');
     viewPageEditor(pageId); // reload to show new preview URL
   } else toast(res?.error || 'Failed to generate token.', 'error');
+}
+
+async function loadVersionHistory(pageId) {
+  const el = document.getElementById('pe-version-list');
+  if (!el) return;
+  el.innerHTML = '&#8987; Loading versions...';
+  const res = await GET('/admin/pages/' + pageId + '/versions');
+  if (!res?.ok) { el.innerHTML = `<span style="color:#ef4444">Failed to load versions.</span>`; return; }
+  const versions = res.data.versions || [];
+  if (!versions.length) { el.innerHTML = 'No published versions yet.'; return; }
+  el.innerHTML = versions.map(v => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1e293b;gap:12px">
+      <div>
+        <div style="font-size:13px;color:#e2e8f0">Version ${esc(String(v.version_number))} &mdash; ${fmtDate(v.created_at)}</div>
+        <div style="font-size:11px;color:#64748b">by ${esc(v.created_by_name || 'Unknown')}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" onclick="BKDN.previewVersion(${pageId},${v.version_number})">&#128065; Preview</button>
+        <button class="btn btn-danger btn-sm" onclick="if(confirm('Restore this version? Current draft will be replaced.'))BKDN.confirmRollback(${pageId},${v.version_number})">&#8634; Restore</button>
+      </div>
+    </div>`).join('');
+}
+
+async function previewVersion(pageId, versionNumber) {
+  const res = await GET('/admin/pages/' + pageId + '/versions?version=' + versionNumber);
+  if (res?.ok && res.data?.version) {
+    const v = res.data.version;
+    toast('Preview: version ' + versionNumber + ' — opens in new tab', 'info');
+    // Open preview URL with token if available
+    const pageRes = await GET('/admin/pages/' + pageId);
+    if (pageRes?.ok && pageRes.data?.page?.preview_token) {
+      window.open('/links/preview/' + (pageRes.data.page.slug || pageId) + '?token=' + pageRes.data.page.preview_token, '_blank');
+    } else {
+      window.open('/links/' + (pageRes?.data?.page?.slug || pageId), '_blank');
+    }
+  } else {
+    toast('Could not load version preview.', 'error');
+  }
+}
+
+async function confirmRollback(pageId, versionNumber) {
+  const res = await POST('/admin/pages/' + pageId + '/rollback/' + versionNumber);
+  if (res?.ok) {
+    toast('Version ' + versionNumber + ' restored.', 'success');
+    viewPageEditor(pageId);
+  } else {
+    toast(res?.error || 'Rollback failed.', 'error');
+  }
 }
 
 async function verifySync(slug) {
@@ -3854,6 +3910,8 @@ async function changePassword() {
    PUBLIC API (window.BKDN)
 ═══════════════════════════════════════════════════════════════ */
 window.BKDN = {
+  // Core
+  toast,
   // Auth
   doLogin, logout, togglePasswordVisibility,
   // Nav
@@ -3872,6 +3930,7 @@ window.BKDN = {
   // Page editor
   switchTab, savePage, publishPage, unpublishPage, applyPageStatus, onStatusChange,
   generatePreviewToken, verifySync, saveOrder, cancelReorder,
+  loadVersionHistory, previewVersion, confirmRollback,
   // Button CRUD
   openAddButton, openEditButton, saveBtnModal, toggleBtn, duplicateButton, deleteButton,
   onLinkTypeChange, testButtonUrl,

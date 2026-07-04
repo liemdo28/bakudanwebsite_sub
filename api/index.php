@@ -1831,12 +1831,17 @@ if ($path === '/upload' && $METHOD === 'POST') {
 // ── SITEMAP ───────────────────────────────────────────────────────────
 if ($path === '/sitemap.xml' && $METHOD === 'GET') {
     $posts = q("SELECT slug, updated_at FROM blog_posts WHERE status='published' AND archived_at IS NULL ORDER BY published_at DESC");
+    $pages = q("SELECT slug, updated_at FROM pages WHERE is_active=1 AND visibility='public' AND allow_indexing=1");
     $static = ['','menu.html','locations.html','order.html','about.html','happy-hour.html','stories/'];
     header('Content-Type: application/xml; charset=utf-8');
     echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
     echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
     foreach ($static as $s) {
         echo "  <url><loc>" . SITE_URL . "/$s</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>\n";
+    }
+    foreach ($pages as $p) {
+        $mod = date('Y-m-d', strtotime($p['updated_at']));
+        echo "  <url><loc>" . SITE_URL . "/links/{$p['slug']}</loc><lastmod>$mod</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>\n";
     }
     foreach ($posts as $p) {
         $mod = date('Y-m-d', strtotime($p['updated_at']));

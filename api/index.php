@@ -208,6 +208,37 @@ function db_migrate(SQLite3 $db): void {
         url TEXT NOT NULL, status TEXT NOT NULL, http_code INTEGER,
         checked_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS notices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'info',
+        page_id INTEGER REFERENCES pages(id) ON DELETE CASCADE,
+        location_slug TEXT,
+        dismissible INTEGER NOT NULL DEFAULT 1,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        start_at TEXT, end_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS campaigns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'draft',
+        page_id INTEGER REFERENCES pages(id) ON DELETE SET NULL,
+        start_at TEXT, end_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS page_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        page_type TEXT NOT NULL DEFAULT 'link_hub',
+        structure_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     ");
     // Add blog columns (idempotent)
     foreach ([
@@ -226,6 +257,14 @@ function db_migrate(SQLite3 $db): void {
         "ALTER TABLE pages ADD COLUMN staff_password_hash TEXT",
         "ALTER TABLE pages ADD COLUMN show_on_hub INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE pages ADD COLUMN allow_indexing INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE pages ADD COLUMN seo_title TEXT",
+        "ALTER TABLE pages ADD COLUMN meta_description TEXT",
+        "ALTER TABLE pages ADD COLUMN og_image TEXT",
+        "ALTER TABLE pages ADD COLUMN canonical_url TEXT",
+        "ALTER TABLE buttons ADD COLUMN location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL",
+        "ALTER TABLE locations ADD COLUMN support_email TEXT",
+        "ALTER TABLE locations ADD COLUMN hours_text TEXT",
+        "ALTER TABLE shortlinks ADD COLUMN campaign_id INTEGER REFERENCES campaigns(id) ON DELETE SET NULL",
         "ALTER TABLE link_sections ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
         "ALTER TABLE link_sections ADD COLUMN start_at TEXT",
         "ALTER TABLE link_sections ADD COLUMN end_at TEXT",
@@ -286,6 +325,7 @@ function db_migrate(SQLite3 $db): void {
     migrate_staff_training_v1($db);
     migrate_staff_training_v2($db);
     migrate_staff_training_v3($db);
+    migrate_staff_training_v4($db);
 }
 
 // One-time, idempotent: move the two confirmed staff-training YouTube videos
@@ -373,7 +413,10 @@ function migrate_staff_training_v3(SQLite3 $db): void {
     if ($db->querySingle("SELECT value FROM settings WHERE key='migration_staff_training_v3'") === '1') return;
     $oldSlug = 'staff-training-videos';
     $newSlug = 'staff-training';
-    $pageId = (int)$db->querySingle("SELECT id FROM pages WHERE slug=?", [$oldSlug]);
+    $stmt = $db->prepare("SELECT id FROM pages WHERE slug=?");
+    $stmt->bindValue(1, $oldSlug, SQLITE3_TEXT);
+    $row = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+    $pageId = (int)($row['id'] ?? 0);
     if (!$pageId) return;
     $db->exec("UPDATE pages SET slug='$newSlug', updated_at=datetime('now') WHERE id=$pageId");
     $db->exec("INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES ('migration_staff_training_v3','1',datetime('now'))");
@@ -396,6 +439,7 @@ const VALID_PAGE_TYPES  = ['link_hub','staff_training','marketing_signup','campa
 const VALID_VISIBILITY  = ['public','unlisted','staff_only','password_protected','inactive'];
 const VALID_PAGE_STATUS = ['draft','scheduled','published','archived'];
 const CUSTOMER_FACING_PAGE_TYPES = ['link_hub','marketing_signup','campaign','location','custom'];
+const VALID_CAMPAIGN_STATUS = ['draft','active','ended'];
 
 function seed_link_sections(SQLite3 $db): void {
     $pageRows = $db->query("SELECT id, slug FROM pages");
@@ -471,9 +515,12 @@ function button_visible_from_body(array $body, ?array $fallback = null): int {
 function button_select_sql(string $where): string {
     return "SELECT b.*, b.label AS title, b.icon AS icon_key, b.is_active AS visible,
             s.title AS section_title, s.section_key, s.sort_order AS section_sort_order,
-            s.is_active AS section_is_active
+            s.is_active AS section_is_active,
+            loc.name AS location_name, loc.phone AS location_phone, loc.maps_url AS location_maps_url,
+            loc.support_email AS location_support_email, loc.hours_text AS location_hours_text
             FROM buttons b
             LEFT JOIN link_sections s ON s.id=b.section_id
+            LEFT JOIN locations loc ON loc.id=b.location_id
             WHERE $where
             ORDER BY COALESCE(s.sort_order, 9999) ASC, b.sort_order ASC, b.id ASC";
 }
@@ -481,10 +528,15 @@ function button_select_sql(string $where): string {
 // ── Destination-type model (fixes "external URL becomes internal slug") ──
 const VALID_LINK_TYPES = ['external','internal_page','youtube','phone','email','maps',
     'pdf','download','toast_order','toast_signup','instagram','facebook','website','custom',
-    'heading','text_block','image'];
+    'heading','text_block','image','call_store','directions','store_hours','order_support'];
 
 // Content blocks that don't link anywhere — no destination URL required.
-const NO_DESTINATION_LINK_TYPES = ['heading','text_block'];
+const NO_DESTINATION_LINK_TYPES = ['heading','text_block','store_hours'];
+
+// Location-derived destination types — the URL/target comes from the linked
+// location record (phone, maps_url, support_email), not a manually pasted value,
+// so editing a location once updates every button that points at it.
+const LOCATION_DERIVED_LINK_TYPES = ['call_store','directions','store_hours','order_support'];
 
 function button_link_type_from_body(array $body, ?array $fallback = null): string {
     $t = $body['link_type'] ?? ($fallback['link_type'] ?? 'external');
@@ -496,6 +548,13 @@ function button_internal_page_id_from_body(array $body, ?array $fallback = null)
         return $body['internal_page_id'] === '' || $body['internal_page_id'] === null ? null : (int)$body['internal_page_id'];
     }
     return isset($fallback['internal_page_id']) ? (int)$fallback['internal_page_id'] ?: null : null;
+}
+
+function button_location_id_from_body(array $body, ?array $fallback = null): ?int {
+    if (array_key_exists('location_id', $body)) {
+        return $body['location_id'] === '' || $body['location_id'] === null ? null : (int)$body['location_id'];
+    }
+    return isset($fallback['location_id']) ? (int)$fallback['location_id'] ?: null : null;
 }
 
 // Never rewrite a pasted destination into an internal slug — normalize only
@@ -513,7 +572,12 @@ function normalize_destination_url(string $linkType, string $url): string {
     return $url;
 }
 
-function validate_button_destination(string $linkType, string $url, ?int $internalPageId): void {
+function validate_button_destination(string $linkType, string $url, ?int $internalPageId, ?int $locationId = null): void {
+    if (in_array($linkType, LOCATION_DERIVED_LINK_TYPES, true)) {
+        if (!$locationId) err('Select a location for this destination type.');
+        if (!q1("SELECT id FROM locations WHERE id=?", [$locationId])) err('Selected location does not exist.');
+        return; // destination is derived from the location record, not a pasted URL
+    }
     if (in_array($linkType, NO_DESTINATION_LINK_TYPES, true)) {
         return; // heading / text_block are content, not links — no URL to validate
     }
@@ -691,7 +755,8 @@ if ($path === '/admin/dashboard' && $METHOD === 'GET') {
     $scheduled = db()->querySingle("SELECT COUNT(*) FROM buttons WHERE start_at IS NOT NULL AND start_at>'$now'");
     $expired   = db()->querySingle("SELECT COUNT(*) FROM buttons WHERE end_at IS NOT NULL AND end_at<'$now'");
     $featured  = db()->querySingle("SELECT COUNT(*) FROM buttons WHERE is_featured=1");
-    $pages     = q("SELECT p.*, (SELECT COUNT(*) FROM buttons b WHERE b.page_id=p.id) AS button_count
+    $pages     = q("SELECT p.*, (SELECT COUNT(*) FROM buttons b WHERE b.page_id=p.id) AS button_count,
+                    (SELECT MAX(created_at) FROM page_versions v WHERE v.page_id=p.id) AS last_published_at
                     FROM pages p ORDER BY p.sort_order ASC, p.id ASC");
 
     // Broken links: latest health check per button — only genuinely broken
@@ -722,6 +787,15 @@ if ($path === '/admin/dashboard' && $METHOD === 'GET') {
 
     $draftChangePages = find_pages_with_draft_changes();
 
+    // Basic SEO checklist: public pages missing an SEO title or meta description
+    $seoIssues = [];
+    foreach (q("SELECT id, title, seo_title, meta_description FROM pages WHERE is_active=1 AND visibility='public'") as $pg) {
+        $missing = [];
+        if (empty($pg['seo_title'])) $missing[] = 'SEO title';
+        if (empty($pg['meta_description'])) $missing[] = 'meta description';
+        if ($missing) $seoIssues[] = ['page_id' => (int)$pg['id'], 'page_title' => $pg['title'], 'missing' => $missing];
+    }
+
     ok([
         'total'      => (int)$total,
         'live'       => (int)$live,
@@ -737,6 +811,7 @@ if ($path === '/admin/dashboard' && $METHOD === 'GET') {
             'misplaced_staff_content' => $misplacedStaffContent,
             'duplicate_buttons' => $duplicateButtons,
             'draft_changes' => $draftChangePages,
+            'seo_issues' => $seoIssues,
         ],
     ]);
 }
@@ -744,7 +819,8 @@ if ($path === '/admin/dashboard' && $METHOD === 'GET') {
 // ── PAGES ─────────────────────────────────────────────────────────────
 if ($path === '/admin/pages' && $METHOD === 'GET') {
     auth();
-    ok(['pages' => q("SELECT p.*, (SELECT COUNT(*) FROM buttons b WHERE b.page_id=p.id) AS button_count
+    ok(['pages' => q("SELECT p.*, (SELECT COUNT(*) FROM buttons b WHERE b.page_id=p.id) AS button_count,
+                       (SELECT MAX(created_at) FROM page_versions v WHERE v.page_id=p.id) AS last_published_at
                        FROM pages p ORDER BY p.sort_order ASC, p.id ASC")]);
 }
 if ($path === '/admin/pages' && $METHOD === 'POST') {
@@ -790,10 +866,12 @@ if (preg_match('#^/admin/pages/(\d+)$#', $path, $m)) {
         $showOnHub = array_key_exists('show_on_hub', $BODY) ? (int)(bool)$BODY['show_on_hub'] : $page['show_on_hub'];
         $allowIndexing = array_key_exists('allow_indexing', $BODY) ? (int)(bool)$BODY['allow_indexing'] : $page['allow_indexing'];
         try {
-            run("UPDATE pages SET title=?,slug=?,headline=?,store_slug=?,is_active=?,theme=?,page_type=?,visibility=?,status=?,show_on_hub=?,allow_indexing=?,updated_at=datetime('now') WHERE id=?",
+            run("UPDATE pages SET title=?,slug=?,headline=?,store_slug=?,is_active=?,theme=?,page_type=?,visibility=?,status=?,show_on_hub=?,allow_indexing=?,seo_title=?,meta_description=?,og_image=?,canonical_url=?,updated_at=datetime('now') WHERE id=?",
                 [$BODY['title']??$page['title'], $slug, $BODY['headline']??$page['headline'],
                  $BODY['store_slug']??$page['store_slug'], $BODY['is_active']??$page['is_active'],
-                 $BODY['theme']??$page['theme'], $pageType, $visibility, $status, $showOnHub, $allowIndexing, $pid]);
+                 $BODY['theme']??$page['theme'], $pageType, $visibility, $status, $showOnHub, $allowIndexing,
+                 $BODY['seo_title']??$page['seo_title'], $BODY['meta_description']??$page['meta_description'],
+                 $BODY['og_image']??$page['og_image'], $BODY['canonical_url']??$page['canonical_url'], $pid]);
             if ($slugChanged) {
                 run("INSERT INTO redirects (page_id,source,destination,is_permanent) VALUES (?,?,?,1)",
                     [$pid, '/links/' . $page['slug'], '/links/' . $slug]);
@@ -829,8 +907,8 @@ if (preg_match('#^/admin/pages/(\d+)/duplicate$#', $path, $m) && $METHOD === 'PO
         }
         foreach (q("SELECT * FROM buttons WHERE page_id=? ORDER BY sort_order", [$pid]) as $b) {
             $newSectionId = $b['section_id'] ? ($sectionMap[(int)$b['section_id']] ?? null) : null;
-            run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [$newId,$newSectionId,$b['label'],$b['url'],$b['link_type']??'external',$b['internal_page_id']??null,$b['icon'],$b['subtitle']??null,$b['style_variant']??null,$b['custom_icon_svg']??null,$b['opens_in_new_tab']??1,$b['sort_order'],$b['is_active'],$b['is_featured'],$b['enabled'],$b['start_at'],$b['end_at']]);
+            run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,location_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [$newId,$newSectionId,$b['label'],$b['url'],$b['link_type']??'external',$b['internal_page_id']??null,$b['location_id']??null,$b['icon'],$b['subtitle']??null,$b['style_variant']??null,$b['custom_icon_svg']??null,$b['opens_in_new_tab']??1,$b['sort_order'],$b['is_active'],$b['is_featured'],$b['enabled'],$b['start_at'],$b['end_at']]);
         }
         db()->exec('COMMIT');
     } catch (Throwable $e) {
@@ -841,6 +919,88 @@ if (preg_match('#^/admin/pages/(\d+)/duplicate$#', $path, $m) && $METHOD === 'PO
     audit_log($user, 'page_duplicated', 'page', $newId, $src, $newPage, $newId);
     ok(array_merge(['id' => $newId], $newPage));
 }
+// ── PAGE TEMPLATES ──────────────────────────────────────────────────
+// A template is a frozen snapshot of one page's sections+buttons (as JSON),
+// reusable to bootstrap new pages without re-building the same structure by hand.
+if ($path === '/admin/templates' && $METHOD === 'GET') {
+    auth();
+    ok(['templates' => q("SELECT id,name,description,page_type,created_at,updated_at,
+        (LENGTH(structure_json)) AS structure_size FROM page_templates ORDER BY id DESC")]);
+}
+if (preg_match('#^/admin/pages/(\d+)/save-as-template$#', $path, $m) && $METHOD === 'POST') {
+    $user = auth(); role_check($user, $MGR); $pid = (int)$m[1];
+    $page = q1("SELECT * FROM pages WHERE id=?", [$pid]);
+    if (!$page) err('Page not found.', 404);
+    $name = trim((string)($BODY['name'] ?? ''));
+    if (!$name) err('Template name is required.');
+    $sections = q("SELECT title,section_key,sort_order,is_active,status,start_at,end_at FROM link_sections WHERE page_id=? ORDER BY sort_order ASC, id ASC", [$pid]);
+    $buttons = q("SELECT section_id,label,url,link_type,internal_page_id,location_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled FROM buttons WHERE page_id=? ORDER BY sort_order ASC, id ASC", [$pid]);
+    // Re-key section_id references to their position in the sections array
+    // (0-based index) since the template has no real section ids yet.
+    $sectionIdToIndex = [];
+    foreach (q("SELECT id FROM link_sections WHERE page_id=? ORDER BY sort_order ASC, id ASC", [$pid]) as $i => $s) {
+        $sectionIdToIndex[(int)$s['id']] = $i;
+    }
+    foreach ($buttons as &$b) {
+        $b['section_index'] = $b['section_id'] !== null && isset($sectionIdToIndex[(int)$b['section_id']])
+            ? $sectionIdToIndex[(int)$b['section_id']] : null;
+        unset($b['section_id']);
+    }
+    unset($b);
+    $structure = json_encode(['sections' => $sections, 'buttons' => $buttons], JSON_UNESCAPED_SLASHES);
+    $id = run("INSERT INTO page_templates (name,description,page_type,structure_json) VALUES (?,?,?,?)",
+        [$name, $BODY['description'] ?? null, $page['page_type'], $structure]);
+    $tpl = q1("SELECT id,name,description,page_type,created_at,updated_at FROM page_templates WHERE id=?", [$id]);
+    audit_log($user, 'template_saved', 'template', $id, null, $tpl, $pid);
+    ok(['template' => $tpl]);
+}
+if (preg_match('#^/admin/templates/(\d+)/create-page$#', $path, $m) && $METHOD === 'POST') {
+    $user = auth(); role_check($user, $MGR); $tid = (int)$m[1];
+    $tpl = q1("SELECT * FROM page_templates WHERE id=?", [$tid]);
+    if (!$tpl) err('Template not found.', 404);
+    $title = trim((string)($BODY['title'] ?? '')); $slug = trim((string)($BODY['slug'] ?? ''));
+    if (!$title || !$slug) err('Title and slug are required.');
+    $slug = strtolower(preg_replace('/[^a-z0-9-]+/', '-', $slug));
+    $structure = json_decode($tpl['structure_json'], true) ?: ['sections' => [], 'buttons' => []];
+    $pageType = $tpl['page_type'];
+    $defaultVisibility = $pageType === 'staff_training' ? 'unlisted' : 'public';
+    $showOnHub = $pageType === 'staff_training' ? 0 : 1;
+    $allowIndexing = $pageType === 'staff_training' ? 0 : 1;
+    db()->exec('BEGIN');
+    try {
+        $newId = run("INSERT INTO pages (title,slug,page_type,visibility,show_on_hub,allow_indexing) VALUES (?,?,?,?,?,?)",
+            [$title, $slug, $pageType, $defaultVisibility, $showOnHub, $allowIndexing]);
+        $sectionIndexToId = [];
+        foreach ($structure['sections'] as $i => $s) {
+            $sectionIndexToId[$i] = run("INSERT INTO link_sections (page_id,title,section_key,sort_order,is_active,status,start_at,end_at) VALUES (?,?,?,?,?,?,?,?)",
+                [$newId, $s['title'] ?? null, $s['section_key'] ?? null, $s['sort_order'] ?? 0, $s['is_active'] ?? 1, $s['status'] ?? 'active', $s['start_at'] ?? null, $s['end_at'] ?? null]);
+        }
+        foreach ($structure['buttons'] as $b) {
+            $sectionId = isset($b['section_index']) && $b['section_index'] !== null ? ($sectionIndexToId[$b['section_index']] ?? null) : null;
+            run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,location_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [$newId, $sectionId, $b['label'] ?? '', $b['url'] ?? '', $b['link_type'] ?? 'external', $b['internal_page_id'] ?? null, $b['location_id'] ?? null,
+                 $b['icon'] ?? null, $b['subtitle'] ?? null, $b['style_variant'] ?? null, $b['custom_icon_svg'] ?? null, $b['opens_in_new_tab'] ?? 1,
+                 $b['sort_order'] ?? 0, $b['is_active'] ?? 1, $b['is_featured'] ?? 0, $b['enabled'] ?? 1]);
+        }
+        db()->exec('COMMIT');
+    } catch (Exception $e) {
+        db()->exec('ROLLBACK');
+        if (str_contains($e->getMessage(), 'UNIQUE')) err('That slug is already in use.', 409);
+        err('Could not create page from template: ' . $e->getMessage(), 500);
+    }
+    $newPage = q1("SELECT * FROM pages WHERE id=?", [$newId]);
+    audit_log($user, 'page_created_from_template', 'page', $newId, ['template_id' => $tid], $newPage, $newId);
+    ok(array_merge(['id' => $newId], $newPage));
+}
+if (preg_match('#^/admin/templates/(\d+)$#', $path, $m) && $METHOD === 'DELETE') {
+    $user = auth(); role_check($user, $MGR); $tid = (int)$m[1];
+    $tpl = q1("SELECT id,name,description,page_type,created_at,updated_at FROM page_templates WHERE id=?", [$tid]);
+    if (!$tpl) err('Template not found.', 404);
+    run("DELETE FROM page_templates WHERE id=?", [$tid]);
+    audit_log($user, 'template_deleted', 'template', $tid, $tpl, null);
+    ok(['success' => true]);
+}
+
 // Detect duplicate buttons on a page before publish: same normalized URL + label + status
 function find_duplicate_buttons(int $pid): array {
     $rows = q("SELECT id,label,url,is_active,section_id FROM buttons WHERE page_id=? AND is_active=1", [$pid]);
@@ -1052,8 +1212,8 @@ if (preg_match('#^/admin/sections/(\d+)/copy$#', $path, $m) && $METHOD === 'POST
         $newSectionId = run("INSERT INTO link_sections (page_id,title,section_key,sort_order,is_active,status,start_at,end_at) VALUES (?,?,?,?,?,?,?,?)",
             [$targetPageId,$section['title'],$section['section_key'],$section['sort_order'],$section['is_active'],$section['status']??'active',$section['start_at'],$section['end_at']]);
         foreach (q("SELECT * FROM buttons WHERE section_id=?", [$sid]) as $b) {
-            run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [$targetPageId,$newSectionId,$b['label'],$b['url'],$b['link_type']??'external',$b['internal_page_id']??null,$b['icon'],$b['subtitle']??null,$b['style_variant']??null,$b['custom_icon_svg']??null,$b['opens_in_new_tab']??1,$b['sort_order'],$b['is_active'],$b['is_featured'],$b['enabled'],$b['start_at'],$b['end_at']]);
+            run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,location_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [$targetPageId,$newSectionId,$b['label'],$b['url'],$b['link_type']??'external',$b['internal_page_id']??null,$b['location_id']??null,$b['icon'],$b['subtitle']??null,$b['style_variant']??null,$b['custom_icon_svg']??null,$b['opens_in_new_tab']??1,$b['sort_order'],$b['is_active'],$b['is_featured'],$b['enabled'],$b['start_at'],$b['end_at']]);
         }
         db()->exec('COMMIT');
     } catch (Throwable $e) {
@@ -1075,14 +1235,15 @@ if (preg_match('#^/admin/pages/(\d+)/buttons$#', $path, $m)) {
         $label = button_label_from_body($BODY);
         $linkType = button_link_type_from_body($BODY);
         $internalPageId = button_internal_page_id_from_body($BODY);
-        $url = (in_array($linkType, NO_DESTINATION_LINK_TYPES, true) || $linkType === 'internal_page')
+        $locationId = button_location_id_from_body($BODY);
+        $url = (in_array($linkType, NO_DESTINATION_LINK_TYPES, true) || in_array($linkType, LOCATION_DERIVED_LINK_TYPES, true) || $linkType === 'internal_page')
             ? '' : normalize_destination_url($linkType, (string)($BODY['url'] ?? ''));
         if (!$label) err('Title is required.');
-        validate_button_destination($linkType, $url, $internalPageId);
+        validate_button_destination($linkType, $url, $internalPageId, $locationId);
         if ($url) check_duplicate_button_url($pid, $url);
         $max = db()->querySingle("SELECT COALESCE(MAX(sort_order),-1) FROM buttons WHERE page_id=$pid");
-        $id = run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            [$pid,section_id_from_body($BODY),$label,$url,$linkType,$internalPageId,button_icon_from_body($BODY),$BODY['subtitle']??null,$BODY['style_variant']??null,$BODY['custom_icon_svg']??null,$BODY['opens_in_new_tab']??1,$BODY['sort_order']??$max+1,
+        $id = run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,location_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [$pid,section_id_from_body($BODY),$label,$url,$linkType,$internalPageId,$locationId,button_icon_from_body($BODY),$BODY['subtitle']??null,$BODY['style_variant']??null,$BODY['custom_icon_svg']??null,$BODY['opens_in_new_tab']??1,$BODY['sort_order']??$max+1,
              button_visible_from_body($BODY),$BODY['is_featured']??0,$BODY['enabled']??1,
              $BODY['start_at']??null,$BODY['end_at']??null]);
         audit_log($user, 'button_created', 'button', $id, null, q1("SELECT * FROM buttons WHERE id=?", [$id]), $pid);
@@ -1105,8 +1266,8 @@ if (preg_match('#^/admin/buttons/(\d+)/duplicate$#', $path, $m) && $METHOD === '
     $user = auth(); role_check($user, $EDIT); $bid = (int)$m[1];
     $btn = q1("SELECT * FROM buttons WHERE id=?", [$bid]);
     if (!$btn) err('Button not found.', 404);
-    $id = run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [$btn['page_id'],$btn['section_id'],$btn['label'].' (Copy)',$btn['url'],$btn['link_type']??'external',$btn['internal_page_id']??null,$btn['icon'],$btn['subtitle']??null,$btn['style_variant']??null,$btn['custom_icon_svg']??null,$btn['opens_in_new_tab']??1,$btn['sort_order']+1,
+    $id = run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,location_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [$btn['page_id'],$btn['section_id'],$btn['label'].' (Copy)',$btn['url'],$btn['link_type']??'external',$btn['internal_page_id']??null,$btn['location_id']??null,$btn['icon'],$btn['subtitle']??null,$btn['style_variant']??null,$btn['custom_icon_svg']??null,$btn['opens_in_new_tab']??1,$btn['sort_order']+1,
          $btn['is_active'],$btn['is_featured'],$btn['enabled'],$btn['start_at'],$btn['end_at']]);
     audit_log($user, 'button_duplicated', 'button', $id, $btn, q1("SELECT * FROM buttons WHERE id=?", [$id]), (int)$btn['page_id']);
     ok(['id' => $id, 'button' => q1(button_select_sql("b.id=?"), [$id])] + (q1("SELECT * FROM buttons WHERE id=?", [$id]) ?? []));
@@ -1119,13 +1280,14 @@ if (preg_match('#^/admin/buttons/(\d+)$#', $path, $m)) {
         role_check($user, $EDIT);
         $linkType = button_link_type_from_body($BODY, $btn);
         $internalPageId = button_internal_page_id_from_body($BODY, $btn);
-        $rawUrl = (in_array($linkType, NO_DESTINATION_LINK_TYPES, true) || $linkType === 'internal_page')
+        $locationId = button_location_id_from_body($BODY, $btn);
+        $rawUrl = (in_array($linkType, NO_DESTINATION_LINK_TYPES, true) || in_array($linkType, LOCATION_DERIVED_LINK_TYPES, true) || $linkType === 'internal_page')
             ? '' : normalize_destination_url($linkType, (string)($BODY['url'] ?? $btn['url'] ?? ''));
-        validate_button_destination($linkType, $rawUrl, $internalPageId);
+        validate_button_destination($linkType, $rawUrl, $internalPageId, $locationId);
         if ($rawUrl) check_duplicate_button_url((int)$btn['page_id'], $rawUrl, $bid);
-        run("UPDATE buttons SET section_id=?,label=?,url=?,link_type=?,internal_page_id=?,icon=?,subtitle=?,style_variant=?,custom_icon_svg=?,opens_in_new_tab=?,sort_order=?,is_active=?,is_featured=?,enabled=?,start_at=?,end_at=?,updated_at=datetime('now') WHERE id=?",
+        run("UPDATE buttons SET section_id=?,label=?,url=?,link_type=?,internal_page_id=?,location_id=?,icon=?,subtitle=?,style_variant=?,custom_icon_svg=?,opens_in_new_tab=?,sort_order=?,is_active=?,is_featured=?,enabled=?,start_at=?,end_at=?,updated_at=datetime('now') WHERE id=?",
             [array_key_exists('section_id', $BODY) ? section_id_from_body($BODY) : $btn['section_id'],
-             button_label_from_body($BODY, $btn),$rawUrl,$linkType,$internalPageId,button_icon_from_body($BODY, $btn),
+             button_label_from_body($BODY, $btn),$rawUrl,$linkType,$internalPageId,$locationId,button_icon_from_body($BODY, $btn),
              $BODY['subtitle']??($btn['subtitle']??null),$BODY['style_variant']??($btn['style_variant']??null),
              $BODY['custom_icon_svg']??($btn['custom_icon_svg']??null),$BODY['opens_in_new_tab']??($btn['opens_in_new_tab']??1),
              $BODY['sort_order']??$btn['sort_order'],button_visible_from_body($BODY, $btn),
@@ -1136,8 +1298,8 @@ if (preg_match('#^/admin/buttons/(\d+)$#', $path, $m)) {
     }
     if ($METHOD === 'POST') { // duplicate
         role_check($user, $EDIT);
-        $id = run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            [$btn['page_id'],$btn['section_id'],$btn['label'].' (Copy)',$btn['url'],$btn['link_type']??'external',$btn['internal_page_id']??null,$btn['icon'],$btn['subtitle']??null,$btn['style_variant']??null,$btn['custom_icon_svg']??null,$btn['opens_in_new_tab']??1,$btn['sort_order']+1,
+        $id = run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,location_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [$btn['page_id'],$btn['section_id'],$btn['label'].' (Copy)',$btn['url'],$btn['link_type']??'external',$btn['internal_page_id']??null,$btn['location_id']??null,$btn['icon'],$btn['subtitle']??null,$btn['style_variant']??null,$btn['custom_icon_svg']??null,$btn['opens_in_new_tab']??1,$btn['sort_order']+1,
              $btn['is_active'],$btn['is_featured'],$btn['enabled'],$btn['start_at'],$btn['end_at']]);
         audit_log($user, 'button_duplicated', 'button', $id, $btn, q1("SELECT * FROM buttons WHERE id=?", [$id]), (int)$btn['page_id']);
         ok(['id' => $id, 'button' => q1(button_select_sql("b.id=?"), [$id])] + (q1("SELECT * FROM buttons WHERE id=?", [$id]) ?? []));
@@ -1167,8 +1329,8 @@ if (preg_match('#^/admin/buttons/(\d+)/copy-to-page$#', $path, $m) && $METHOD ==
     $targetPageId = (int)($BODY['target_page_id'] ?? 0);
     if (!q1("SELECT id FROM pages WHERE id=?", [$targetPageId])) err('Target page not found.', 404);
     $targetSectionId = (array_key_exists('target_section_id', $BODY) && $BODY['target_section_id'] !== '') ? (int)$BODY['target_section_id'] : null;
-    $id = run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [$targetPageId,$targetSectionId,$btn['label'],$btn['url'],$btn['link_type']??'external',$btn['internal_page_id']??null,$btn['icon'],$btn['subtitle']??null,$btn['style_variant']??null,$btn['custom_icon_svg']??null,$btn['opens_in_new_tab']??1,$btn['sort_order'],$btn['is_active'],$btn['is_featured'],$btn['enabled'],$btn['start_at'],$btn['end_at']]);
+    $id = run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,location_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [$targetPageId,$targetSectionId,$btn['label'],$btn['url'],$btn['link_type']??'external',$btn['internal_page_id']??null,$btn['location_id']??null,$btn['icon'],$btn['subtitle']??null,$btn['style_variant']??null,$btn['custom_icon_svg']??null,$btn['opens_in_new_tab']??1,$btn['sort_order'],$btn['is_active'],$btn['is_featured'],$btn['enabled'],$btn['start_at'],$btn['end_at']]);
     audit_log($user, 'button_copied_to_page', 'button', $bid, null, ['new_button_id'=>$id], $targetPageId);
     ok(['id' => $id, 'button' => q1(button_select_sql("b.id=?"), [$id])]);
 }
@@ -1200,11 +1362,62 @@ function shortlink_qr_url(string $code): string {
     $dest = SITE_URL . '/go/' . rawurlencode($code);
     return 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . rawurlencode($dest);
 }
+// ── CAMPAIGNS ─────────────────────────────────────────────────────────
+if ($path === '/admin/campaigns' && $METHOD === 'GET') {
+    auth();
+    $rows = q("SELECT c.*, p.title AS page_title, p.slug AS page_slug,
+        (SELECT COUNT(*) FROM shortlinks s WHERE s.campaign_id=c.id) AS shortlink_count,
+        (SELECT COALESCE(SUM(s.clicks),0) FROM shortlinks s WHERE s.campaign_id=c.id) AS total_clicks
+        FROM campaigns c LEFT JOIN pages p ON p.id=c.page_id ORDER BY c.created_at DESC");
+    ok(['campaigns' => $rows]);
+}
+if ($path === '/admin/campaigns' && $METHOD === 'POST') {
+    $user = auth(); role_check($user, $MGR);
+    $name = trim((string)($BODY['name'] ?? ''));
+    if (!$name) err('Campaign name is required.');
+    $status = in_array($BODY['status'] ?? '', VALID_CAMPAIGN_STATUS, true) ? $BODY['status'] : 'draft';
+    $pageId = ($BODY['page_id'] ?? '') !== '' ? (int)$BODY['page_id'] : null;
+    if ($pageId && !q1("SELECT id FROM pages WHERE id=?", [$pageId])) err('Selected page does not exist.');
+    $id = run("INSERT INTO campaigns (name,description,status,page_id,start_at,end_at) VALUES (?,?,?,?,?,?)",
+        [$name, $BODY['description'] ?? null, $status, $pageId, $BODY['start_at'] ?? null, $BODY['end_at'] ?? null]);
+    $campaign = q1("SELECT * FROM campaigns WHERE id=?", [$id]);
+    audit_log($user, 'campaign_created', 'campaign', $id, null, $campaign);
+    ok(['campaign' => $campaign]);
+}
+if (preg_match('#^/admin/campaigns/(\d+)$#', $path, $m)) {
+    $user = auth(); $cid = (int)$m[1];
+    $campaign = q1("SELECT * FROM campaigns WHERE id=?", [$cid]);
+    if (!$campaign) err('Campaign not found.', 404);
+    if ($METHOD === 'GET') {
+        $shortlinks = q("SELECT id, code AS slug, destination, label, clicks, is_active FROM shortlinks WHERE campaign_id=? ORDER BY created_at DESC", [$cid]);
+        foreach ($shortlinks as &$s) { $s['qr_url'] = shortlink_qr_url($s['slug']); $s['short_url'] = SITE_URL . '/go/' . $s['slug']; }
+        ok(['campaign' => $campaign, 'shortlinks' => $shortlinks]);
+    }
+    if ($METHOD === 'PUT') {
+        role_check($user, $MGR);
+        $status = in_array($BODY['status'] ?? '', VALID_CAMPAIGN_STATUS, true) ? $BODY['status'] : $campaign['status'];
+        $pageId = array_key_exists('page_id', $BODY) ? (($BODY['page_id'] !== '' ) ? (int)$BODY['page_id'] : null) : $campaign['page_id'];
+        if ($pageId && !q1("SELECT id FROM pages WHERE id=?", [$pageId])) err('Selected page does not exist.');
+        run("UPDATE campaigns SET name=?,description=?,status=?,page_id=?,start_at=?,end_at=?,updated_at=datetime('now') WHERE id=?",
+            [$BODY['name']??$campaign['name'], $BODY['description']??$campaign['description'], $status, $pageId,
+             $BODY['start_at']??$campaign['start_at'], $BODY['end_at']??$campaign['end_at'], $cid]);
+        $updated = q1("SELECT * FROM campaigns WHERE id=?", [$cid]);
+        audit_log($user, 'campaign_updated', 'campaign', $cid, $campaign, $updated);
+        ok(['campaign' => $updated]);
+    }
+    if ($METHOD === 'DELETE') {
+        role_check($user, $MGR);
+        run("DELETE FROM campaigns WHERE id=?", [$cid]);
+        audit_log($user, 'campaign_deleted', 'campaign', $cid, $campaign, null);
+        ok(['success' => true]);
+    }
+}
+
 if ($path === '/admin/shortlinks') {
     $user = auth(); role_check($user, $MGR);
     if ($METHOD === 'GET') {
         // Alias code→slug so SPA can use /go/{slug}
-        $rows = q("SELECT id, code AS slug, destination, label, utm_source, utm_medium, utm_campaign, clicks, is_active, created_at, updated_at FROM shortlinks ORDER BY created_at DESC");
+        $rows = q("SELECT id, code AS slug, destination, label, utm_source, utm_medium, utm_campaign, campaign_id, clicks, is_active, created_at, updated_at FROM shortlinks ORDER BY created_at DESC");
         foreach ($rows as &$r) { $r['qr_url'] = shortlink_qr_url($r['slug']); $r['short_url'] = SITE_URL . '/go/' . $r['slug']; }
         ok(['shortlinks' => $rows]);
     }
@@ -1213,10 +1426,12 @@ if ($path === '/admin/shortlinks') {
         $dst  = trim($BODY['destination'] ?? '');
         if (!$code || !$dst) err('Code and destination are required.');
         if (!preg_match('#^https://#i', $dst)) err('Shortlink destination must be a valid https:// URL.');
+        $campaignId = ($BODY['campaign_id'] ?? '') !== '' ? (int)$BODY['campaign_id'] : null;
+        if ($campaignId && !q1("SELECT id FROM campaigns WHERE id=?", [$campaignId])) err('Selected campaign does not exist.');
         try {
-            $id = run("INSERT INTO shortlinks (code,destination,label,utm_source,utm_medium,utm_campaign) VALUES (?,?,?,?,?,?)",
-                [$code,$dst,$BODY['label']??null,$BODY['utm_source']??null,$BODY['utm_medium']??null,$BODY['utm_campaign']??null]);
-            $row = q1("SELECT id, code AS slug, destination, label, clicks, is_active, created_at FROM shortlinks WHERE id=?", [$id]) ?? [];
+            $id = run("INSERT INTO shortlinks (code,destination,label,utm_source,utm_medium,utm_campaign,campaign_id) VALUES (?,?,?,?,?,?,?)",
+                [$code,$dst,$BODY['label']??null,$BODY['utm_source']??null,$BODY['utm_medium']??null,$BODY['utm_campaign']??null,$campaignId]);
+            $row = q1("SELECT id, code AS slug, destination, label, campaign_id, clicks, is_active, created_at FROM shortlinks WHERE id=?", [$id]) ?? [];
             $row['qr_url'] = shortlink_qr_url($code);
             $row['short_url'] = SITE_URL . '/go/' . $code;
             audit_log($user, 'shortlink_created', 'shortlink', $id, null, $row);
@@ -1235,9 +1450,11 @@ if (preg_match('#^/admin/shortlinks/(\d+)$#', $path, $m)) {
     if ($METHOD === 'PUT') {
         $dst = array_key_exists('destination', $BODY) ? trim($BODY['destination'] ?? '') : $old['destination'];
         if ($dst && !preg_match('#^https://#i', $dst)) err('Shortlink destination must be a valid https:// URL.');
-        run("UPDATE shortlinks SET destination=?,label=?,utm_source=?,utm_medium=?,utm_campaign=?,is_active=?,updated_at=datetime('now') WHERE id=?",
-            [$dst,$BODY['label']??$old['label'],$BODY['utm_source']??$old['utm_source'],$BODY['utm_medium']??$old['utm_medium'],$BODY['utm_campaign']??$old['utm_campaign'],$BODY['is_active']??$old['is_active'],$sid]);
-        $row = q1("SELECT id, code AS slug, destination, label, utm_source, utm_medium, utm_campaign, clicks, is_active, created_at, updated_at FROM shortlinks WHERE id=?", [$sid]) ?? [];
+        $campaignId = array_key_exists('campaign_id', $BODY) ? (($BODY['campaign_id'] !== '') ? (int)$BODY['campaign_id'] : null) : $old['campaign_id'];
+        if ($campaignId && !q1("SELECT id FROM campaigns WHERE id=?", [$campaignId])) err('Selected campaign does not exist.');
+        run("UPDATE shortlinks SET destination=?,label=?,utm_source=?,utm_medium=?,utm_campaign=?,campaign_id=?,is_active=?,updated_at=datetime('now') WHERE id=?",
+            [$dst,$BODY['label']??$old['label'],$BODY['utm_source']??$old['utm_source'],$BODY['utm_medium']??$old['utm_medium'],$BODY['utm_campaign']??$old['utm_campaign'],$campaignId,$BODY['is_active']??$old['is_active'],$sid]);
+        $row = q1("SELECT id, code AS slug, destination, label, utm_source, utm_medium, utm_campaign, campaign_id, clicks, is_active, created_at, updated_at FROM shortlinks WHERE id=?", [$sid]) ?? [];
         $row['qr_url'] = shortlink_qr_url($row['slug']);
         $row['short_url'] = SITE_URL . '/go/' . $row['slug'];
         audit_log($user, 'shortlink_updated', 'shortlink', $sid, $old, $row);
@@ -1262,9 +1479,9 @@ if ($path === '/admin/locations') {
         if (!$name || !$slug) err('Name and slug are required.');
         $slug = strtolower(preg_replace('/[^a-z0-9-]+/', '-', $slug));
         try {
-            $id = run("INSERT INTO locations (name,slug,address,phone,toast_order_url,toast_signup_url,maps_url,is_active,sort_order) VALUES (?,?,?,?,?,?,?,?,?)",
+            $id = run("INSERT INTO locations (name,slug,address,phone,toast_order_url,toast_signup_url,maps_url,support_email,hours_text,is_active,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 [$name,$slug,$BODY['address']??null,$BODY['phone']??null,$BODY['toast_order_url']??null,
-                 $BODY['toast_signup_url']??null,$BODY['maps_url']??null,$BODY['is_active']??1,$BODY['sort_order']??0]);
+                 $BODY['toast_signup_url']??null,$BODY['maps_url']??null,$BODY['support_email']??null,$BODY['hours_text']??null,$BODY['is_active']??1,$BODY['sort_order']??0]);
             $loc = q1("SELECT * FROM locations WHERE id=?", [$id]);
             audit_log($user, 'location_created', 'location', $id, null, $loc);
             ok(['location' => $loc]);
@@ -1280,10 +1497,11 @@ if (preg_match('#^/admin/locations/(\d+)$#', $path, $m)) {
     if (!$loc) err('Location not found.', 404);
     if ($METHOD === 'PUT') {
         role_check($user, $MGR);
-        run("UPDATE locations SET name=?,address=?,phone=?,toast_order_url=?,toast_signup_url=?,maps_url=?,is_active=?,sort_order=?,updated_at=datetime('now') WHERE id=?",
+        run("UPDATE locations SET name=?,address=?,phone=?,toast_order_url=?,toast_signup_url=?,maps_url=?,support_email=?,hours_text=?,is_active=?,sort_order=?,updated_at=datetime('now') WHERE id=?",
             [$BODY['name']??$loc['name'],$BODY['address']??$loc['address'],$BODY['phone']??$loc['phone'],
              $BODY['toast_order_url']??$loc['toast_order_url'],$BODY['toast_signup_url']??$loc['toast_signup_url'],
-             $BODY['maps_url']??$loc['maps_url'],$BODY['is_active']??$loc['is_active'],$BODY['sort_order']??$loc['sort_order'],$lid]);
+             $BODY['maps_url']??$loc['maps_url'],$BODY['support_email']??($loc['support_email']??null),$BODY['hours_text']??($loc['hours_text']??null),
+             $BODY['is_active']??$loc['is_active'],$BODY['sort_order']??$loc['sort_order'],$lid]);
         $updated = q1("SELECT * FROM locations WHERE id=?", [$lid]);
         audit_log($user, 'location_updated', 'location', $lid, $loc, $updated);
         ok(['location' => $updated]);
@@ -1292,6 +1510,50 @@ if (preg_match('#^/admin/locations/(\d+)$#', $path, $m)) {
         role_check($user, $MGR);
         run("DELETE FROM locations WHERE id=?", [$lid]);
         audit_log($user, 'location_deleted', 'location', $lid, $loc, null);
+        ok(['success' => true]);
+    }
+}
+
+// ── NOTICES (Service Status banners) ───────────────────────────────────
+const VALID_NOTICE_SEVERITY = ['info','warning','critical'];
+if ($path === '/admin/notices') {
+    $user = auth();
+    if ($METHOD === 'GET') {
+        ok(['notices' => q("SELECT n.*, p.title AS page_title FROM notices n LEFT JOIN pages p ON p.id=n.page_id ORDER BY n.created_at DESC")]);
+    }
+    if ($METHOD === 'POST') {
+        role_check($user, $EDIT);
+        $message = trim((string)($BODY['message'] ?? ''));
+        if (!$message) err('Notice message is required.');
+        $severity = in_array($BODY['severity'] ?? '', VALID_NOTICE_SEVERITY, true) ? $BODY['severity'] : 'info';
+        $pageId = !empty($BODY['page_id']) ? (int)$BODY['page_id'] : null;
+        $id = run("INSERT INTO notices (message,severity,page_id,location_slug,dismissible,is_active,start_at,end_at) VALUES (?,?,?,?,?,?,?,?)",
+            [$message, $severity, $pageId, $BODY['location_slug']??null, $BODY['dismissible']??1, $BODY['is_active']??1, $BODY['start_at']??null, $BODY['end_at']??null]);
+        $notice = q1("SELECT * FROM notices WHERE id=?", [$id]);
+        audit_log($user, 'notice_created', 'notice', $id, null, $notice, $pageId);
+        ok(['notice' => $notice]);
+    }
+}
+if (preg_match('#^/admin/notices/(\d+)$#', $path, $m)) {
+    $user = auth(); $nid = (int)$m[1];
+    $notice = q1("SELECT * FROM notices WHERE id=?", [$nid]);
+    if (!$notice) err('Notice not found.', 404);
+    if ($METHOD === 'PUT') {
+        role_check($user, $EDIT);
+        $severity = in_array($BODY['severity'] ?? '', VALID_NOTICE_SEVERITY, true) ? $BODY['severity'] : $notice['severity'];
+        $pageId = array_key_exists('page_id', $BODY) ? (!empty($BODY['page_id']) ? (int)$BODY['page_id'] : null) : $notice['page_id'];
+        run("UPDATE notices SET message=?,severity=?,page_id=?,location_slug=?,dismissible=?,is_active=?,start_at=?,end_at=?,updated_at=datetime('now') WHERE id=?",
+            [$BODY['message']??$notice['message'], $severity, $pageId, $BODY['location_slug']??$notice['location_slug'],
+             $BODY['dismissible']??$notice['dismissible'], $BODY['is_active']??$notice['is_active'],
+             $BODY['start_at']??$notice['start_at'], $BODY['end_at']??$notice['end_at'], $nid]);
+        $updated = q1("SELECT * FROM notices WHERE id=?", [$nid]);
+        audit_log($user, 'notice_updated', 'notice', $nid, $notice, $updated, $pageId);
+        ok(['notice' => $updated]);
+    }
+    if ($METHOD === 'DELETE') {
+        role_check($user, $EDIT);
+        run("DELETE FROM notices WHERE id=?", [$nid]);
+        audit_log($user, 'notice_deleted', 'notice', $nid, $notice, null, $notice['page_id']);
         ok(['success' => true]);
     }
 }
@@ -1714,13 +1976,17 @@ if (preg_match('#^/public/links/(.+)$#', $path, $m) && $METHOD === 'GET') {
     $sections = q("SELECT * FROM link_sections WHERE page_id=? AND is_active=1 AND status NOT IN ('hidden','archived') ORDER BY sort_order ASC, id ASC", [$page['id']]);
     $sets    = q("SELECT key, value FROM settings");
     $settings = []; foreach ($sets as $r) $settings[$r['key']] = $r['value'];
+    $notices = q("SELECT id,message,severity,dismissible FROM notices
+                  WHERE is_active=1 AND (page_id IS NULL OR page_id=?)
+                  AND (start_at IS NULL OR start_at<=?) AND (end_at IS NULL OR end_at>=?)
+                  ORDER BY (severity='critical') DESC, id DESC", [$page['id'], $now, $now]);
     // Record pageview
     run("INSERT INTO analytics (page_id,event_type,referrer,user_agent,ip) VALUES (?,?,?,?,?)",
         [$page['id'],'pageview',$_SERVER['HTTP_REFERER']??null,$_SERVER['HTTP_USER_AGENT']??null,$_SERVER['REMOTE_ADDR']??null]);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     http_response_code(200);
-    echo json_encode(['ok'=>true,'data'=>['page'=>$page,'buttons'=>$buttons,'sections'=>$sections,'settings'=>$settings,'noindex'=>page_noindex($page)]]);
+    echo json_encode(['ok'=>true,'data'=>['page'=>$page,'buttons'=>$buttons,'sections'=>$sections,'settings'=>$settings,'noindex'=>page_noindex($page),'notices'=>$notices]]);
     exit;
 }
 

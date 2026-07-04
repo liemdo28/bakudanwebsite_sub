@@ -1,69 +1,41 @@
-# LINK HUB 2.0 - Gap List
+# LINK HUB 2.0 Gap List
 
-## P0 Issues
-
-None found in this audit pass.
-
-## P1 Issues
-
-None remaining after fix pass.
-
-Fixed evidence:
-- Deploy scripts now require `BAKUDAN_SFTP_PASS` instead of storing the password literal; syntax checks passed.
-- Staff Training is `page_type=staff_training`, `visibility=staff_only`; public no-token access returns 403 and staff-token access returns 200.
-- Production pages 2 and 4 now have version 1 baselines.
-- Restore test against a local staging copy passed `PRAGMA integrity_check=ok`.
-
-Evidence: `evidence/tests/fix-all-live-actions.json`, `evidence/tests/fix-all-current-state.json`, `evidence/database/restore-test.json`
-
-## P2 Issues
-
-1. Buttons without section exist.
-   - Status: PARTIAL
-   - Evidence: `evidence/database/db-integrity.json`
-   - Required fix: Add an explicit default/social section or document loose-button behavior.
-
-2. Scheduling lacks day-of-week recurring rule coverage.
-   - Status: PARTIAL
-   - Evidence: `api/index.php`, `links-admin/app.js`
-   - Required fix: Add America/Chicago timezone handling and recurring schedule model/tests if required.
-
-3. Advanced admin workflows are incomplete or untested.
-   - Status: PARTIAL
-   - Evidence: `LINK_HUB_2_ADMIN_TEST_RESULTS.md`
-   - Required fix: Add tests for page duplicate, section reorder/duplicate/move/copy, button bulk/copy/move page.
-
-4. Host-level cron for link health is not configured.
-   - Status: PARTIAL
-   - Evidence: `evidence/tests/fix-all-current-state.json`
-   - Required fix: Add DreamHost cron if automatic checks are required.
-
-Fixed P2 evidence:
-- QR/shortlinks admin UI and `/go/{code}` redirect lifecycle passed: `evidence/tests/go-shortlink-regression.json`.
-- Link Health has 14 stored results after rerun: `evidence/tests/fix-all-current-state.json`.
-
-## P3 Issues
-
-1. In-app Browser plugin failed, requiring fallback Chrome screenshots.
-   - Status: PARTIAL
-   - Evidence: `evidence/console/browser-plugin-fallback.json`
-   - Required fix: Repair Browser plugin runtime for smoother future QA.
-
-2. Audit logs lack request IDs/IP/user-agent.
-   - Status: PARTIAL
-   - Evidence: `evidence/api/audit-log-endpoint.json`
-   - Required fix: Add request reference IDs for incident triage.
+Audit Date: 2026-07-04
 
 ## Hard Blockers
 
-None confirmed.
+None remaining in live production behavior.
 
-Spec hard blockers checked:
-- Admin/public use same API and DB: PASS.
-- Publish/rollback API operates: PASS on temp page.
-- Public duplicate active buttons: PASS, none found.
-- External URL converted to local link: PASS, not reproduced.
-- Admin logout during save: PASS, 20-save test passed.
-- Database backup exists: PASS.
-- Production source identified: PASS.
-- Draft public exposure: PASS, draft temp page returned 404.
+## P1
+
+None remaining.
+
+## P2
+
+| Gap | Status | Evidence | Next Action |
+| --- | --- | --- | --- |
+| Full scheduling edge-case matrix not exhaustively tested | PARTIAL | Source/API support exists | Test weekday, overnight, DST cases before expanding scheduling use |
+| Bulk actions are partial | PARTIAL | Feature matrix | Build confirmation/impact workflow later |
+| Dedicated content-type renderers for PDF/text/image/download are partial | PARTIAL | Staff audit | Add richer renderers after core page isolation is stable |
+
+## P3
+
+| Gap | Status | Evidence | Next Action |
+| --- | --- | --- | --- |
+| Admin version history UI is not a full screen | PARTIAL | Versions API screenshot generated | Add UI history table later |
+| Some button labels remain generic | PARTIAL | Admin screenshots | Add context-specific copy in Admin polish pass |
+| Missing-location warning not tested with live inactive data | PARTIAL | Marketing audit | Test with a temporary inactive/staging location |
+
+## Closed Gaps
+
+| Gap | Closure Evidence |
+| --- | --- |
+| Staff page redirect to `/links/` | `/staff-training/` headers show 200, no redirect |
+| Staff page not found | `staff-public-after-fix.json` |
+| Staff noindex missing | API `noindex=true` and HTML robots noindex |
+| Staff videos on Customer page | Functional test shows customer training video count 0 |
+| Staff videos missing from Staff page | Staff public API returns both supplied YouTube Shorts |
+| Admin save reliability | 20 consecutive saves, 0 failures |
+| Dashboard warnings | Final dashboard warnings empty after baseline publish |
+| API/Admin source deploy pending | `evidence/link-hub-2/deployment/final-admin-api-deploy.json`, `admin-boot-fix-deploy.json`, `admin-icon-boot-fix-deploy.json` |
+| Admin screenshot recut pending | `evidence/link-hub-2/screenshots/OFFICIAL_22_SCREENSHOTS_MANIFEST.json` status COMPLETE |

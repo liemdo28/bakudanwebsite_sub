@@ -1,7 +1,4 @@
 # ── SEO 404 Fix — Phase 23E (2026-06-24) ─────────────────────────────────────
-# Multi-Page Link Hub CMS routing
-# Staff Training Hub (unlisted, staff-only content)
-RewriteRule ^staff-training/?$ /links/staff-training/ [R=301,L]
 # Redirect clean URLs → .html files (Apache DirectoryIndex doesn't handle these)
 Options +FollowSymlinks
 RewriteEngine On

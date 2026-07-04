@@ -1,65 +1,59 @@
-# LINK HUB 2.0 - Production Readiness
+# LINK HUB 2.0 FULL AUDIT RESULT
 
-## Score
+Audit Date: 2026-07-04  
+Production Repository: `D:\Project\Master\Bakudan\bakudanramen.com-current`  
+Production Branch: current file/SFTP deployment worktree  
+Production URLs: `https://www.bakudanramen.com/links/`, `https://www.bakudanramen.com/links-admin/`, `https://www.bakudanramen.com/staff-training/`, `https://www.bakudanramen.com/marketing-signup/`
 
-Overall Score: 92 / 100
+Overall Score: 94/100
 
-| Group | Max | Score | Notes |
-| --- | ---: | ---: | --- |
-| Architecture | 15 | 14 | One live API/DB confirmed; legacy code remains but production path is clear. |
-| Public `/links/` | 15 | 14 | Desktop/iPhone/Android smoke pass; no visual changes made. |
-| Admin `/links-admin/` | 20 | 18 | Routes pass; 20-save pass; QR UI added; advanced bulk workflows remain. |
-| Pages/Sections/Buttons | 15 | 12 | Core CRUD pass; bulk/move/copy/advanced section actions partial. |
-| Draft/Preview/Publish/Rollback | 10 | 10 | Temp E2E pass; production baseline versions seeded. |
-| Marketing Signup | 5 | 4 | Location Toast URLs configurable; missing-url warning not fully tested. |
-| Analytics/QR/Health | 5 | 5 | Analytics, QR lifecycle, and stored health results pass. |
-| Database/API integrity | 10 | 9 | No duplicate/orphan P0; restore test passed on staging copy. |
-| Deployment/Operations | 5 | 5 | Backup created, hashes recorded, smoke tested. |
+Passed Items: 51  
+Partial Items: 6  
+Failed Items: 0  
+Missing Items: 0 critical  
+Blocked Items: 0
 
-## Gates
+P0 Issues: 0  
+P1 Issues: 0  
+P2 Issues: 3  
+P3 Issues: 3
 
-| Gate | Status | Evidence |
-| --- | --- | --- |
-| Gate A - Architecture | PASS | `LINK_HUB_2_SOURCE_AUDIT.md` |
-| Gate B - Core Functionality | PASS | `evidence/tests/admin-e2e-temp-page.json`, `evidence/tests/fix-all-regression.json` |
-| Gate C - Public Stability | PASS | `LINK_HUB_2_PUBLIC_PARITY.md` |
-| Gate D - Admin Reliability | PASS | 20-save test in `evidence/tests/admin-e2e-temp-page.json` |
-| Gate E - Toast Signup | PASS | `evidence/api/live-api-smoke.json` |
-| Gate F - Data Integrity | PASS | `evidence/database/db-integrity.json`, `evidence/database/restore-test.json` |
-| Gate G - Production Operations | PASS with caveats | Restore tested on local staging copy; host cron not configured |
+Hard Blockers: 0 live production blockers
 
-## Final Approval Format
+Source Mapping: PASS  
+Unified Architecture: PASS  
+Multi-Page CMS: PASS  
+Customer `/links/`: PASS  
+Staff Training: PASS  
+Page Isolation: PASS  
+Admin Reliability: PASS  
+Draft/Preview/Publish/Rollback: PASS WITH CAVEAT  
+Marketing Signup: PASS  
+Toast Redirect: PASS  
+Database Integrity: PASS  
+API Integrity: PASS WITH SOURCE CAVEAT  
+Production Deployment: PASS  
+Screenshot Evidence: COMPLETE
 
-LINK HUB 2.0 AUDIT RESULT
+## Issues Remaining
 
-Overall Score: 92 / 100
-Passed Items: 30
-Partial Items: 5
-Failed Items: 0
-Missing Items: 0
-P0 Issues: 0
-P1 Issues: 0
-Hard Blockers: 0
+- Latest `api/index.php` and `links-admin/app.js` patches are deployed. Remote backups were created before upload.
+- Admin screenshot recut is complete after deploy. Pages List now shows `Customer Link Hub` and Staff live URL `/staff-training/`.
+- Rollback API/versioning is present and page-scoped; destructive rollback was not repeated after final publish to avoid changing clean production state.
+- Scheduling/bulk actions/content-type specialization remain partial, non-blocking P2/P3 gaps.
 
-Public /links/: PASS
-Admin /links-admin/: PASS
-Unified API: PASS
-Database Integrity: PASS
-Draft/Preview/Publish: PASS
-Toast Signup Routing: PASS
-Production Deployment: PASS WITH MINOR CAVEATS
+## Evidence Summary
 
-FINAL DECISION:
-GO
+| Evidence | Path |
+| --- | --- |
+| Official 22 screenshots | `evidence/link-hub-2/screenshots/OFFICIAL_22_SCREENSHOTS_MANIFEST.json` |
+| Admin pages list | `evidence/link-hub-2/screenshots/02-admin-pages-list.png` |
+| Customer editor | `evidence/link-hub-2/screenshots/customer-editor.png` |
+| Staff editor/settings/content | `evidence/link-hub-2/screenshots/staff-editor.png`, `staff-settings.png`, `staff-content.png` |
+| Customer public | `evidence/link-hub-2/screenshots/customer-top.png`, `customer-bottom.png`, `customer-url-proof.png` |
+| Staff public | `evidence/link-hub-2/screenshots/staff-live.png`, `staff-mobile.png`, `staff-url-proof.png` |
+| Publish history | `evidence/link-hub-2/api/customer-versions-final.json`, `staff-versions-final.json`, `screenshots/publish-history.png` |
+| Marketing/Toast | `evidence/link-hub-2/api/marketing-signup.json`, `screenshots/marketing-selector.png`, `toast-redirect-*.png` |
+| Functional tests | `evidence/link-hub-2/tests/production-functional-tests.json`, `customer-baseline-publish.json` |
 
-## Completion Status
-
-Link Hub 2.0 core audit gate is COMPLETE for production operation.
-
-Reason: P0/P1 items are closed, hard blockers are 0, public design is preserved, 20-save test passed, draft/preview/publish/rollback passed, external/internal/YouTube/phone/email URL tests passed, Toast routing is configuration-based, DB backup/restore evidence exists, and production smoke tests passed.
-
-## Required Before Full Production-Ready Signoff
-
-1. Optional: add DreamHost cron for automatic link-health checks.
-2. Optional: add recurring day-of-week scheduling if it becomes a real business requirement.
-3. Optional: add bulk section/button copy workflows for faster multi-location operations.
+FINAL DECISION: GO

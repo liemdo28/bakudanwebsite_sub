@@ -12,8 +12,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" id="meta-robots" content="index, follow">
-<title>Bakudan Ramen — Links</title>
-<meta name="description" content="Quick links for Bakudan Ramen — order online, view menu, find us on social media.">
+<title id="meta-title">Bakudan Ramen — Links</title>
+<meta name="description" id="meta-description" content="Quick links for Bakudan Ramen — order online, view menu, find us on social media.">
+<link rel="canonical" id="meta-canonical" href="">
+<meta property="og:title" id="meta-og-title" content="Bakudan Ramen — Links">
+<meta property="og:description" id="meta-og-description" content="Quick links for Bakudan Ramen — order online, view menu, find us on social media.">
+<meta property="og:image" id="meta-og-image" content="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 <style>
@@ -112,6 +116,21 @@ body {
 .links-btn.disabled-preview {
   opacity: .45; cursor: default; pointer-events: none;
 }
+
+/* Service status / notice banners */
+.notice-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;
+  font-size: 12px; line-height: 1.4;
+}
+.notice-info     { background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.4); color: #93c5fd; }
+.notice-warning  { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); color: #fcd34d; }
+.notice-critical { background: rgba(220,38,38,.15); border: 1px solid rgba(220,38,38,.5); color: #fca5a5; }
+.notice-dismiss {
+  background: none; border: none; color: inherit; font-size: 18px; line-height: 1;
+  cursor: pointer; opacity: .7; flex-shrink: 0;
+}
+.notice-dismiss:hover { opacity: 1; }
 </style>
 </head>
 <body>
@@ -249,7 +268,18 @@ body {
     const rawSubtitle = b.subtitle || '';
     const isEnabled = b.enabled === undefined ? true : Number(b.enabled) === 1 || b.enabled === true;
     const isVisible = b.visible === undefined ? Number(b.is_active ?? 1) === 1 : !!b.visible;
-    const href = b.url && b.url !== '#' ? b.url : '#';
+    // Location-derived destinations: the link target comes from the joined
+    // location record, not a pasted URL, so one location edit updates every
+    // button that points at it.
+    let locationHref = null;
+    if (b.link_type === 'call_store' && b.location_phone) {
+      locationHref = 'tel:' + b.location_phone.replace(/[^0-9+]/g, '');
+    } else if (b.link_type === 'directions' && b.location_maps_url) {
+      locationHref = b.location_maps_url;
+    } else if (b.link_type === 'order_support' && b.location_support_email) {
+      locationHref = 'mailto:' + b.location_support_email;
+    }
+    const href = locationHref || (b.url && b.url !== '#' ? b.url : '#');
     const isExternal = /^https?:\/\//i.test(href) || /^mailto:|^tel:/i.test(href);
     const copy = polishButtonCopy(rawTitle, rawSubtitle, href);
     return {
@@ -318,7 +348,7 @@ body {
       return;
     }
 
-    const { page, buttons, sections, settings } = data.data;
+    const { page, buttons, sections, settings, notices } = data.data;
     const isPreviewMode = !!data.preview;
 
     // The server computes the authoritative noindex decision (visibility +
@@ -331,8 +361,20 @@ body {
       document.getElementById('meta-robots').content = 'noindex, nofollow';
     }
 
-    // Update meta
-    document.title = (page.headline || page.title) + ' — Bakudan Ramen';
+    // Update meta — SEO fields set in Admin take priority over the generic defaults
+    const pageTitle = page.seo_title || (page.headline || page.title) + ' — Bakudan Ramen';
+    const pageDescription = page.meta_description || settings.links_subheadline || '';
+    document.title = pageTitle;
+    document.getElementById('meta-title').textContent = pageTitle;
+    if (pageDescription) {
+      document.getElementById('meta-description').content = pageDescription;
+      document.getElementById('meta-og-description').content = pageDescription;
+    }
+    document.getElementById('meta-og-title').content = pageTitle;
+    if (page.og_image) document.getElementById('meta-og-image').content = page.og_image;
+    if (page.canonical_url) document.getElementById('meta-canonical').href = page.canonical_url;
+    else document.getElementById('meta-canonical').href = window.location.origin + '/links/' + slug;
+
     if (page.handle) {
       document.getElementById('links-headline').textContent = page.handle;
     } else {
@@ -346,6 +388,33 @@ body {
       banner.className = 'preview-banner';
       banner.innerHTML = '&#128274; PREVIEW &mdash; Internal Use Only &mdash; Not publicly indexed';
       document.querySelector('.links-logo').insertAdjacentElement('beforebegin', banner);
+    }
+
+    // Service status / notice banners (dismissible ones remembered per-browser)
+    let dismissed = [];
+    try { dismissed = JSON.parse(localStorage.getItem('bkdn_dismissed_notices') || '[]'); } catch (e) {}
+    const activeNotices = (notices || []).filter(n => !dismissed.includes(n.id));
+    if (activeNotices.length) {
+      const container = document.createElement('div');
+      activeNotices.forEach(n => {
+        const el = document.createElement('div');
+        el.className = 'notice-banner notice-' + (n.severity || 'info');
+        el.innerHTML = `<span>${escapeHtml(n.message)}</span>`;
+        if (Number(n.dismissible) === 1) {
+          const closeBtn = document.createElement('button');
+          closeBtn.className = 'notice-dismiss';
+          closeBtn.setAttribute('aria-label', 'Dismiss');
+          closeBtn.textContent = '×';
+          closeBtn.onclick = () => {
+            dismissed.push(n.id);
+            try { localStorage.setItem('bkdn_dismissed_notices', JSON.stringify(dismissed)); } catch (e) {}
+            el.remove();
+          };
+          el.appendChild(closeBtn);
+        }
+        container.appendChild(el);
+      });
+      document.querySelector('.links-logo').insertAdjacentElement('beforebegin', container);
     }
 
     // Track view (only for published pages, not preview)
@@ -373,6 +442,10 @@ body {
         }
         if (b.link_type === 'image') {
           return `<img class="links-content-image" src="${escapeAttr(b.url || '')}" alt="${escapeAttr(b.title || b.label || '')}" loading="lazy">`;
+        }
+        if (b.link_type === 'store_hours') {
+          const hoursText = b.location_hours_text || 'Hours not available';
+          return `<div class="links-content-heading">${escapeHtml(b.title || b.label || (b.location_name ? b.location_name + ' Hours' : 'Hours'))}<div class="links-content-heading-sub">${escapeHtml(hoursText)}</div></div>`;
         }
 
         const button = normalizeButton(b);

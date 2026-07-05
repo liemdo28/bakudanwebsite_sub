@@ -1,0 +1,69 @@
+{
+  "adminRoutes": [
+    {
+      "route": "/dashboard",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errs": [],
+      "sample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN QR & Shortlinks Link Health Audit Log Settings Users Sign Ou"
+    },
+    {
+      "route": "/pages",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errs": [],
+      "sample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN QR & Shortlinks Link Health Audit Log Settings Users Sign Ou"
+    },
+    {
+      "route": "/pages/2",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errs": [],
+      "sample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN QR & Shortlinks Link Health Audit Log Settings Users Sign Ou"
+    },
+    {
+      "route": "/shortlinks",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errs": [],
+      "sample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN QR & Shortlinks Link Health Audit Log Settings Users Sign Ou"
+    },
+    {
+      "route": "/link-health",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errs": [],
+      "sample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN QR & Shortlinks Link Health Audit Log Settings Users Sign Ou"
+    },
+    {
+      "route": "/audit-log",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errs": [],
+      "sample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN QR & Shortlinks Link Health Audit Log Settings Users Sign Ou"
+    },
+    {
+      "route": "/locations",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errs": [],
+      "sample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN QR & Shortlinks Link Health Audit Log Settings Users Sign Ou"
+    },
+    {
+      "route": "/blog",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errs": [],
+      "sample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN QR & Shortlinks Link Health Audit Log Settings Users Sign Ou"
+    }
+  ],
+  "publicLinksHasYoutube": true
+}

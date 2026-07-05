@@ -1,0 +1,5 @@
+{
+  "browser_plugin_status": "invocation_failed",
+  "error": "Browser Use encountered an error interacting with this webpage: TypeError: o.incrementalAriaSnapshot is not a function",
+  "fallback": "Used Playwright with installed Google Chrome channel for screenshot and route evidence."
+}

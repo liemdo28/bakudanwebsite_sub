@@ -1,0 +1,63 @@
+Staff Training Fix — Test Results (per spec section 10)
+Verified live against https://www.bakudanramen.com on 2026-07-04 via direct HTTPS
+requests (see network-log.txt for raw request/response evidence).
+
+CUSTOMER-FACING PAGE — https://bakudanramen.com/links/
+[PASS] Page loads successfully (HTTP 200, ok:true)
+[PASS] No Staff Training section
+[PASS] No training YouTube video (0 youtube-linked buttons returned)
+[PASS] Existing customer links remain (Order x3, Rewards x3, Instagram, Facebook,
+       Email Club & Offers, Visit Website — all present, all unchanged URLs)
+[PASS] No duplicate buttons (10 buttons, all distinct URLs)
+[UNVERIFIED] Current design remains unchanged visually — not re-screenshotted live;
+       no rendering code was touched beyond the noindex-meta JS logic, and that
+       logic only fires for non-public pages, so /links/ (visibility=public) is
+       unaffected. Recommend one manual visual glance to be certain.
+[UNVERIFIED] No console error / no failed critical network request — see
+       console-log.txt for why this session couldn't capture it directly.
+
+STAFF TRAINING PAGE — https://bakudanramen.com/links/staff-training-videos
+[PASS] Page loads successfully (HTTP 200 with correct token; 403 without — gating works)
+[PASS] Training videos are visible (2 YouTube Shorts returned in API payload)
+[PASS] YouTube links remain external, unmodified, not slugified (verified exact
+       URLs match: shorts/_qfiQL9phTk, shorts/9tZobv-gB4A)
+[PASS] Page does not redirect to /links/ — served by the same generic slug-based
+       renderer as any other page slug, no redirect rule involved
+[UNVERIFIED] Mobile-friendly — layout code unchanged from the existing shared
+       template (already responsive), not re-verified at a live mobile viewport
+[PASS] Page is not shown on customer Link Hub (0 buttons reference it, and it's
+       absent from /api/public/pages/all)
+[NEEDS FOLLOW-UP] noindex, nofollow — the client-side JS sets this correctly when
+       page.visibility != 'public' (confirmed in code and via local browser test
+       against the same JS earlier in this session). Could not re-confirm the
+       rendered <meta> tag on the LIVE page itself since this session's browser
+       can't reach the live domain — should read as noindex when opened for real.
+[PASS] No duplicate training videos (exactly 2 buttons, unique URLs, migration is
+       idempotent/duplicate-checked)
+
+ADMIN
+[PASS — code-level] Page Type / Visibility / Show on Customer Link Hub fields
+       exist in the page editor and creation modal (verified via local browser
+       render test with a simulated session — see main session transcript)
+[PASS — code-level] Staff Training page type auto-defaults Visibility=Unlisted,
+       Show on Hub=No (verified interactively in this session's local browser test)
+[PASS — server-confirmed] Admin (the site owner) was independently able to open
+       the page editor and change Visibility to staff_only live in production
+       during this work — direct evidence the new fields work end-to-end, not
+       just in a local test
+[BLOCKED] Full click-through (add/edit/reorder/hide a video, confirm Save doesn't
+       force logout) was NOT performed by this session — no valid admin
+       credentials were available, and this session is intentionally blocked
+       from guessing/testing login credentials against production. The 401/session
+       fix was verified via local browser simulation only (see prior session work).
+
+URL HANDLING
+[PASS] youtube.com/watch / youtu.be / youtube.com/shorts all remain external
+[PASS] No internal slug generated for any YouTube URL
+[PASS] No /links/ prefix added to any external destination
+
+SUMMARY
+Automated/API-verifiable checks: ALL PASS.
+Two items need a 60-second manual pass by the user (browser console check on the
+live pages, and a live click-through in the actual Admin panel) — see
+STAFF_TRAINING_DEPLOYMENT_REPORT.md for exactly what to check.

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3GZ2RYDR6M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3GZ2RYDR6M');
+    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>Find Your Bakudan — Locations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: 'Noto Sans JP', system-ui, sans-serif;
+  background: #111;
+  color: #fafafa;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px 60px;
+}
+.links-container { width: 100%; max-width: 420px; }
+.links-logo { text-align: center; margin-bottom: 28px; }
+.links-logo-icon {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: linear-gradient(135deg, #EC4A5E, #A01830);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 40px; margin-bottom: 14px;
+  box-shadow: 0 4px 24px rgba(236,74,94,.3);
+}
+.links-headline { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; color: #fff; }
+.links-subheadline { font-size: 11px; letter-spacing: 2px; color: #888; margin-top: 4px; }
+
+/* Back link */
+.back-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: #555; font-size: 12px; text-decoration: none;
+  margin-bottom: 24px; letter-spacing: .5px;
+  transition: color .15s;
+}
+.back-link:hover { color: #888; }
+.back-link svg { width: 14px; height: 14px; }
+
+/* Section label */
+.section-label {
+  font-size: 10px; letter-spacing: 2px; color: #555;
+  text-transform: uppercase; margin-bottom: 12px; text-align: center;
+}
+
+/* Location cards — same component as /links buttons */
+.btn-list { display: flex; flex-direction: column; gap: 10px; }
+.location-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 18px; border-radius: 12px; width: 100%;
+  text-decoration: none; color: inherit;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  transition: all .18s; position: relative;
+}
+.location-card:hover, .location-card:focus-visible {
+  background: rgba(255,255,255,.1);
+  transform: translateY(-1px);
+  border-color: rgba(255,255,255,.22);
+}
+.location-card:focus-visible { outline: 2px solid #EC4A5E; outline-offset: 2px; }
+
+.card-icon {
+  width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.08);
+}
+.card-icon svg { width: 20px; height: 20px; }
+
+.card-body { flex: 1; text-align: left; }
+.card-name    { font-size: 15px; font-weight: 700; }
+.card-address { font-size: 11px; opacity: .55; margin-top: 3px; line-height: 1.4; }
+
+.card-arrow {
+  color: #444; flex-shrink: 0;
+}
+.card-arrow svg { width: 16px; height: 16px; }
+
+/* Footer */
+.links-footer { margin-top: 40px; text-align: center; font-size: 11px; color: #444; }
+.links-footer a { color: #666; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="links-container">
+
+  <div class="links-logo">
+    <div class="links-logo-icon">&#29190;</div>
+    <div class="links-headline">BAKUDAN RAMEN</div>
+    <div class="links-subheadline">FIND YOUR LOCATION</div>
+  </div>
+
+  <a href="/links-temp" class="back-link">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+    Back
+  </a>
+
+  <div class="section-label">Choose your nearest store</div>
+
+  <div class="btn-list">
+
+    <a href="https://www.google.com/maps/place/17619+La+Cantera+Pkwy+UNIT+208,+San+Antonio,+TX+78257,+USA/@29.610257,-98.598682,12z/data=!4m6!3m5!1s0x865c642391036bb1:0x210edbb4ed7d2b35!8m2!3d29.6102573!4d-98.5986817!16s%2Fg%2F11qpmxvd3f?hl=en&entry=ttu"
+       target="_blank" rel="noopener noreferrer"
+       class="location-card">
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <div class="card-name">The Rim</div>
+        <div class="card-address">17619 La Cantera Pkwy UNIT 208<br>San Antonio, TX 78257</div>
+      </div>
+      <div class="card-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+          <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </div>
+    </a>
+
+    <a href="https://www.google.com/maps/place/22506+U.S.+Hwy+281+N+%23106,+San+Antonio,+TX+78259,+USA/@29.650707,-98.448163,12z/data=!4m6!3m5!1s0x865c89b8fc8bd547:0xcae9a42401514ac!8m2!3d29.6507067!4d-98.4481635!16s%2Fg%2F11vlm710cy?hl=en&entry=ttu"
+       target="_blank" rel="noopener noreferrer"
+       class="location-card">
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <div class="card-name">Stone Oak</div>
+        <div class="card-address">22506 U.S. Hwy 281 N #106<br>San Antonio, TX 78259</div>
+      </div>
+      <div class="card-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+          <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </div>
+    </a>
+
+    <a href="https://www.google.com/maps/place/11309+Bandera+Rd+Suite+111,+San+Antonio,+TX+78254,+USA/@29.548413,-98.662787,12z/data=!4m6!3m5!1s0x865c687f1e0042b5:0x816ff479c4662e0a!8m2!3d29.5484131!4d-98.6627874!16s%2Fg%2F1ptw4b4f_?hl=en&entry=ttu"
+       target="_blank" rel="noopener noreferrer"
+       class="location-card">
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <div class="card-name">Bandera</div>
+        <div class="card-address">11309 Bandera Rd Suite 111<br>San Antonio, TX 78254</div>
+      </div>
+      <div class="card-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+          <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </div>
+    </a>
+
+  </div>
+</div>
+
+<div class="links-footer">
+  &copy; <span id="yr"></span> Bakudan Ramen &mdash; <a href="/">bakudanramen.com</a>
+</div>
+<script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
+</body>
+</html>

@@ -19,25 +19,1095 @@ let _quill = null;   // Quill instance (blog editor)
 ═══════════════════════════════════════════════════════════════ */
 const ROUTES = [
   { pattern: /^\/$|^\/dashboard$/,      view: viewDashboard },
-  { pattern: /^\/project$/,             view: viewProject },
+  { pattern: /^\/project$/,              view: viewProject },
   { pattern: /^\/pages\/(\d+)$/,        view: (m) => viewPageEditor(m[1]) },
-  { pattern: /^\/pages$/,               view: viewPages },
-  { pattern: /^\/scheduling$/,          view: viewScheduling },
-  { pattern: /^\/blog\/new$/,           view: () => viewBlogEditor(null) },
-  { pattern: /^\/blog\/(\d+)$/,         view: (m) => viewBlogEditor(m[1]) },
-  { pattern: /^\/blog$/,                view: viewBlog },
-  { pattern: /^\/analytics$/,           view: viewAnalytics },
+  { pattern: /^\/pages$/,                view: viewPages },
+  { pattern: /^\/scheduling$/,           view: viewScheduling },
+  { pattern: /^\/blog\/new$/,            view: () => viewBlogEditor(null) },
+  { pattern: /^\/blog\/(\d+)$/,          view: (m) => viewBlogEditor(m[1]) },
+  { pattern: /^\/blog$/,                 view: viewBlog },
+  { pattern: /^\/analytics$/,              view: viewAnalytics },
+  { pattern: /^\/campaigns$/,            view: viewCampaigns },
+  { pattern: /^\/campaigns\/(\d+)$/,     view: (m) => viewCampaignEditor(m[1]) },
+  { pattern: /^\/seo$/,                 view: viewSEOManager },
+  { pattern: /^\/forms$/,                view: viewForms },
+  { pattern: /^\/forms\/(\d+)$/,         view: (m) => viewFormEditor(m[1]) },
+  { pattern: /^\/customer-service$/,       view: viewCustomerService },
+  { pattern: /^\/templates$/,            view: viewTemplates },
+  { pattern: /^\/automations$/,          view: viewAutomations },
+  { pattern: /^\/utm-builder$/,         view: viewUTMBuilder },
+  { pattern: /^\/media-library$/,        view: viewMediaLibrary },
+  { pattern: /^\/staff-training$/,      view: viewStaffTraining },
+  { pattern: /^\/locations$/,            view: viewLocations },
+  { pattern: /^\/shortlinks$/,          view: viewShortlinks },
+  { pattern: /^\/link-health$/,         view: viewLinkHealth },
+  { pattern: /^\/audit-log$/,           view: viewAuditLog },
+  { pattern: /^\/trash$/,               view: viewTrash },
   { pattern: /^\/settings$/,            view: viewSettings },
   { pattern: /^\/users$/,               view: viewUsers },
-  { pattern: /^\/profile$/,             view: viewProfile },
+  { pattern: /^\/profile$/,            view: viewProfile },
 ];
 
 const NAV_LABELS = {
-  '/dashboard': 'Dashboard', '/project': 'Project Overview',
-  '/pages': 'Pages & Buttons', '/scheduling': 'Scheduling',
-  '/blog': 'Blog', '/analytics': 'Analytics',
-  '/settings': 'Settings', '/users': 'Users',
+  '/dashboard': 'Dashboard',
+  '/project': 'Project Overview',
+  '/pages': 'Pages',
+  '/scheduling': 'Scheduling',
+  '/blog': 'Blog',
+  '/analytics': 'Analytics',
+  '/campaigns': 'Campaigns',
+  '/seo': 'SEO Manager',
+  '/forms': 'Forms',
+  '/customer-service': 'Customer Service',
+  '/templates': 'Templates',
+  '/automations': 'Automations',
+  '/utm-builder': 'UTM Builder',
+  '/media-library': 'Media Library',
+  '/staff-training': 'Staff Training',
+  '/locations': 'Locations',
+  '/shortlinks': 'QR & Shortlinks',
+  '/link-health': 'Link Health',
+  '/audit-log': 'Audit Log',
+  '/trash': 'Trash',
+  '/settings': 'Settings',
+  '/users': 'Users',
 };
+
+function viewModulePlaceholder(title, message = 'This module is planned for the CMS roadmap.') {
+  setContent(`
+    ${pageTitle(title, message)}
+    <div class="card">
+      <div class="empty-state">
+        <div class="empty-title">${esc(title)} is not active yet</div>
+        <div class="empty-text">Core Link Hub, Staff Training, Marketing Signup, QR, Link Health, and Analytics remain available from the sidebar.</div>
+        <a href="#/pages" class="btn btn-primary btn-sm">${iconPages()} Go to Pages</a>
+      </div>
+    </div>
+  `);
+}
+
+async function viewCampaigns() {
+  setContent(loading());
+  const res = await GET('/admin/campaigns');
+  if (!res?.ok) { setContent(errBanner('Failed to load campaigns.', 'BKDN.viewCampaigns()')); return; }
+  const campaigns = res.data.campaigns || [];
+  const statusBadge = { draft: 'badge-gray', active: 'badge-green', ended: 'badge-yellow' };
+  setContent(`
+    ${pageTitle('Campaigns', `${campaigns.length} campaign${campaigns.length !== 1 ? 's' : ''}`)}
+    <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="BKDN.openCampaignModal()">${iconPlus()} Create Campaign</button>
+    </div>
+    <div class="card">
+      ${!campaigns.length ? `<div class="empty-state"><div class="empty-state-title">No campaigns yet</div></div>` : `
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Status</th><th>Page</th><th>Dates</th><th>Shortlinks</th><th>Clicks</th><th></th></tr></thead>
+        <tbody>${campaigns.map(c => `
+          <tr>
+            <td>${esc(c.name)}<div style="font-size:11px;color:#64748b">${esc(c.description || '')}</div></td>
+            <td><span class="badge ${statusBadge[c.status] || 'badge-gray'}">${esc(c.status.toUpperCase())}</span></td>
+            <td>${c.page_title ? esc(c.page_title) : '<span style="color:#64748b">—</span>'}</td>
+            <td style="color:#94a3b8;font-size:12px">${esc((c.start_at||'').slice(0,10) || '—')} → ${esc((c.end_at||'').slice(0,10) || '—')}</td>
+            <td>${Number(c.shortlink_count || 0)}</td>
+            <td style="font-weight:700">${Number(c.total_clicks || 0)}</td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.openCampaignModal(${c.id})" title="Edit">${iconEdit()}</button>
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteCampaign(${c.id})" title="Delete" style="color:#ef4444">${iconTrash()}</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
+    </div>
+  `);
+}
+
+async function openCampaignModal(id = null) {
+  let item = null;
+  if (id) {
+    const res = await GET('/admin/campaigns');
+    item = (res?.data?.campaigns || []).find(c => Number(c.id) === Number(id));
+  }
+  if (!window._allPages) {
+    const pagesRes = await GET('/admin/pages');
+    window._allPages = pagesRes?.data?.pages || [];
+  }
+  const pageOpts = window._allPages.map(p => `<option value="${p.id}" ${Number(item?.page_id)===Number(p.id)?'selected':''}>${esc(p.title)}</option>`).join('');
+  const statusOpts = ['draft','active','ended'].map(s => `<option value="${s}" ${(item?.status||'draft')===s?'selected':''}>${s}</option>`).join('');
+  openModal(id ? 'Edit Campaign' : 'Create Campaign', `
+    <div class="form-group">
+      <label class="form-label">Campaign Name *</label>
+      <input id="camp-name" class="form-control" value="${esc(item?.name||'')}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <textarea id="camp-desc" class="form-control" rows="2">${esc(item?.description||'')}</textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select id="camp-status" class="form-control">${statusOpts}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Associated Page</label>
+        <select id="camp-page" class="form-control"><option value="">None</option>${pageOpts}</select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Start Date</label><input id="camp-start" type="date" class="form-control" value="${esc((item?.start_at||'').slice(0,10))}"></div>
+      <div class="form-group"><label class="form-label">End Date</label><input id="camp-end" type="date" class="form-control" value="${esc((item?.end_at||'').slice(0,10))}"></div>
+    </div>
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveCampaign(${id||'null'})">${item ? 'Save' : 'Create'}</button>`);
+}
+
+async function saveCampaign(id = null) {
+  const body = {
+    name: document.getElementById('camp-name').value.trim(),
+    description: document.getElementById('camp-desc').value.trim() || null,
+    status: document.getElementById('camp-status').value,
+    page_id: document.getElementById('camp-page').value || '',
+    start_at: document.getElementById('camp-start').value || null,
+    end_at: document.getElementById('camp-end').value || null,
+  };
+  if (!body.name) { toast('Campaign name is required.', 'error'); return; }
+  const res = id ? await PUT('/admin/campaigns/' + id, body) : await POST('/admin/campaigns', body);
+  if (res?.ok) { toast(id ? 'Campaign updated.' : 'Campaign created.', 'success'); closeModal(); viewCampaigns(); }
+  else toast(res?.error || 'Could not save campaign.', 'error');
+}
+
+async function deleteCampaign(id) {
+  if (!confirm('Delete this campaign? Linked shortlinks will keep working but lose their campaign tag.')) return;
+  const res = await DELETE('/admin/campaigns/' + id);
+  if (res?.ok) { toast('Campaign deleted.', 'success'); viewCampaigns(); }
+  else toast(res?.error || 'Could not delete campaign.', 'error');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VIEW: CAMPAIGN EDITOR
+   Uses /admin/campaigns/{id} API
+═══════════════════════════════════════════════════════════════ */
+async function viewCampaignEditor(id) {
+  setContent(loading());
+  let campaign = null;
+  if (id) {
+    const res = await GET('/admin/campaigns');
+    campaign = (res?.data?.campaigns || []).find(c => Number(c.id) === Number(id));
+  }
+  if (!window._allPages) {
+    const pr = await GET('/admin/pages');
+    window._allPages = pr?.data?.pages || [];
+  }
+  const pageOpts = window._allPages.map(p => `<option value="${p.id}" ${Number(campaign?.page_id)===Number(p.id)?'selected':''}>${esc(p.title)}</option>`).join('');
+  const statusOpts = ['draft','active','scheduled','paused','expired','archived'].map(s => `<option value="${s}" ${(campaign?.status||'')===s?'selected':''}>${s}</option>`).join('');
+  const typeOpts = ['promotion','new_menu','limited_time','rewards','email_signup','event','holiday_hours','catering','hiring','store_opening','temp_notice','custom'].map(t => `<option value="${t}" ${(campaign?.campaign_type||'')===t?'selected':''}>${t.replace(/_/g,' ')}</option>`).join('');
+
+  setContent(`
+    ${pageTitle(campaign ? 'Edit Campaign: ' + campaign.name : 'New Campaign', 'Define campaign details, UTM parameters, and target locations.')}
+    <div style="margin-bottom:16px"><a href="#/campaigns" class="btn btn-ghost btn-sm">&#8592; Back to Campaigns</a></div>
+
+    <div class="card">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Campaign Name *</label>
+          <input id="ce-name" class="form-control" value="${esc(campaign?.name||'')}" placeholder="e.g. Summer Ramen Special 2026">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Campaign Type</label>
+          <select id="ce-type" class="form-control">${typeOpts}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select id="ce-status" class="form-control">${statusOpts}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Start Date</label>
+          <input id="ce-start" type="date" class="form-control" value="${esc((campaign?.start_at||'').slice(0,10))}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Date</label>
+          <input id="ce-end" type="date" class="form-control" value="${esc((campaign?.end_at||'').slice(0,10))}">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Description</label>
+          <textarea id="ce-desc" class="form-control" rows="2" placeholder="Brief description of this campaign">${esc(campaign?.description||'')}</textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Primary CTA Label</label>
+          <input id="ce-cta-label" class="form-control" value="${esc(campaign?.cta_label||'')}" placeholder="Order Now">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Primary CTA URL</label>
+          <input id="ce-cta-url" class="form-control" value="${esc(campaign?.cta_url||'')}" placeholder="https://">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Associated Page</label>
+          <select id="ce-page" class="form-control"><option value="">None</option>${pageOpts}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">UTM Source</label>
+          <input id="ce-utm-source" class="form-control" value="${esc(campaign?.utm_source||'')}" placeholder="instagram">
+        </div>
+        <div class="form-group">
+          <label class="form-label">UTM Medium</label>
+          <input id="ce-utm-medium" class="form-control" value="${esc(campaign?.utm_medium||'')}" placeholder="social">
+        </div>
+        <div class="form-group">
+          <label class="form-label">UTM Campaign</label>
+          <input id="ce-utm-campaign" class="form-control" value="${esc(campaign?.utm_campaign||'')}" placeholder="summer_ramen_2026">
+        </div>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:10px">
+        <a href="#/campaigns" class="btn btn-secondary">Cancel</a>
+        <button class="btn btn-primary" onclick="BKDN.saveCampaignEditor(${id?'\''+id+'\'':'null'})">${campaign ? iconSave()+' Save Changes' : iconPlus()+' Create Campaign'}</button>
+      </div>
+    </div>
+  `);
+}
+
+async function saveCampaignEditor(id) {
+  const name = document.getElementById('ce-name').value.trim();
+  if (!name) { toast('Campaign name is required.', 'error'); return; }
+  const body = {
+    name,
+    description: document.getElementById('ce-desc').value.trim() || null,
+    status: document.getElementById('ce-status').value,
+    page_id: document.getElementById('ce-page').value || '',
+    start_at: document.getElementById('ce-start').value || null,
+    end_at: document.getElementById('ce-end').value || null,
+    cta_label: document.getElementById('ce-cta-label').value.trim() || null,
+    cta_url: document.getElementById('ce-cta-url').value.trim() || null,
+    campaign_type: document.getElementById('ce-type').value,
+    utm_source: document.getElementById('ce-utm-source').value.trim() || null,
+    utm_medium: document.getElementById('ce-utm-medium').value.trim() || null,
+    utm_campaign: document.getElementById('ce-utm-campaign').value.trim() || null,
+  };
+  const res = id ? await PUT('/admin/campaigns/' + id, body) : await POST('/admin/campaigns', body);
+  if (res?.ok) {
+    toast(id ? 'Campaign updated.' : 'Campaign created.', 'success');
+    window.location.hash = id ? '#/campaigns/' + id : '#/campaigns';
+  } else {
+    toast(res?.error || 'Could not save campaign.', 'error');
+  }
+};
+/* ═══════════════════════════════════════════════════════════════
+   VIEW: SEO MANAGER
+   Manages SEO fields across all pages using /admin/pages API
+═══════════════════════════════════════════════════════════════ */
+async function viewSEOManager() {
+  setContent(loading());
+  const res = await GET('/admin/pages');
+  if (!res?.ok) { setContent(errBanner('Failed to load pages.', 'BKDN.viewSEOManager()')); return; }
+  const pages = res.data.pages || [];
+
+  setContent(`
+    ${pageTitle('SEO Manager', `Manage meta titles, descriptions, Open Graph images, and canonical URLs across ${pages.length} page${pages.length!==1?'s':''}.`)}
+
+    <div class="card">
+      <div class="card-title">All Pages — SEO Overview</div>
+      <div style="overflow-x:auto">
+        <table class="data-table">
+          <thead><tr><th>Page</th><th>Type</th><th>SEO Title</th><th>Meta Description</th><th>OG Image</th><th>Indexing</th><th></th></tr></thead>
+          <tbody>${pages.map(p => {
+            const missing = [];
+            if (!p.seo_title) missing.push('SEO title');
+            if (!p.meta_description) missing.push('Meta description');
+            const indexAllowed = p.allow_indexing !== 0;
+            return `
+            <tr>
+              <td><div style="font-weight:600;color:#e2e8f0">${esc(p.title)}</div><div style="font-size:10px;color:#64748b">/links/${esc(p.slug||'')}</div></td>
+              <td>${pageTypeBadge(p.page_type, 'font-size:10px')}</td>
+              <td style="max-width:160px">${p.seo_title ? `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.seo_title)}">${esc(p.seo_title)}</div>` : '<span style="color:#ef4444">&#9888; Missing</span>'}</td>
+              <td style="max-width:180px">${p.meta_description ? `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.meta_description)}">${esc(p.meta_description)}</div>` : '<span style="color:#ef4444">&#9888; Missing</span>'}</td>
+              <td>${p.og_image ? `<a href="${esc(p.og_image)}" target="_blank" style="color:#60a5fa;font-size:11px">View</a>` : '<span style="color:#64748b">—</span>'}</td>
+              <td>${indexAllowed ? '<span class="badge badge-green">INDEX</span>' : '<span class="badge badge-gray">NOINDEX</span>'}</td>
+              <td style="white-space:nowrap"><a href="#/pages/${p.id}" class="btn btn-secondary btn-sm">${iconEdit()} Edit Page</a></td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">SEO Tips</div>
+      <ul style="font-size:13px;color:#94a3b8;margin-left:18px;display:flex;flex-direction:column;gap:6px">
+        <li>Keep SEO titles under 60 characters — they get truncated in Google results</li>
+        <li>Meta descriptions should be 120–160 characters — shown as the snippet below your title</li>
+        <li>Use the Open Graph image field to control what appears when shared on social media</li>
+        <li>Canonical URLs prevent duplicate content issues — only set if this page mirrors another</li>
+        <li>Staff Training pages are automatically set to NOINDEX — do not change this</li>
+      </ul>
+    </div>
+  `);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VIEW: FORMS BUILDER
+   Real server storage via /admin/forms — form definitions and
+   submissions persist in the shared database, visible to every admin.
+   Customers submit at /forms/?id=N (see forms/index.html), which posts
+   to /public/forms/{id}/submit.
+═══════════════════════════════════════════════════════════════ */
+async function viewForms() {
+  setContent(loading());
+  const res = await GET('/admin/forms');
+  if (!res?.ok) { setContent(errBanner('Failed to load forms.', 'BKDN.viewForms()')); return; }
+  const forms = res.data.forms || [];
+  setContent(`
+    ${pageTitle('Forms', `Build and manage custom forms. ${forms.length} form${forms.length!==1?'s':''}.`)}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+      <button class="btn btn-primary" onclick="BKDN.openFormModal()">${iconPlus()} Create Form</button>
+    </div>
+    <div class="card">
+      ${!forms.length ? `
+        <div class="empty-state">
+          <div class="empty-state-title">No forms yet</div>
+          <p>Forms let you collect information from customers or staff — surveys, contact requests, event sign-ups, and more.</p>
+        </div>` : `
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Type</th><th>Fields</th><th>Submissions</th><th>Created</th><th></th></tr></thead>
+          <tbody>${forms.map(f => `
+            <tr>
+              <td style="font-weight:600;color:#e2e8f0">${esc(f.name)}${Number(f.is_active)?'':' <span class="badge badge-gray">Inactive</span>'}</td>
+              <td><span class="badge badge-gray">${esc(f.form_type||'custom')}</span></td>
+              <td>${(f.fields||[]).length} field${(f.fields||[]).length!==1?'s':''}</td>
+              <td><a href="#" onclick="BKDN.viewFormSubmissions(${f.id});return false;" style="color:#60a5fa">${Number(f.submission_count||0)}</a></td>
+              <td style="color:#94a3b8">${fmtDate(f.created_at)}</td>
+              <td style="white-space:nowrap">
+                <a class="btn btn-ghost btn-sm" href="/forms/?id=${f.id}" target="_blank" title="Open public form">${iconExternal()}</a>
+                <button class="btn btn-ghost btn-sm" onclick="BKDN.openFormBuilderModal(${f.id})">${iconEdit()}</button>
+                <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteForm(${f.id})" style="color:#ef4444">${iconTrash()}</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`}
+    </div>
+  `);
+}
+
+async function viewFormSubmissions(formId) {
+  setContent(loading());
+  const [formsRes, subsRes] = await Promise.all([GET('/admin/forms'), GET('/admin/forms/' + formId + '/submissions')]);
+  const form = (formsRes?.data?.forms || []).find(f => Number(f.id) === Number(formId));
+  const submissions = subsRes?.data?.submissions || [];
+  setContent(`
+    ${pageTitle((form?.name || 'Form') + ' — Submissions', `${submissions.length} submission${submissions.length!==1?'s':''}`)}
+    <div style="margin-bottom:16px"><a href="#/forms" class="btn btn-ghost btn-sm">&#8592; Back to Forms</a></div>
+    <div class="card">
+      ${!submissions.length ? `<div class="empty-state">No submissions yet.</div>` : `
+      <table class="data-table">
+        <thead><tr><th>Submitted</th><th>Data</th></tr></thead>
+        <tbody>${submissions.map(s => `
+          <tr>
+            <td style="color:#94a3b8;white-space:nowrap">${fmtDate(s.created_at)}</td>
+            <td style="font-size:12px">${Object.entries(s.data||{}).map(([k,v]) => `<div><strong style="color:#94a3b8">${esc(k)}:</strong> ${esc(String(v))}</div>`).join('')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
+    </div>
+  `);
+}
+
+async function viewFormEditor(formId) {
+  await viewForms();
+  openFormBuilderModal(Number(formId));
+}
+
+function openFormModal() {
+  openModal('Create Form', `
+    <div class="form-group"><label class="form-label">Form Name *</label><input id="fm-name" class="form-control" placeholder="e.g. Customer Feedback Survey"></div>
+    <div class="form-group"><label class="form-label">Type</label>
+      <select id="fm-type" class="form-control">
+        <option value="contact">Contact Request</option>
+        <option value="survey">Survey</option>
+        <option value="event_signup">Event Sign-Up</option>
+        <option value="catering">Catering Request</option>
+        <option value="feedback">Feedback</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Description</label><textarea id="fm-desc" class="form-control" rows="2" placeholder="Brief description shown above the form"></textarea></div>
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveForm()">${iconSave()} Create Form</button>`);
+}
+
+async function saveForm() {
+  const name = document.getElementById('fm-name')?.value.trim();
+  if (!name) { toast('Form name is required.', 'error'); return; }
+  const body = { name, form_type: document.getElementById('fm-type')?.value || 'custom', description: document.getElementById('fm-desc')?.value.trim() || null, fields: [] };
+  const res = await POST('/admin/forms', body);
+  if (res?.ok) { toast('Form created.', 'success'); closeModal(); viewForms(); }
+  else toast(res?.error || 'Could not create form.', 'error');
+}
+
+async function deleteForm(id) {
+  if (!confirm('Delete this form? Its submissions will be deleted too. This cannot be undone.')) return;
+  const res = await DELETE('/admin/forms/' + id);
+  if (res?.ok) { toast('Form deleted.', 'success'); viewForms(); }
+  else toast(res?.error || 'Could not delete form.', 'error');
+}
+
+async function openFormBuilderModal(formId) {
+  const res = await GET('/admin/forms');
+  const form = (res?.data?.forms || []).find(f => Number(f.id) === Number(formId));
+  if (!form) return;
+  const fieldTypeOptions = ['text','email','tel','textarea','select','radio','checkbox','date','number','file'].map(t => `<option value="${t}">${t}</option>`).join('');
+  const fieldRows = (form.fields||[]).map((f,i) => `
+    <div class="field-row" style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:8px">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Label</label><input class="form-control field-label" value="${esc(f.label||'')}"></div>
+        <div class="form-group"><label class="form-label">Type</label><select class="form-control field-type">${fieldTypeOptions.replace(`value="${f.type||'text'}"`, `value="${f.type||'text'}" selected`)}</select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Placeholder / Options</label>
+        <input class="form-control field-opts" value="${esc(f.options||f.placeholder||'')}" placeholder="For select/radio: comma-separated options, e.g. Male,Female,Other">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <label class="toggle"><input type="checkbox" class="field-required" ${f.required?'checked':''}><span class="toggle-slider"></span></label>
+        <span class="form-label" style="margin:0">Required</span>
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('.field-row').remove()" style="margin-left:auto;color:#ef4444">${iconTrash()}</button>
+      </div>
+    </div>`).join('');
+  openModal('Form Builder: ' + form.name, `
+    <div class="form-group"><label class="form-label">Form Name</label><input id="fb-name" class="form-control" value="${esc(form.name)}"></div>
+    <div class="form-group"><label class="form-label">Fields</label>
+      <div id="fb-fields-container">${fieldRows}</div>
+      <button class="btn btn-secondary btn-sm" onclick="BKDN.addFieldRow()" style="margin-top:8px">${iconPlus()} Add Field</button>
+    </div>
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveFormBuilder(${formId})">${iconSave()} Save Form</button>`);
+};
+
+function addFieldRow() {
+  const opts = ['text','email','tel','textarea','select','radio','checkbox','date','number','file'].map(t => `<option value="${t}">${t}</option>`).join('');
+  const row = document.createElement('div');
+  row.className = 'field-row';
+  row.style = 'background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:8px';
+  row.innerHTML = `<div class="form-row"><div class="form-group"><label class="form-label">Label</label><input class="form-control field-label" placeholder="Field label"></div><div class="form-group"><label class="form-label">Type</label><select class="form-control field-type">${opts}</select></div></div><div class="form-group"><label class="form-label">Placeholder / Options</label><input class="form-control field-opts" placeholder="Options for select/radio"></div><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><label class="toggle"><input type="checkbox" class="field-required"><span class="toggle-slider"></span></label><span class="form-label" style="margin:0">Required</span><button class="btn btn-ghost btn-sm" onclick="this.closest('.field-row').remove()" style="margin-left:auto;color:#ef4444">${iconTrash()}</button></div>`;
+  document.getElementById('fb-fields-container').appendChild(row);
+};
+
+async function saveFormBuilder(formId) {
+  const name = document.getElementById('fb-name')?.value.trim();
+  if (!name) { toast('Form name is required.', 'error'); return; }
+  const rows = document.querySelectorAll('#fb-fields-container .field-row');
+  const fields = Array.from(rows).map(row => ({
+    label: row.querySelector('.field-label')?.value.trim() || '',
+    type: row.querySelector('.field-type')?.value || 'text',
+    placeholder: row.querySelector('.field-opts')?.value.trim() || '',
+    options: row.querySelector('.field-type')?.value === 'select' || row.querySelector('.field-type')?.value === 'radio' ? row.querySelector('.field-opts')?.value.trim() : '',
+    required: row.querySelector('.field-required')?.checked || false,
+  })).filter(f => f.label);
+  const res = await PUT('/admin/forms/' + formId, { name, fields });
+  if (res?.ok) { toast('Form saved.', 'success'); closeModal(); viewForms(); }
+  else toast(res?.error || 'Could not save form.', 'error');
+};
+
+async function viewTemplates() {
+  setContent(loading());
+  const res = await GET('/admin/templates');
+  if (!res?.ok) { setContent(errBanner('Failed to load templates.', 'BKDN.viewTemplates()')); return; }
+  const templates = res.data.templates || [];
+  setContent(`
+    ${pageTitle('Templates', 'Save a page as a reusable starting point, then create new pages from it.')}
+    <div class="card">
+      ${templates.length ? `
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Description</th><th>Page Type</th><th>Saved</th><th></th></tr></thead>
+        <tbody>${templates.map(t => `
+          <tr>
+            <td>${esc(t.name)}</td>
+            <td style="color:#94a3b8">${esc(t.description || '—')}</td>
+            <td>${esc(t.page_type)}</td>
+            <td style="color:#94a3b8">${esc((t.created_at||'').slice(0,10))}</td>
+            <td style="display:flex;gap:6px">
+              <button class="btn btn-primary btn-sm" onclick="BKDN.openCreatePageFromTemplateModal(${t.id})">${iconPlus()} Create Page</button>
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteTemplate(${t.id})" title="Delete" style="color:#ef4444">${iconTrash()}</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : `<div class="empty-state">No templates yet — open a page and click "Save as Template".</div>`}
+    </div>
+  `);
+}
+
+function openSaveAsTemplateModal(pageId) {
+  openModal('Save as Template', `
+    <div class="form-group">
+      <label class="form-label">Template Name *</label>
+      <input id="tpl-name" class="form-control" placeholder="e.g. Standard Location Page">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <textarea id="tpl-desc" class="form-control" rows="2" placeholder="Optional notes for other admins"></textarea>
+    </div>
+  `,
+  `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="BKDN.saveAsTemplate(${pageId})">${iconSave()} Save Template</button>`);
+}
+
+async function saveAsTemplate(pageId) {
+  const name = document.getElementById('tpl-name').value.trim();
+  if (!name) { toast('Template name is required.', 'error'); return; }
+  const description = document.getElementById('tpl-desc').value.trim() || null;
+  const res = await POST('/admin/pages/' + pageId + '/save-as-template', { name, description });
+  if (res?.ok) { toast('Template saved.', 'success'); closeModal(); }
+  else toast(res?.error || 'Failed to save template.', 'error');
+}
+
+function openCreatePageFromTemplateModal(templateId) {
+  openModal('Create Page from Template', `
+    <div class="form-group">
+      <label class="form-label">Page Title *</label>
+      <input id="tpl-page-title" class="form-control" placeholder="e.g. Bakudan Ramen — Alamo Ranch">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Slug *</label>
+      <input id="tpl-page-slug" class="form-control" placeholder="alamo-ranch">
+    </div>
+  `,
+  `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="BKDN.createPageFromTemplate(${templateId})">${iconSave()} Create Page</button>`);
+}
+
+async function createPageFromTemplate(templateId) {
+  const title = document.getElementById('tpl-page-title').value.trim();
+  const slug = document.getElementById('tpl-page-slug').value.trim();
+  if (!title || !slug) { toast('Title and slug are required.', 'error'); return; }
+  const res = await POST('/admin/templates/' + templateId + '/create-page', { title, slug });
+  if (res?.ok) { toast('Page created from template.', 'success'); closeModal(); location.hash = '#/pages/' + res.data.id; }
+  else toast(res?.error || 'Failed to create page.', 'error');
+}
+
+async function deleteTemplate(templateId) {
+  if (!confirm('Delete this template? This cannot be undone.')) return;
+  const res = await DELETE('/admin/templates/' + templateId);
+  if (res?.ok) { toast('Template deleted.', 'success'); viewTemplates(); }
+  else toast(res?.error || 'Failed to delete template.', 'error');
+}
+/* ═══════════════════════════════════════════════════════════════
+   VIEW: AUTOMATIONS
+   LocalStorage CRUD — no backend API yet (future: /admin/automations)
+═══════════════════════════════════════════════════════════════ */
+const AUTOMATION_RULE_TYPES = [
+  { value: 'campaign_auto_expire', label: 'Auto-end expired campaigns', needsLocation: false,
+    desc: 'When a campaign\'s end date has passed and it is still Active, set its status to Ended.' },
+  { value: 'location_closure_hides_buttons', label: 'Hide buttons when a location closes', needsLocation: true,
+    desc: 'When the selected location is marked Inactive, automatically hide every button pointed at it (Order, Call, Directions, etc).' },
+  { value: 'location_closure_posts_notice', label: 'Post a closure notice when a location closes', needsLocation: true, needsMessage: true,
+    desc: 'When the selected location is marked Inactive, automatically show a dismissible notice site-wide explaining it\'s temporarily closed. The notice is removed automatically once the location is reactivated.' },
+];
+
+async function viewAutomations() {
+  setContent(loading());
+  const res = await GET('/admin/automations');
+  if (!res?.ok) { setContent(errBanner('Failed to load automations.', 'BKDN.viewAutomations()')); return; }
+  const rules = res.data.automations || [];
+  setContent(`
+    ${pageTitle('Automations', 'A small, fixed set of safe rules — not a general scripting engine.')}
+    <div style="display:flex;justify-content:space-between;margin-bottom:16px;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-secondary" onclick="BKDN.runAutomationsNow()">${iconSync()} Run Automations Now</button>
+      <button class="btn btn-primary" onclick="BKDN.openAutomationModal()">${iconPlus()} New Automation</button>
+    </div>
+    <div class="card">
+      ${!rules.length ? `
+        <div class="empty-state">
+          <div class="empty-state-title">No automations yet</div>
+          <p>Add a rule below, then click "Run Automations Now" whenever you want it evaluated — rules never run on a hidden schedule.</p>
+        </div>` : `
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Rule</th><th>Status</th><th>Last Run</th><th></th></tr></thead>
+          <tbody>${rules.map(r => {
+            const meta = AUTOMATION_RULE_TYPES.find(t => t.value === r.rule_type);
+            return `
+            <tr>
+              <td style="font-weight:600;color:#e2e8f0">${esc(r.name)}</td>
+              <td style="color:#94a3b8">${esc(meta?.label || r.rule_type)}${r.location_name ? ' — ' + esc(r.location_name) : ''}</td>
+              <td>${Number(r.is_active) ? '<span class="badge badge-green">ON</span>' : '<span class="badge badge-gray">OFF</span>'}</td>
+              <td style="color:#94a3b8;font-size:12px;max-width:260px">${r.last_run_at ? fmtDate(r.last_run_at) + '<div style="color:#64748b">' + esc(r.last_run_summary||'') + '</div>' : 'Never run'}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-ghost btn-sm" onclick="BKDN.openAutomationModal(${r.id})">${iconEdit()}</button>
+                <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteAutomation(${r.id})" style="color:#ef4444">${iconTrash()}</button>
+              </td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>`}
+    </div>
+  `);
+}
+
+async function openAutomationModal(id) {
+  let item = null;
+  if (id) {
+    const res = await GET('/admin/automations');
+    item = (res?.data?.automations || []).find(r => Number(r.id) === Number(id));
+  }
+  if (!window._allLocations) {
+    const locRes = await GET('/admin/locations');
+    window._allLocations = locRes?.data?.locations || [];
+  }
+  const config = item?.config_json ? JSON.parse(item.config_json) : {};
+  const typeOpts = AUTOMATION_RULE_TYPES.map(t => `<option value="${t.value}" ${(item?.rule_type||AUTOMATION_RULE_TYPES[0].value)===t.value?'selected':''}>${t.label}</option>`).join('');
+  const locOpts = window._allLocations.map(l => `<option value="${l.id}" ${Number(config.location_id)===Number(l.id)?'selected':''}>${esc(l.name)}</option>`).join('');
+  openModal(item ? 'Edit Automation' : 'New Automation', `
+    <div class="form-group"><label class="form-label">Name *</label><input id="auto-name" class="form-control" value="${esc(item?.name||'')}" placeholder="e.g. Auto-close expired summer campaigns"></div>
+    <div class="form-group">
+      <label class="form-label">Rule</label>
+      <select id="auto-type" class="form-control" onchange="BKDN.onAutomationTypeChange()" ${item?'disabled':''}>${typeOpts}</select>
+      <div class="form-hint" id="auto-type-desc"></div>
+    </div>
+    <div class="form-group" id="auto-location-wrap" style="display:none">
+      <label class="form-label">Location</label>
+      <select id="auto-location" class="form-control"><option value="">Select a location…</option>${locOpts}</select>
+    </div>
+    <div class="form-group" id="auto-message-wrap" style="display:none">
+      <label class="form-label">Notice Message (optional)</label>
+      <textarea id="auto-message" class="form-control" rows="2" placeholder="Leave blank to use a default message">${esc(config.message||'')}</textarea>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <label class="toggle"><input id="auto-active" type="checkbox" ${item ? (Number(item.is_active)?'checked':'') : 'checked'}><span class="toggle-slider"></span></label>
+      <span class="form-label" style="margin:0">Active</span>
+    </div>
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveAutomation(${id||'null'})">${iconSave()} Save</button>`);
+  onAutomationTypeChange();
+}
+
+function onAutomationTypeChange() {
+  const type = document.getElementById('auto-type')?.value;
+  const meta = AUTOMATION_RULE_TYPES.find(t => t.value === type);
+  const wrap = document.getElementById('auto-location-wrap');
+  const msgWrap = document.getElementById('auto-message-wrap');
+  const desc = document.getElementById('auto-type-desc');
+  if (wrap) wrap.style.display = meta?.needsLocation ? '' : 'none';
+  if (msgWrap) msgWrap.style.display = meta?.needsMessage ? '' : 'none';
+  if (desc) desc.textContent = meta?.desc || '';
+}
+
+async function saveAutomation(id) {
+  const name = document.getElementById('auto-name').value.trim();
+  if (!name) { toast('Automation name is required.', 'error'); return; }
+  const ruleType = document.getElementById('auto-type').value;
+  const meta = AUTOMATION_RULE_TYPES.find(t => t.value === ruleType);
+  const config = {};
+  if (meta?.needsLocation) {
+    const locId = document.getElementById('auto-location').value;
+    if (!locId) { toast('Select a location for this rule.', 'error'); return; }
+    config.location_id = Number(locId);
+  }
+  if (meta?.needsMessage) {
+    const msg = document.getElementById('auto-message').value.trim();
+    if (msg) config.message = msg;
+  }
+  const body = { name, rule_type: ruleType, config, is_active: document.getElementById('auto-active').checked ? 1 : 0 };
+  const res = id ? await PUT('/admin/automations/' + id, body) : await POST('/admin/automations', body);
+  if (res?.ok) { toast(id ? 'Automation updated.' : 'Automation created.', 'success'); closeModal(); viewAutomations(); }
+  else toast(res?.error || 'Could not save automation.', 'error');
+}
+
+async function deleteAutomation(id) {
+  if (!confirm('Delete this automation?')) return;
+  const res = await DELETE('/admin/automations/' + id);
+  if (res?.ok) { toast('Automation deleted.', 'success'); viewAutomations(); }
+  else toast(res?.error || 'Could not delete automation.', 'error');
+}
+
+async function runAutomationsNow() {
+  toast('Running automations…', 'success');
+  const res = await POST('/admin/automations/run', {});
+  if (res?.ok) {
+    const results = res.data.results || [];
+    if (!results.length) { toast('No active automations to run.', 'success'); return; }
+    toast(`Ran ${results.length} automation(s) — see Last Run column for details.`, 'success');
+    viewAutomations();
+  } else {
+    toast(res?.error || 'Could not run automations.', 'error');
+  }
+}
+async function viewUTMBuilder() {
+  const locRes = await GET('/admin/locations');
+  const locations = locRes?.data?.locations || [];
+  setContent(`
+    ${pageTitle('UTM Builder', 'Build a tracked URL without formatting query strings by hand.')}
+    <div class="card">
+      <div class="form-group">
+        <label class="form-label">Destination URL *</label>
+        <input id="utm-url" class="form-control" placeholder="https://bakudanramen.com/links/bakudan-links-main" oninput="BKDN.updateUtmPreview()">
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Source *</label><input id="utm-source" class="form-control" placeholder="instagram" oninput="BKDN.updateUtmPreview()"></div>
+        <div class="form-group"><label class="form-label">Medium *</label><input id="utm-medium" class="form-control" placeholder="social" oninput="BKDN.updateUtmPreview()"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Campaign *</label><input id="utm-campaign" class="form-control" placeholder="summer_ramen_2026" oninput="BKDN.updateUtmPreview()"></div>
+        <div class="form-group"><label class="form-label">Content</label><input id="utm-content" class="form-control" placeholder="featured_card" oninput="BKDN.updateUtmPreview()"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Term</label><input id="utm-term" class="form-control" oninput="BKDN.updateUtmPreview()"></div>
+        <div class="form-group">
+          <label class="form-label">Location</label>
+          <select id="utm-location" class="form-control" onchange="BKDN.updateUtmPreview()">
+            <option value="">None</option>
+            ${locations.map(l => `<option value="${esc(l.slug)}">${esc(l.name)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Generated URL</label>
+        <textarea id="utm-preview" class="form-control" rows="3" readonly style="font-family:monospace;font-size:12px"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="BKDN.copyUtmUrl()">Copy URL</button>
+        <button class="btn btn-secondary btn-sm" onclick="BKDN.createShortlinkFromUtm()">Create Shortlink + QR</button>
+      </div>
+    </div>
+  `);
+  updateUtmPreview();
+}
+
+function buildUtmUrl() {
+  const base = document.getElementById('utm-url')?.value.trim();
+  if (!base) return '';
+  const params = {
+    utm_source: document.getElementById('utm-source')?.value.trim(),
+    utm_medium: document.getElementById('utm-medium')?.value.trim(),
+    utm_campaign: document.getElementById('utm-campaign')?.value.trim(),
+    utm_content: document.getElementById('utm-content')?.value.trim(),
+    utm_term: document.getElementById('utm-term')?.value.trim(),
+    location: document.getElementById('utm-location')?.value,
+  };
+  try {
+    const url = new URL(base);
+    Object.entries(params).forEach(([k, v]) => { if (v) url.searchParams.set(k, v); });
+    return url.toString();
+  } catch (e) {
+    return '';
+  }
+}
+
+function updateUtmPreview() {
+  const el = document.getElementById('utm-preview');
+  if (el) el.value = buildUtmUrl() || 'Enter a valid destination URL to see the generated link.';
+}
+
+function copyUtmUrl() {
+  const url = buildUtmUrl();
+  if (!url) { toast('Enter a valid destination URL first.', 'error'); return; }
+  navigator.clipboard?.writeText(url).then(() => toast('Copied to clipboard.', 'success')).catch(() => toast('Could not copy — select and copy manually.', 'error'));
+}
+
+async function createShortlinkFromUtm() {
+  const url = buildUtmUrl();
+  if (!url) { toast('Enter a valid destination URL first.', 'error'); return; }
+  const code = prompt('Shortlink code (e.g. summer-special):');
+  if (!code) return;
+  const res = await POST('/admin/shortlinks', {
+    code, destination: url,
+    utm_source: document.getElementById('utm-source')?.value.trim() || null,
+    utm_medium: document.getElementById('utm-medium')?.value.trim() || null,
+    utm_campaign: document.getElementById('utm-campaign')?.value.trim() || null,
+  });
+  if (res?.ok) { toast('Shortlink created — view it under QR & Shortlinks.', 'success'); navigate('/shortlinks'); }
+  else toast(res?.error || 'Failed to create shortlink.', 'error');
+}
+/* ═══════════════════════════════════════════════════════════════
+   VIEW: MEDIA LIBRARY
+   Real files uploaded via /upload, real shared metadata via /admin/media —
+   visible and searchable by every admin, not just the browser that
+   uploaded the file.
+═══════════════════════════════════════════════════════════════ */
+async function viewMediaLibrary() {
+  setContent(loading());
+  const res = await GET('/admin/media');
+  if (!res?.ok) { setContent(errBanner('Failed to load media library.', 'BKDN.viewMediaLibrary()')); return; }
+  const items = res.data.media || [];
+  setContent(`
+    ${pageTitle('Media Library', `Browse and manage uploaded files. ${items.length} item${items.length!==1?'s':''}.`)}
+    <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px;position:relative">
+        <input id="ml-filter" class="form-control" placeholder="Filter by name..." oninput="BKDN.filterMedia(this.value)" style="padding-left:32px">
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#64748b;font-size:14px">&#128269;</span>
+      </div>
+      <label class="btn btn-secondary" style="cursor:pointer">
+        ${iconUpload()} Upload Files
+        <input type="file" multiple accept="image/*" style="display:none" onchange="BKDN.uploadMediaFiles(this.files)">
+      </label>
+    </div>
+    <div id="ml-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
+      ${items.length ? items.map(m => `
+        <div class="media-card" data-name="${esc(m.filename.toLowerCase())}" style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;overflow:hidden;position:relative">
+          ${(m.mime_type||'').startsWith('image/') ? `<img src="${esc(m.url)}" style="width:100%;height:120px;object-fit:cover;display:block" loading="lazy">` : `
+          <div style="width:100%;height:120px;display:flex;align-items:center;justify-content:center;background:#1e293b">
+            <span style="font-size:32px;color:#475569">${iconImage()}</span>
+          </div>`}
+          <div style="padding:8px">
+            <div style="font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.filename)}">${esc(m.filename)}</div>
+            <div style="font-size:10px;color:#475569;margin-top:2px">${_formatSize(Number(m.size_bytes||0))}</div>
+          </div>
+          <div style="position:absolute;top:6px;right:6px;display:flex;gap:4px;opacity:0;transition:opacity 0.2s" class="media-actions">
+            <button class="btn btn-ghost btn-sm" onclick="BKDN.copyMediaUrl('${esc(m.url)}')" title="Copy URL" style="padding:2px 6px;background:rgba(0,0,0,0.6)">${iconCopy()}</button>
+            <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteMediaItem(${m.id})" title="Delete" style="padding:2px 6px;background:rgba(0,0,0,0.6);color:#ef4444">${iconTrash()}</button>
+          </div>
+        </div>`).join('') : `
+        <div style="grid-column:1/-1;text-align:center;padding:40px;color:#475569">
+          <div style="font-size:32px;margin-bottom:8px">${iconImage()}</div>
+          <div style="font-size:13px">No media uploaded yet. Use the Upload button to add files.</div>
+        </div>`}
+    </div>
+    <style>.media-card:hover .media-actions{opacity:1!important}</style>
+  `);
+}
+
+async function uploadMediaFiles(files) {
+  if (!files?.length) return;
+  for (const file of files) {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch(API_BASE + '/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + _token }, body: formData });
+      const data = await res.json();
+      if (data?.ok && data.url) {
+        await POST('/admin/media', { filename: file.name, url: data.url, mime_type: file.type, size_bytes: file.size });
+        toast('Uploaded: ' + file.name, 'success');
+      } else {
+        toast('Upload failed for ' + file.name + ': ' + (data?.error || data?.message || 'unknown error'), 'error');
+      }
+    } catch (e) {
+      toast('Upload failed for ' + file.name + ' — check your connection and try again.', 'error');
+    }
+  }
+  viewMediaLibrary();
+}
+
+function filterMedia(query) {
+  const q = query.toLowerCase();
+  document.querySelectorAll('.media-card').forEach(el => {
+    el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+  });
+}
+
+function copyMediaUrl(url) {
+  navigator.clipboard?.writeText(url).then(() => toast('URL copied.')).catch(() => toast('Could not copy.', 'error'));
+}
+
+async function deleteMediaItem(id) {
+  if (!confirm('Remove this item from the library? The file will be deleted from the server too.')) return;
+  const res = await DELETE('/admin/media/' + id);
+  if (res?.ok) { toast('Removed from library.', 'success'); viewMediaLibrary(); }
+  else toast(res?.error || 'Could not delete media item.', 'error');
+}
+
+function _formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VIEW: CUSTOMER SERVICE
+   Manages public-facing customer service notices via /admin/notices
+═══════════════════════════════════════════════════════════════ */
+async function viewCustomerService() {
+  setContent(loading());
+  const res = await GET('/admin/notices');
+  if (!res?.ok) { setContent(errBanner('Failed to load notices.', 'BKDN.viewCustomerService()')); return; }
+  const notices = res.data.notices || [];
+
+  const now = new Date().toISOString().slice(0,10);
+  const active = notices.filter(n => Number(n.is_active) === 1 && (!n.end_at || n.end_at.slice(0,10) >= now));
+  const expired = notices.filter(n => !(Number(n.is_active) === 1 && (!n.end_at || n.end_at.slice(0,10) >= now)));
+  const severityBadge = { info: 'badge-blue', warning: 'badge-yellow', critical: 'badge-red' };
+
+  setContent(`
+    ${pageTitle('Customer Service', `${active.length} active notice${active.length !== 1 ? 's' : ''}`)}
+    <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="BKDN.openCSModal()">${iconPlus()} New Notice</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Active Notices</div>
+      ${!active.length ? `<div class="empty-state">No active notices — all clear!</div>` : `
+      <table class="data-table">
+        <thead><tr><th>Message</th><th>Severity</th><th>Page</th><th>From</th><th>Until</th><th></th></tr></thead>
+        <tbody>${active.map(n => `
+          <tr>
+            <td style="max-width:320px">${esc(n.message)}</td>
+            <td><span class="badge ${severityBadge[n.severity]||'badge-blue'}">${esc(n.severity)}</span></td>
+            <td>${n.page_title ? esc(n.page_title) : '<span style="color:#64748b">All pages</span>'}</td>
+            <td style="color:#94a3b8">${n.start_at ? fmtDate(n.start_at) : 'Now'}</td>
+            <td style="color:#94a3b8">${n.end_at ? fmtDate(n.end_at) : 'Open-ended'}</td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.openCSModal(${n.id})">${iconEdit()}</button>
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteCSNotice(${n.id})" style="color:#ef4444">${iconTrash()}</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-title">Expired / Inactive Notices</div>
+      ${!expired.length ? `<div class="empty-state">No expired notices.</div>` : `
+      <table class="data-table">
+        <thead><tr><th>Message</th><th>Severity</th><th>Status</th><th></th></tr></thead>
+        <tbody>${expired.map(n => `
+          <tr>
+            <td style="max-width:320px">${esc(n.message)}</td>
+            <td><span class="badge ${severityBadge[n.severity]||'badge-blue'}">${esc(n.severity)}</span></td>
+            <td><span class="badge badge-gray">Inactive</span></td>
+            <td>
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.openCSModal(${n.id})">${iconEdit()}</button>
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteCSNotice(${n.id})" style="color:#ef4444">${iconTrash()}</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-title">How Customer Service Notices Work</div>
+      <ul style="font-size:13px;color:#94a3b8;margin-left:18px;display:flex;flex-direction:column;gap:6px">
+        <li>Notices appear as real banners at the top of the live Customer Link Hub page — this is fully server-backed, not a local preview.</li>
+        <li>Leave "Target Page" blank to show the notice on every public page, or pick one page to show it there only.</li>
+        <li>Set start and end dates to auto-expire temporary notices (e.g., a holiday closure).</li>
+        <li>Severity controls the banner color: info (blue), warning (yellow), critical (red).</li>
+      </ul>
+    </div>
+  `);
+}
+
+async function openCSModal(id) {
+  let item = null;
+  if (id) {
+    const res = await GET('/admin/notices');
+    item = (res?.data?.notices || []).find(n => Number(n.id) === Number(id));
+  }
+  if (!window._allPages) {
+    const pagesRes = await GET('/admin/pages');
+    window._allPages = pagesRes?.data?.pages || [];
+  }
+  const pageOpts = window._allPages.map(p => `<option value="${p.id}" ${Number(item?.page_id)===Number(p.id)?'selected':''}>${esc(p.title)}</option>`).join('');
+  openModal(item ? 'Edit Notice' : 'New Notice', `
+    <div class="form-group"><label class="form-label">Message *</label><textarea id="cs-msg" class="form-control" rows="3" placeholder="e.g. Online ordering is temporarily unavailable at Stone Oak.">${esc(item?.message||'')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Severity</label>
+        <select id="cs-severity" class="form-control">
+          <option value="info" ${(item?.severity||'info')==='info'?'selected':''}>Info</option>
+          <option value="warning" ${item?.severity==='warning'?'selected':''}>Warning</option>
+          <option value="critical" ${item?.severity==='critical'?'selected':''}>Critical</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Target Page</label>
+        <select id="cs-page" class="form-control"><option value="">All pages</option>${pageOpts}</select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Start Date</label><input id="cs-start" type="date" class="form-control" value="${esc((item?.start_at||'').slice(0,10))}"></div>
+      <div class="form-group"><label class="form-label">End Date</label><input id="cs-end" type="date" class="form-control" value="${esc((item?.end_at||'').slice(0,10))}"></div>
+    </div>
+    <div style="display:flex;gap:20px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <label class="toggle"><input id="cs-active" type="checkbox" ${item ? (Number(item.is_active)?'checked':'') : 'checked'}><span class="toggle-slider"></span></label>
+        <span class="form-label" style="margin:0">Active</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label class="toggle"><input id="cs-dismissible" type="checkbox" ${item ? (Number(item.dismissible)?'checked':'') : 'checked'}><span class="toggle-slider"></span></label>
+        <span class="form-label" style="margin:0">Customer can dismiss</span>
+      </div>
+    </div>
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveCSNotice(${id||'null'})">${iconSave()} ${item?'Save Changes':'Create Notice'}</button>`);
+}
+
+async function saveCSNotice(id) {
+  const message = document.getElementById('cs-msg')?.value.trim();
+  if (!message) { toast('Message is required.', 'error'); return; }
+  const body = {
+    message,
+    severity: document.getElementById('cs-severity').value,
+    page_id: document.getElementById('cs-page').value || '',
+    start_at: document.getElementById('cs-start').value || null,
+    end_at: document.getElementById('cs-end').value || null,
+    is_active: document.getElementById('cs-active').checked ? 1 : 0,
+    dismissible: document.getElementById('cs-dismissible').checked ? 1 : 0,
+  };
+  const res = id ? await PUT('/admin/notices/' + id, body) : await POST('/admin/notices', body);
+  if (res?.ok) { toast(id ? 'Notice updated.' : 'Notice created.', 'success'); closeModal(); viewCustomerService(); }
+  else toast(res?.error || 'Could not save notice.', 'error');
+}
+
+async function deleteCSNotice(id) {
+  if (!confirm('Delete this notice?')) return;
+  const res = await DELETE('/admin/notices/' + id);
+  if (res?.ok) { toast('Notice deleted.', 'success'); viewCustomerService(); }
+  else toast(res?.error || 'Could not delete notice.', 'error');
+}
+
+async function viewStaffTraining() {
+  setContent(loading());
+  const res = await GET('/admin/pages');
+  const staffPage = (res?.data?.pages || []).find(p => p.page_type === 'staff_training');
+  if (staffPage) { viewPageEditor(staffPage.id); return; }
+  setContent(`
+    ${pageTitle('Staff Training', 'No Staff Training page exists yet.')}
+    <div class="card">
+      <div class="empty-state">
+        <div class="empty-title">Create your first Staff Training page</div>
+        <button class="btn btn-primary btn-sm" onclick="BKDN.openPageModal()">${iconPlus()} Add Page</button>
+      </div>
+    </div>
+  `);
+}
+
+// ── Page-type helpers (centralized — used everywhere in the Admin UI) ──
+const PAGE_TYPE_META = {
+  link_hub:          { label: 'Customer Link Hub', badgeClass: 'badge-customer',    badgeBg: '#14532d', badgeColor: '#86efac', desc: 'Public-facing link hub for customers' },
+  customer_link_hub: { label: 'Customer Link Hub', badgeClass: 'badge-customer',    badgeBg: '#14532d', badgeColor: '#86efac', desc: 'Public-facing link hub for customers' },
+  staff_training:    { label: 'Staff Training',    badgeClass: 'badge-staff',       badgeBg: '#1e1b4b', badgeColor: '#c4b5fd', desc: 'Internal training hub — unlisted, not indexed' },
+  marketing_signup:  { label: 'Marketing Signup',  badgeClass: 'badge-marketing',  badgeBg: '#1c2e1a', badgeColor: '#a3e635', desc: 'Marketing email/SMS signup landing page' },
+  campaign:          { label: 'Campaign',           badgeClass: 'badge-campaign',    badgeBg: '#2d1500', badgeColor: '#fed7aa', desc: 'Campaign-specific promotional page' },
+  location:          { label: 'Location Page',      badgeClass: 'badge-location',   badgeBg: '#0c2d3a', badgeColor: '#7dd3fc', desc: 'Location-specific page' },
+  custom:            { label: 'Custom',              badgeClass: 'badge-custom',      badgeBg: '#1e293b', badgeColor: '#94a3b8', desc: 'Custom page' },
+};
+
+function getPageTypeMeta(pageType) {
+  return PAGE_TYPE_META[pageType] || PAGE_TYPE_META.custom;
+}
+
+function pageTypeBadge(pageType, extraStyle = '') {
+  const m = getPageTypeMeta(pageType);
+  return `<span class="page-type-badge ${m.badgeClass}" style="background:${m.badgeBg};color:${m.badgeColor};${extraStyle}">${esc(m.label)}</span>`;
+}
+
+function pageContextLabel(pageType) {
+  const m = getPageTypeMeta(pageType);
+  return m.label;
+}
+
+function isStaffPage(pageType) {
+  return pageType === 'staff_training';
+}
+
+// Every page (including Staff Training) is served by the same generic
+// /links/<slug> renderer — there is no separate /staff-training/ route on
+// the server (confirmed 404 in production). Staff Training pages are
+// distinguished by visibility=staff_only (token-gated), not a URL prefix.
+function publicPathForPage(page) {
+  return `/links/${page?.slug || ''}`;
+}
+
+// Content-type safety warnings for add-item validation
+const STAFF_CONTENT_TYPES = ['youtube', 'pdf', 'download', 'phone', 'email', 'maps', 'custom'];
+const CUSTOMER_CONTENT_TYPES = ['external', 'internal_page', 'instagram', 'facebook', 'website', 'toast_order', 'toast_signup'];
+
+function validateContentTypeForPage(pageType, contentType) {
+  if (pageType === 'staff_training') {
+    if (['toast_order', 'toast_signup', 'instagram', 'facebook'].includes(contentType)) {
+      return 'warning: This content type is typically used on customer-facing pages. Add to Staff Training anyway?';
+    }
+    return null;
+  }
+  if (['customer_link_hub', 'link_hub', 'marketing_signup', 'campaign', 'location'].includes(pageType)) {
+    if (contentType === 'youtube' || contentType === 'pdf') {
+      return 'warning: YouTube videos and PDFs are typically Staff Training content. Add to this page anyway?';
+    }
+    return null;
+  }
+  return null;
+}
 
 function getPath() {
   return window.location.hash.replace(/^#/, '') || '/dashboard';
@@ -62,17 +1132,57 @@ window.addEventListener('hashchange', router);
 /* ═══════════════════════════════════════════════════════════════
    API HELPERS
 ═══════════════════════════════════════════════════════════════ */
-const API_BASE = '/api/index-lite.php?r=';
+// Clean path-based routing straight to api/index.php — the one backend
+// with real page/section/button CRUD. The old '/api/index-lite.php?r=...'
+// convention only ever reached a stub with no /admin/* routes at all, which
+// is why Admin editing was broken; see LINK_HUB_2_AUDIT.md §1.
+const API_BASE = '/api';
 
-async function apiFetch(method, endpoint, body) {
+function decodeJwtPayload(token) {
+  try {
+    const part = token.split('.')[1];
+    const json = decodeURIComponent(atob(part.replace(/-/g, '+').replace(/_/g, '/')).split('').map(c =>
+      '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+    return JSON.parse(json);
+  } catch { return null; }
+}
+
+function isTokenExpired(token) {
+  const payload = token && decodeJwtPayload(token);
+  if (!payload || !payload.exp) return true;
+  return Date.now() >= payload.exp * 1000;
+}
+
+async function rawFetch(method, endpoint, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (_token) headers['Authorization'] = 'Bearer ' + _token;
-  const opts = { method, headers };
+  // Admin data must never be served from the browser's HTTP cache — a stale
+  // GET here means Admin edits a page while looking at wrong data (this was
+  // reproduced live: /admin/pages/4 returned a cached pre-migration response
+  // until cache was bypassed).
+  const opts = { method, headers, cache: 'no-store' };
   if (body !== undefined) opts.body = JSON.stringify(body);
+  const res = await fetch(API_BASE + endpoint, opts);
+  let data;
+  try { data = await res.json(); } catch { data = {}; }
+  return { res, data };
+}
+
+// A single 401 does not mean the session is dead: verify the token still
+// looks unexpired client-side and retry once before forcing a re-login, so
+// one flaky/misrouted request can't silently boot the admin out mid-edit.
+async function apiFetch(method, endpoint, body) {
   try {
-    const res  = await fetch(API_BASE + encodeURIComponent(endpoint.replace(/^\//, '')), opts);
-    const data = await res.json();
-    if (res.status === 401) { logout(); return null; }
+    let { res, data } = await rawFetch(method, endpoint, body);
+    if (res.status === 401) {
+      if (_token && !isTokenExpired(_token)) {
+        ({ res, data } = await rawFetch(method, endpoint, body));
+      }
+      if (res.status === 401) {
+        sessionExpired();
+        return null;
+      }
+    }
     if (!('ok' in data)) data.ok = res.ok;
     if (data.ok && !data.data) {
       const payload = { ...data };
@@ -86,10 +1196,18 @@ async function apiFetch(method, endpoint, body) {
   }
 }
 
+function sessionExpired() {
+  _token = null; _user = null;
+  localStorage.removeItem('bkdn_token');
+  localStorage.removeItem('bkdn_user');
+  toast('Your session expired — please sign in again.', 'error', 5000);
+  renderLogin();
+}
+
 const GET    = (ep)       => apiFetch('GET',    ep);
 const POST   = (ep, body) => apiFetch('POST',   ep, body);
 const PUT    = (ep, body) => apiFetch('PUT',    ep, body);
-const DELETE = (ep)       => apiFetch('DELETE', ep);
+const DELETE = (ep, body) => apiFetch('DELETE', ep, body);
 
 /* ═══════════════════════════════════════════════════════════════
    UI HELPERS
@@ -228,10 +1346,28 @@ const iconPlus      = () => `<svg viewBox="0 0 24 24" fill="none" stroke="curren
 const iconSync      = () => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>`;
 const iconExternal  = () => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
 const iconImage     = () => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+const iconEyeOpen   = () => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const iconEyeClosed = () => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.94 10.94 0 0112 20c-7 0-11-8-11-8a19.4 19.4 0 015.06-5.94M9.9 4.24A10.4 10.4 0 0112 4c7 0 11 8 11 8a19.5 19.5 0 01-2.16 3.19M14.12 14.12a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
 const iconEmoji     = () => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 13s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>`;
 const iconSave      = () => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`;
 const iconPublish   = () => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>`;
 const iconBack      = () => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>`;
+const iconCopy      = () => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>`;
+const iconUpload    = () => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>`;
+const iconTemplate  = iconPages;
+const iconCampaign  = iconPublish;
+const iconSEO       = iconAnalytics;
+const iconForms     = iconEdit;
+const iconUTM       = iconExternal;
+const iconCS        = iconUsers;
+const iconStaff     = iconUsers;
+const iconAutomation= iconSync;
+const iconLocation  = iconProject;
+const iconLink      = iconExternal;
+const iconHealth    = iconSync;
+const iconChart     = iconAnalytics;
+const iconMedia     = iconImage;
+const iconAudit     = iconCalendar;
 
 /* ═══════════════════════════════════════════════════════════════
    SHELL RENDERER
@@ -257,13 +1393,13 @@ function renderShell() {
 
       <!-- User section with version metadata -->
       <div class="sidebar-user">
-        <div class="sidebar-user-row">
+        <a class="sidebar-user-row" href="#/profile" data-path="/profile" style="text-decoration:none;color:inherit;cursor:pointer">
           <div class="sidebar-avatar">${esc(userInitial)}</div>
           <div>
             <div class="sidebar-user-name">${esc(_user?.name || 'Admin')}</div>
             <div class="sidebar-user-role">${esc(roleLabel(_user?.role || ''))}</div>
           </div>
-        </div>
+        </a>
         <div class="sidebar-meta">
           <div class="sidebar-version">Version: v${esc(CFG?.version || '1.0.0')}</div>
           <div class="sidebar-deployed">Last deploy: ${esc(deployedStr)}</div>
@@ -273,17 +1409,37 @@ function renderShell() {
       <nav class="sidebar-nav">
         <div class="sidebar-section-label">Main</div>
         <a class="sidebar-link" href="#/dashboard" data-path="/dashboard">${iconDashboard()} <span>Dashboard</span></a>
-        <a class="sidebar-link" href="#/project"   data-path="/project">${iconProject()} <span>Project Overview</span></a>
-        <a class="sidebar-link" href="#/pages"     data-path="/pages">${iconPages()} <span>Pages &amp; Buttons</span></a>
-        <a class="sidebar-link" href="#/scheduling" data-path="/scheduling">${iconCalendar()} <span>Scheduling</span></a>
+        <a class="sidebar-link" href="#/pages"    data-path="/pages">${iconPages()} <span>Pages</span></a>
+        <a class="sidebar-link" href="#/templates" data-path="/templates">${iconTemplate()} <span>Templates</span></a>
 
-        <div class="sidebar-section-label">Content</div>
-        <a class="sidebar-link" href="#/blog"      data-path="/blog">${iconBlog()} <span>Blog</span></a>
-        <a class="sidebar-link" href="#/analytics" data-path="/analytics">${iconAnalytics()} <span>Analytics</span></a>
+        <div class="sidebar-section-label">Business</div>
+        <a class="sidebar-link" href="#/campaigns" data-path="/campaigns">${iconCampaign()} <span>Campaigns</span></a>
+        <a class="sidebar-link" href="#/seo"      data-path="/seo">${iconSEO()} <span>SEO Manager</span></a>
+        <a class="sidebar-link" href="#/forms"     data-path="/forms">${iconForms()} <span>Forms</span></a>
+        <a class="sidebar-link" href="#/utm-builder" data-path="/utm-builder">${iconUTM()} <span>UTM Builder</span></a>
 
-        <div class="sidebar-section-label">Admin</div>
-        <a class="sidebar-link" href="#/settings"  data-path="/settings">${iconSettings()} <span>Settings</span></a>
-        <a class="sidebar-link" href="#/users"     data-path="/users">${iconUsers()} <span>Users</span></a>
+        <div class="sidebar-section-label">Operations</div>
+        <a class="sidebar-link" href="#/customer-service" data-path="/customer-service">${iconCS()} <span>Customer Service</span></a>
+        <a class="sidebar-link" href="#/staff-training"  data-path="/staff-training">${iconStaff()} <span>Staff Training</span></a>
+        <a class="sidebar-link" href="#/scheduling"      data-path="/scheduling">${iconCalendar()} <span>Scheduling</span></a>
+        <a class="sidebar-link" href="#/automations"      data-path="/automations">${iconAutomation()} <span>Automations</span></a>
+        <a class="sidebar-link" href="#/locations"        data-path="/locations">${iconLocation()} <span>Locations</span></a>
+
+        <div class="sidebar-section-label">Tools</div>
+        <a class="sidebar-link" href="#/shortlinks"     data-path="/shortlinks">${iconLink()} <span>QR &amp; Shortlinks</span></a>
+        <a class="sidebar-link" href="#/link-health"     data-path="/link-health">${iconHealth()} <span>Link Health</span></a>
+        <a class="sidebar-link" href="#/analytics"       data-path="/analytics">${iconChart()} <span>Analytics</span></a>
+        <a class="sidebar-link" href="#/media-library"  data-path="/media-library">${iconMedia()} <span>Media Library</span></a>
+        <a class="sidebar-link" href="#/audit-log"       data-path="/audit-log">${iconAudit()} <span>Audit Log</span></a>
+        <a class="sidebar-link" href="#/trash"           data-path="/trash">${iconTrash()} <span>Trash</span></a>
+
+        <div class="sidebar-section-label">System</div>
+        <a class="sidebar-link" href="#/blog"     data-path="/blog">${iconBlog()} <span>Blog</span></a>
+        <a class="sidebar-link" href="#/settings" data-path="/settings">${iconSettings()} <span>Settings</span></a>
+        <a class="sidebar-link" href="#/users"    data-path="/users">${iconUsers()} <span>Users &amp; Roles</span></a>
+
+        <div class="sidebar-section-label">Help</div>
+        <a class="sidebar-link" href="/links-admin/guide.html" target="_blank">${iconExternal()} <span>User Guide</span></a>
       </nav>
 
       <div class="sidebar-footer">
@@ -317,6 +1473,15 @@ function roleLabel(role) {
 /* ═══════════════════════════════════════════════════════════════
    AUTH
 ═══════════════════════════════════════════════════════════════ */
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const showing = input.type === 'text';
+  input.type = showing ? 'password' : 'text';
+  btn.innerHTML = showing ? iconEyeOpen() : iconEyeClosed();
+  btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+}
+
 function renderLogin() {
   document.getElementById('app').innerHTML = `
   <div class="login-page">
@@ -332,7 +1497,12 @@ function renderLogin() {
       </div>
       <div class="form-group">
         <label class="form-label" for="login-pwd">Password</label>
-        <input id="login-pwd" type="password" class="form-control" placeholder="••••••••" autocomplete="current-password">
+        <div style="position:relative">
+          <input id="login-pwd" type="password" class="form-control" placeholder="••••••••" autocomplete="current-password" style="padding-right:40px">
+          <button type="button" id="login-pwd-toggle" onclick="BKDN.togglePasswordVisibility('login-pwd', this)"
+                  style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;padding:4px"
+                  aria-label="Show password">${iconEyeOpen()}</button>
+        </div>
       </div>
       <button class="login-btn" id="login-btn" onclick="BKDN.doLogin()">Sign In to Dashboard</button>
       <div id="login-err" style="display:none" class="login-err"></div>
@@ -341,34 +1511,6 @@ function renderLogin() {
 
   document.getElementById('login-email')?.addEventListener('keydown', e => { if (e.key === 'Enter') BKDN.doLogin(); });
   document.getElementById('login-pwd')?.addEventListener('keydown',   e => { if (e.key === 'Enter') BKDN.doLogin(); });
-}
-
-function fallbackAdminLogin(email, pwd) {
-  if (email !== 'admin@bakudanramen.com' || pwd !== 'admin123') return false;
-  _token = 'local-fallback-admin';
-  _user = { id: 1, email, name: 'Administrator', role: 'super_admin' };
-  try {
-    localStorage.setItem('bkdn_token', _token);
-    localStorage.setItem('bkdn_user', JSON.stringify(_user));
-  } catch {}
-  return true;
-}
-
-function fallbackDashboardData() {
-  const pages = [
-    { id: 2, title: 'Bakudan links Main', slug: 'bakudan-links-main', status: 'published', is_active: 1, button_count: 8, last_published_at: new Date().toISOString() }
-  ];
-  return {
-    total: 8,
-    live: 8,
-    hidden: 0,
-    scheduled: 0,
-    expired: 0,
-    featured: 3,
-    views_24h: 0,
-    clicks_24h: 0,
-    pages
-  };
 }
 
 async function doLogin() {
@@ -392,22 +1534,14 @@ async function doLogin() {
       }
       renderShell();
       router();
-    } else if (fallbackAdminLogin(email, pwd)) {
-      renderShell();
-      router();
     } else {
       if (errEl) { errEl.textContent = res?.error || res?.message || 'Login failed.'; errEl.style.display = 'block'; }
       if (btn) btn.textContent = 'Sign In to Dashboard';
     }
   } catch (err) {
     console.error('Login failed.', err);
-    if (fallbackAdminLogin(email, pwd)) {
-      renderShell();
-      router();
-    } else {
-      if (errEl) { errEl.textContent = 'Login failed. Please try again.'; errEl.style.display = 'block'; }
-      if (btn) btn.textContent = 'Sign In to Dashboard';
-    }
+    if (errEl) { errEl.textContent = 'Could not reach the server. Please try again.'; errEl.style.display = 'block'; }
+    if (btn) btn.textContent = 'Sign In to Dashboard';
   }
 }
 
@@ -424,10 +1558,20 @@ function logout() {
 ═══════════════════════════════════════════════════════════════ */
 async function viewDashboard() {
   setContent(loading());
-  const res = await GET('/links/dashboard');
-  const d = res?.ok ? res.data : fallbackDashboardData();
+  const res = await GET('/admin/dashboard');
+  if (!res?.ok) {
+    setContent(errBanner(res?.error || res?.message || 'Could not load the dashboard.', 'BKDN.viewDashboard()'));
+    return;
+  }
+  const d = res.data;
   const warnings = [];
-  d.pages.forEach(p => { if (!p.last_published_at) warnings.push(`"${p.title}" has never been published`); });
+  d.pages.forEach(p => { if (p.status !== 'published') warnings.push(`"${p.title}" is ${p.status || 'draft'} — not live yet`); });
+  const w = d.warnings || {};
+  (w.misplaced_staff_content || []).forEach(m => warnings.push(`"${m.button_label}" (${m.link_type}) looks like staff/training content on the public page "${m.page_title}"`));
+  (w.broken_links || []).forEach(b => warnings.push(`Broken link: "${b.label}" on "${b.page_title}" — ${b.status}${b.http_code ? ' (HTTP ' + b.http_code + ')' : ''}`));
+  (w.duplicate_buttons || []).forEach(dp => warnings.push(`${dp.count} duplicate button${dp.count!==1?'s':''} on "${dp.page_title}"`));
+  (w.draft_changes || []).forEach(dc => warnings.push(`"${dc.title}" has unpublished draft changes`));
+  (w.seo_issues || []).forEach(s => warnings.push(`"${s.page_title}" is missing ${s.missing.join(' and ')}`));
 
   setContent(`
     ${pageTitle('Dashboard', 'Here\'s your Links Hub at a glance.')}
@@ -464,7 +1608,7 @@ async function viewDashboard() {
       ${d.pages.map(p => `
       <div class="page-card">
         <div class="page-card-title">${esc(p.title)}</div>
-        <div class="page-card-slug">/links/${esc(p.slug)}</div>
+        <div class="page-card-slug">${esc(publicPathForPage(p))}</div>
         <div class="page-card-meta">
           <span class="badge ${p.is_active ? 'badge-green' : 'badge-gray'}">${p.is_active ? 'Live' : 'Hidden'}</span>
           <span class="badge badge-blue">${p.button_count} btn${p.button_count !== 1 ? 's' : ''}</span>
@@ -472,7 +1616,7 @@ async function viewDashboard() {
         </div>
         <div class="page-card-actions">
           <a href="#/pages/${p.id}" class="btn btn-secondary btn-sm">${iconEdit()} Edit Buttons</a>
-          <a href="${esc(CFG?.siteUrl||'')}/links/${esc(p.slug)}" target="_blank" class="btn btn-ghost btn-sm">${iconExternal()}</a>
+          <a href="${esc(CFG?.siteUrl||'')}${esc(publicPathForPage(p))}" target="_blank" class="btn btn-ghost btn-sm">${iconExternal()}</a>
         </div>
       </div>`).join('')}
     </div>
@@ -543,55 +1687,144 @@ function viewProject() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   VIEW: PAGES LIST
+   VIEW: PAGES LIST (Multi-Page CMS — table with page type + visibility)
 ═══════════════════════════════════════════════════════════════ */
 async function viewPages() {
   setContent(loading());
-  const res = await GET('/links/pages');
+  const res = await GET('/admin/pages');
   if (!res?.ok) { setContent(errBanner('Failed to load pages.', 'BKDN.viewPages()')); return; }
   const pages = res.data.pages || [];
 
   const statusBadge = s => {
     const map = { draft:'badge-yellow', private:'badge-gray', scheduled:'badge-blue', published:'badge-green' };
     const label = { draft:'Draft', private:'Private', scheduled:'Scheduled', published:'Published' };
-    const cls = map[s] || 'badge-gray';
-    return `<span class="badge ${cls}">${label[s] || s}</span>`;
+    return `<span class="badge ${map[s]||'badge-gray'}">${label[s]||s}</span>`;
+  };
+
+  const visibilityBadge = v => {
+    const map = {
+      public:'<span class="badge badge-green">Public</span>',
+      unlisted:'<span class="badge badge-gray">Unlisted</span>',
+      staff_only:'<span class="badge badge-staff" style="background:#1e1b4b;color:#c4b5fd">Staff Only</span>',
+      password_protected:'<span class="badge badge-yellow">Password</span>',
+      inactive:'<span class="badge badge-gray">Inactive</span>',
+    };
+    return map[v] || `<span class="badge badge-gray">${esc(v||'')}</span>`;
+  };
+
+  const liveUrl = (p) => {
+    return `<span style="font-family:monospace;font-size:11px;color:#60a5fa">${esc(publicPathForPage(p))}</span>`;
+  };
+
+  const actionsHtml = (p, ps) => {
+    const previewUrl = p.preview_token
+      ? `${CFG?.siteUrl||window.location.origin}/links/preview/${p.slug}?token=${p.preview_token}`
+      : null;
+    const liveLink = ps === 'published'
+      ? `<a href="${esc(CFG?.siteUrl||'')}${esc(publicPathForPage(p))}" target="_blank" class="btn btn-ghost btn-sm" title="Open live page">${iconExternal()}</a>`
+      : previewUrl
+        ? `<a href="${esc(previewUrl)}" target="_blank" class="btn btn-ghost btn-sm" title="Preview">&#128274;</a>`
+        : '';
+    return `
+      <a href="#/pages/${p.id}" class="btn btn-primary btn-sm">${iconEdit()} Edit</a>
+      ${liveLink}
+      <button class="btn btn-ghost btn-sm" onclick="BKDN.duplicatePage(${p.id})" title="Duplicate">${iconDuplicate()}</button>
+      <button class="btn btn-ghost btn-sm" onclick="BKDN.deletePage(${p.id})" title="Delete" style="color:#ef4444">${iconTrash()}</button>`;
   };
 
   setContent(`
-    ${pageTitle('Pages & Buttons', `${pages.length} page${pages.length !== 1 ? 's' : ''}`)}
+    ${pageTitle('Pages', `${pages.length} page${pages.length !== 1 ? 's' : ''} — manage Customer Link Hub, Staff Training, and more`)}
+
+    <!-- Quick summary bar -->
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+      ${(() => {
+        const customer = pages.filter(p => p.page_type !== 'staff_training').length;
+        const staff = pages.filter(p => p.page_type === 'staff_training').length;
+        const published = pages.filter(p => p.is_active).length;
+        const draft = pages.filter(p => !p.is_active && p.status !== 'scheduled').length;
+        const scheduled = pages.filter(p => p.status === 'scheduled').length;
+        return `
+          <div class="kpi-card blue" style="padding:12px 16px;min-width:120px">
+            <div class="kpi-label">Total Pages</div><div class="kpi-value" style="font-size:22px">${pages.length}</div>
+          </div>
+          <div class="kpi-card green" style="padding:12px 16px;min-width:120px">
+            <div class="kpi-label">Customer Pages</div><div class="kpi-value" style="font-size:22px">${customer}</div>
+          </div>
+          <div class="kpi-card" style="padding:12px 16px;min-width:120px;border-top-color:#7c3aed">
+            <div class="kpi-label" style="color:#c4b5fd">Staff Pages</div><div class="kpi-value" style="font-size:22px;color:#ddd6fe">${staff}</div>
+          </div>
+          <div class="kpi-card green" style="padding:12px 16px;min-width:120px">
+            <div class="kpi-label">Published</div><div class="kpi-value" style="font-size:22px">${published}</div>
+          </div>
+          <div class="kpi-card yellow" style="padding:12px 16px;min-width:120px">
+            <div class="kpi-label">Drafts</div><div class="kpi-value" style="font-size:22px">${draft}</div>
+          </div>
+          <div class="kpi-card blue" style="padding:12px 16px;min-width:120px">
+            <div class="kpi-label">Scheduled</div><div class="kpi-value" style="font-size:22px">${scheduled}</div>
+          </div>`;
+      })()}
+    </div>
+
     <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
       <button class="btn btn-primary btn-sm" onclick="BKDN.openPageModal()">${iconPlus()} Add Page</button>
     </div>
-    <div class="pages-grid">
-      ${pages.map(p => {
-        const ps = p.status || (p.is_active ? 'published' : 'draft');
-        const previewUrl = p.preview_token
-          ? `${CFG?.siteUrl||window.location.origin}/links/preview/${p.slug}?token=${p.preview_token}`
-          : null;
-        return `
-        <div class="page-card">
-          <div class="page-card-title">${esc(p.title)}</div>
-          ${p.handle ? `<div style="font-size:11px;color:#64748b;margin-bottom:2px">${esc(p.handle)}</div>` : ''}
-          <div class="page-card-slug">/links/${esc(p.slug)}</div>
-          <div class="page-card-meta">
-            ${statusBadge(ps)}
-            <span class="badge badge-blue">${p.button_count} btn${p.button_count !== 1 ? 's' : ''}</span>
-            ${ps === 'scheduled' && p.scheduled_publish_at ? `<span style="font-size:10px;color:#3b82f6">&#128197; ${fmtDate(p.scheduled_publish_at)}</span>` : ''}
-            ${p.last_published_at ? `<span style="font-size:10px;color:#475569">Published ${fmtDate(p.last_published_at)}</span>` : ''}
-          </div>
-          <div class="page-card-actions">
-            <a href="#/pages/${p.id}" class="btn btn-primary btn-sm">${iconEdit()} Edit</a>
-            ${ps === 'published'
-              ? `<a href="${esc(CFG?.siteUrl||'')}/links/${esc(p.slug)}" target="_blank" class="btn btn-ghost btn-sm">${iconExternal()}</a>`
-              : previewUrl
-                ? `<a href="${esc(previewUrl)}" target="_blank" class="btn btn-ghost btn-sm" title="Preview">&#128274;</a>`
-                : ''
-            }
-            <button class="btn btn-ghost btn-sm" onclick="BKDN.duplicatePage(${p.id})" title="Duplicate">${iconDuplicate()}</button>
-          </div>
-        </div>`;
-      }).join('')}
+
+    <!-- Multi-page table -->
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:16px 20px 12px;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between">
+        <div class="card-title" style="margin:0">All Pages</div>
+        <div style="font-size:11px;color:#475569">Each page has its own draft, publish, and rollback</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="pages-table" style="margin:0">
+          <thead>
+            <tr>
+              <th style="padding:10px 16px">Page</th>
+              <th class="col-type">Type</th>
+              <th class="col-vis">Visibility</th>
+              <th class="col-status">Status</th>
+              <th class="col-url">Live URL</th>
+              <th class="col-actions" style="text-align:right;padding-right:16px">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pages.map(p => {
+              const ps = p.status || (p.is_active ? 'published' : 'draft');
+              const ptMeta = getPageTypeMeta(p.page_type);
+              return `
+              <tr>
+                <td style="padding:12px 16px">
+                  <div class="page-row-title">${esc(p.title)}</div>
+                  ${p.headline ? `<div class="page-row-subtitle">${esc(p.headline)}</div>` : ''}
+                </td>
+                <td class="col-type" style="padding:12px 16px">
+                  ${pageTypeBadge(p.page_type)}
+                </td>
+                <td class="col-vis" style="padding:12px 16px">
+                  ${visibilityBadge(p.visibility)}
+                </td>
+                <td class="col-status" style="padding:12px 16px">
+                  ${statusBadge(ps)}
+                  ${ps==='scheduled' && p.scheduled_publish_at ? `<div style="font-size:10px;color:#3b82f6;margin-top:3px">&#128197; ${fmtDate(p.scheduled_publish_at)}</div>` : ''}
+                  ${p.last_published_at ? `<div style="font-size:10px;color:#475569;margin-top:3px">Last: ${fmtDate(p.last_published_at)}</div>` : ''}
+                </td>
+                <td class="col-url" style="padding:12px 16px">
+                  ${liveUrl(p)}
+                </td>
+                <td class="col-actions" style="padding:12px 16px">
+                  ${actionsHtml(p, ps)}
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div style="margin-top:14px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:#475569">
+      <span>${pageTypeBadge('customer_link_hub')} Public-facing link hub for customers</span>
+      <span>${pageTypeBadge('staff_training')} Internal training hub — unlisted, not indexed</span>
     </div>
   `);
 }
@@ -606,7 +1839,25 @@ function autofillSlug(title) {
   if (el && !el.dataset.touched) el.value = slugify(title);
 }
 
+const PAGE_TYPES = [
+  { value: 'link_hub',         label: 'Link Hub (customer links page)' },
+  { value: 'staff_training',   label: 'Staff Training' },
+  { value: 'marketing_signup', label: 'Marketing Signup' },
+  { value: 'campaign',         label: 'Campaign' },
+  { value: 'location',         label: 'Location Page' },
+  { value: 'custom',           label: 'Custom' },
+];
+const PAGE_VISIBILITY = [
+  { value: 'public',             label: 'Public — anyone with the link' },
+  { value: 'unlisted',           label: 'Unlisted — not linked from anywhere, but viewable' },
+  { value: 'staff_only',         label: 'Staff Only — requires a staff access link' },
+  { value: 'password_protected', label: 'Password Protected' },
+  { value: 'inactive',           label: 'Inactive — not viewable' },
+];
+
 function openPageModal() {
+  const typeOpts = PAGE_TYPES.map(t => `<option value="${t.value}">${esc(t.label)}</option>`).join('');
+  const visOpts = PAGE_VISIBILITY.map(v => `<option value="${v.value}" ${v.value==='public'?'selected':''}>${esc(v.label)}</option>`).join('');
   openModal('Add Page', `
     <div class="form-group">
       <label class="form-label">Page Title *</label>
@@ -615,7 +1866,25 @@ function openPageModal() {
     <div class="form-group">
       <label class="form-label">URL Slug *</label>
       <input id="pf-slug" class="form-control" placeholder="staff-training-videos" oninput="this.dataset.touched='1'">
-      <div style="font-size:11px;color:#64748b;margin-top:4px">Page will be live at /links/&lt;slug&gt; once published — separate from the main customer links page.</div>
+      <div style="font-size:11px;color:#64748b;margin-top:4px">Live URL depends on Page Type: Customer pages use /links/&lt;slug&gt;; Staff Training uses /staff-training/.</div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Page Type</label>
+        <select id="pf-type" class="form-control" onchange="BKDN.onPageTypeChange()">${typeOpts}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Visibility</label>
+        <select id="pf-visibility" class="form-control">${visOpts}</select>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <label class="toggle"><input id="pf-show-on-hub" type="checkbox" checked><span class="toggle-slider"></span></label>
+      <span class="form-label" style="margin:0">Show on Customer Link Hub</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <label class="toggle"><input id="pf-allow-indexing" type="checkbox" checked><span class="toggle-slider"></span></label>
+      <span class="form-label" style="margin:0">Search Engine Indexing</span>
     </div>
     <div class="form-group">
       <label class="form-label">Headline</label>
@@ -630,16 +1899,34 @@ function openPageModal() {
    <button class="btn btn-primary" onclick="BKDN.savePageModal()">${iconSave()} Create Page</button>`);
 }
 
+// Staff Training pages default to Unlisted + hidden from the customer hub +
+// noindex — matches the server-side default in api/index.php's POST /admin/pages.
+function onPageTypeChange() {
+  const type = document.getElementById('pf-type')?.value;
+  const visSelect = document.getElementById('pf-visibility');
+  const hubCheck = document.getElementById('pf-show-on-hub');
+  const indexCheck = document.getElementById('pf-allow-indexing');
+  if (type === 'staff_training' && visSelect && hubCheck) {
+    visSelect.value = 'unlisted';
+    hubCheck.checked = false;
+    if (indexCheck) indexCheck.checked = false;
+  }
+}
+
 async function savePageModal() {
   const title = document.getElementById('pf-title').value.trim();
   const slug  = document.getElementById('pf-slug').value.trim();
   if (!title || !slug) { toast('Title and slug are required.', 'error'); return; }
   const data = {
     title, slug,
+    page_type: document.getElementById('pf-type').value,
+    visibility: document.getElementById('pf-visibility').value,
+    show_on_hub: document.getElementById('pf-show-on-hub').checked ? 1 : 0,
+    allow_indexing: document.getElementById('pf-allow-indexing').checked ? 1 : 0,
     headline: document.getElementById('pf-headline').value.trim() || null,
     store_slug: document.getElementById('pf-store').value.trim() || null,
   };
-  const res = await POST('/links/pages', data);
+  const res = await POST('/admin/pages', data);
   if (res?.ok) {
     toast('Page created. It starts as a draft — publish it from the editor when ready.', 'success');
     closeModal();
@@ -650,9 +1937,16 @@ async function savePageModal() {
 }
 
 async function duplicatePage(pageId) {
-  const res = await POST('/links/pages/' + pageId + '/duplicate');
+  const res = await POST('/admin/pages/' + pageId + '/duplicate');
   if (res?.ok) { toast('Page duplicated as a draft.', 'success'); viewPages(); }
   else toast(res?.error || 'Failed to duplicate page.', 'error');
+}
+
+async function deletePage(pageId) {
+  if (!confirm('Delete this page? It will move to Trash and can be restored later — its sections and buttons stay intact and become visible again automatically when you restore it.')) return;
+  const res = await DELETE('/admin/pages/' + pageId);
+  if (res?.ok) { toast('Page moved to Trash.', 'success'); viewPages(); }
+  else toast(res?.error || 'Failed to delete page.', 'error');
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -660,27 +1954,64 @@ async function duplicatePage(pageId) {
 ═══════════════════════════════════════════════════════════════ */
 async function viewPageEditor(pageId) {
   setContent(loading());
-  const res = await GET('/links/pages/' + pageId);
+  const res = await GET('/admin/pages/' + pageId);
   if (!res?.ok) { setContent(errBanner('Failed to load page.', `BKDN.viewPageEditor(${pageId})`)); return; }
   const p = res.data.page;
   const buttons = res.data.buttons || [];
   const sections = res.data.sections || [];
   window._pageSections = sections;
+  window._currentPageId = Number(pageId);
+  window._currentPageType = p.page_type || 'custom';
+  if (!window._allLocations) {
+    const locRes = await GET('/admin/locations');
+    window._allLocations = locRes?.data?.locations || [];
+  }
 
   const pageStatus = p.status || (p.is_active ? 'published' : 'draft');
-  const statusColors = { draft:'badge-yellow', private:'badge-gray', scheduled:'badge-blue', published:'badge-green' };
-  const statusDot    = { draft:'#f59e0b', private:'#64748b', scheduled:'#3b82f6', published:'#22c55e' };
+  const statusDot  = { draft:'#f59e0b', private:'#64748b', scheduled:'#3b82f6', published:'#22c55e' };
+  const isStaff = isStaffPage(p.page_type);
+  const ptMeta = getPageTypeMeta(p.page_type);
+
+  const publicUrl = publicPathForPage(p);
 
   // Preview URL from stored token
   const previewUrl = p.preview_token
     ? `${CFG?.siteUrl||window.location.origin}/links/preview/${p.slug}?token=${p.preview_token}`
     : null;
 
-  // Format scheduled date for datetime-local input
+  // Scheduled datetime for input
   const scheduledVal = (p.scheduled_publish_at||'').replace(' ','T').slice(0,16);
 
+  // Visibility label for the context header
+  const visLabel = { public:'Public', unlisted:'Unlisted', staff_only:'Staff Only', password_protected:'Password', inactive:'Inactive' }[p.visibility] || p.visibility || 'Public';
+
   setContent(`
-    ${pageTitle(p.title, `/links/${p.slug}`)}
+    ${pageTitle(p.title, publicUrl)}
+
+    <!-- Page context header — always visible, shows which page is being edited -->
+    <div class="editor-page-header">
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        ${pageTypeBadge(p.page_type, 'font-size:11px')}
+      </div>
+      <div class="editor-page-header-meta">
+        <span class="publish-bar-page-label">${esc(visLabel)}</span>
+        <span class="pub-status pub-status--${pageStatus}" style="font-size:10px;padding:2px 8px">&#9679; ${pageStatus}</span>
+        <span class="publish-bar-page-label">${esc(publicUrl)}</span>
+      </div>
+      <div class="editor-page-header-actions">
+        <a href="#/pages" class="btn btn-ghost btn-sm" style="font-size:11px">${iconBack()} Back to Pages</a>
+      </div>
+    </div>
+
+    <!-- Staff Training warning banner -->
+    ${isStaff ? `
+    <div class="staff-warning-banner">
+      <div class="staff-warning-banner-icon">&#128274;</div>
+      <div class="staff-warning-banner-text">
+        <strong>Staff Training — Internal Use Only</strong><br>
+        This page is <strong>unlisted</strong> and has <strong>noindex</strong> headers. It will not appear in the customer Link Hub, sitemap, or search engine indexes. Only staff with the direct URL can access it. Publishing this page does NOT affect the Customer Link Hub.
+      </div>
+    </div>` : ''}
 
     <div class="publish-bar">
       <span class="pub-status pub-status--${pageStatus}" id="pub-state-label" style="color:${statusDot[pageStatus]||'#64748b'}">
@@ -692,6 +2023,7 @@ async function viewPageEditor(pageId) {
         : `<button class="btn btn-primary btn-sm" id="btn-publish-page" onclick="BKDN.publishPage(${pageId})">${iconPublish()} Publish Now</button>`
       }
       <button class="btn btn-ghost btn-sm" onclick="BKDN.verifySync('${esc(p.slug)}')">${iconSync()} Verify</button>
+      <button class="btn btn-ghost btn-sm" onclick="BKDN.openSaveAsTemplateModal(${pageId})">${iconTemplate()} Save as Template</button>
       ${previewUrl ? `<a href="${esc(previewUrl)}" target="_blank" class="btn btn-ghost btn-sm">&#128274; Preview</a>` : ''}
       <a href="#/pages" class="btn btn-ghost btn-sm">${iconBack()} Back</a>
     </div>
@@ -708,9 +2040,9 @@ async function viewPageEditor(pageId) {
     <div id="tab-buttons">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <span style="font-size:13px;color:#64748b">${buttons.length} button${buttons.length !== 1 ? 's' : ''}</span>
-        <button class="btn btn-primary btn-sm" onclick="BKDN.openAddButton(${pageId})">${iconPlus()} Add Button</button>
+        <button class="btn btn-primary btn-sm" onclick="BKDN.openAddButton(${pageId})">${iconPlus()} Add to ${esc(ptMeta.label)}</button>
       </div>
-      ${renderButtonList(buttons, pageId)}
+      ${renderButtonList(buttons, pageId, ptMeta)}
     </div>
 
     <!-- Sections tab -->
@@ -743,6 +2075,124 @@ async function viewPageEditor(pageId) {
         </div>
         <button class="btn btn-primary" onclick="BKDN.savePage(${pageId})">${iconSave()} Save Settings</button>
       </div>
+
+      <div class="card">
+        <div class="card-title">Page Type &amp; Visibility</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Page Type</label>
+            <select id="pe-type" class="form-control">
+              ${PAGE_TYPES.map(t => `<option value="${t.value}" ${p.page_type===t.value?'selected':''}>${esc(t.label)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Visibility</label>
+            <select id="pe-visibility" class="form-control">
+              ${PAGE_VISIBILITY.map(v => `<option value="${v.value}" ${(p.visibility||'public')===v.value?'selected':''}>${esc(v.label)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Location Scope</label>
+          <select id="pe-location" class="form-control">
+            <option value="">General page — not location-specific</option>
+            ${(window._allLocations||[]).map(l => `<option value="${esc(l.slug)}" ${p.store_slug===l.slug?'selected':''}>${esc(l.name)}</option>`).join('')}
+          </select>
+          <div class="form-hint">If set, only a Store Manager assigned to this location (see Users) can edit this page's buttons and sections.</div>
+        </div>
+        <div id="pe-pw-row" style="margin-bottom:12px;${p.visibility!=='password_protected'?'display:none':''}">
+          <div class="form-group" style="margin-bottom:6px">
+            <label class="form-label">Page Password</label>
+            <div style="position:relative">
+              <input id="pe-password" type="password" class="form-control" placeholder="Leave blank to keep current password">
+              <button type="button" onclick="BKDN.togglePasswordVisibility('pe-password', this)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#94a3b8;padding:4px">${iconEyeOpen()}</button>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Confirm Password</label>
+            <div style="position:relative">
+              <input id="pe-password-confirm" type="password" class="form-control" placeholder="Re-enter password to confirm">
+              <button type="button" onclick="BKDN.togglePasswordVisibility('pe-password-confirm', this)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#94a3b8;padding:4px">${iconEyeOpen()}</button>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <label class="toggle"><input id="pe-show-on-hub" type="checkbox" ${p.show_on_hub!==0?'checked':''}><span class="toggle-slider"></span></label>
+          <span class="form-label" style="margin:0">Show on Customer Link Hub</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+          <label class="toggle"><input id="pe-allow-indexing" type="checkbox" ${p.allow_indexing!==0?'checked':''}><span class="toggle-slider"></span></label>
+          <span class="form-label" style="margin:0">Search Engine Indexing</span>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:12px">Staff Training pages should normally be Unlisted, hidden from the Customer Link Hub, and excluded from search indexing — the page stays reachable at its direct URL but is never linked or listed publicly.</div>
+        <button class="btn btn-primary" onclick="BKDN.savePageVisibility(${pageId})">${iconSave()} Save Type &amp; Visibility</button>
+        <script>document.getElementById('pe-visibility').addEventListener('change', function(){document.getElementById('pe-pw-row').style.display=this.value==='password_protected'?'block':'none';});</script>
+      </div>
+
+      <div class="card">
+        <div class="card-title">SEO</div>
+        <div class="form-group">
+          <label class="form-label">SEO Title <span style="color:#475569">(${(p.seo_title||'').length}/60)</span></label>
+          <input id="pe-seo-title" class="form-control" maxlength="70" value="${esc(p.seo_title||'')}" placeholder="${esc(p.title)} | Bakudan Ramen">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Meta Description <span style="color:#475569">(${(p.meta_description||'').length}/160)</span></label>
+          <textarea id="pe-meta-description" class="form-control" rows="2" maxlength="170" placeholder="Shown under the title in Google search results">${esc(p.meta_description||'')}</textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Social Preview Image (Open Graph)</label>
+          <input id="pe-og-image" class="form-control" value="${esc(p.og_image||'')}" placeholder="https://.../share-image.jpg">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Canonical URL <span style="color:#475569">(optional — leave blank unless this page duplicates another)</span></label>
+          <input id="pe-canonical" class="form-control" value="${esc(p.canonical_url||'')}" placeholder="https://bakudanramen.com/links/...">
+        </div>
+        <div class="card" style="background:#0f172a;border:1px solid #334155;margin-bottom:16px">
+          <div style="font-size:11px;color:#64748b;margin-bottom:6px">GOOGLE PREVIEW</div>
+          <div style="color:#8ab4f8;font-size:16px;line-height:1.3">${esc(p.seo_title || p.title)}</div>
+          <div style="color:#4ade80;font-size:12px;margin:2px 0">${esc(CFG?.siteUrl||'bakudanramen.com')}/links/${esc(p.slug)}</div>
+          <div style="color:#bdc1c6;font-size:12px">${esc(p.meta_description || 'No meta description set yet.')}</div>
+        </div>
+        <button class="btn btn-primary" onclick="BKDN.saveSeo(${pageId})">${iconSave()} Save SEO</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Structured Data (Rich Search Results)</div>
+        <div class="form-hint" style="margin-bottom:10px">Helps Google show extra details (hours, phone, FAQ) directly in search results. Fill in the form below — no code or raw JSON required.</div>
+        ${(() => {
+          const sdType = p.structured_data_type || '';
+          let sdFields = {};
+          try { sdFields = JSON.parse(p.structured_data_json || '{}'); } catch { sdFields = {}; }
+          window._structuredDataFields = sdFields;
+          return `
+        <div class="form-group">
+          <label class="form-label">Type</label>
+          <select id="pe-sd-type" class="form-control" onchange="BKDN.onStructuredDataTypeChange()">
+            <option value="" ${sdType===''?'selected':''}>None</option>
+            <option value="restaurant" ${sdType==='restaurant'?'selected':''}>Restaurant</option>
+            <option value="faq" ${sdType==='faq'?'selected':''}>FAQ Page</option>
+          </select>
+        </div>
+        <div id="pe-sd-restaurant" style="display:${sdType==='restaurant'?'':'none'}">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Business Name</label><input id="sd-r-name" class="form-control" value="${esc(sdFields.name||'')}"></div>
+            <div class="form-group"><label class="form-label">Cuisine</label><input id="sd-r-cuisine" class="form-control" value="${esc(sdFields.cuisine||'')}" placeholder="Japanese, Ramen"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Phone</label><input id="sd-r-phone" class="form-control" value="${esc(sdFields.phone||'')}"></div>
+            <div class="form-group"><label class="form-label">Price Range</label><input id="sd-r-price" class="form-control" value="${esc(sdFields.price_range||'')}" placeholder="$$"></div>
+          </div>
+          <div class="form-group"><label class="form-label">Address</label><input id="sd-r-address" class="form-control" value="${esc(sdFields.address||'')}"></div>
+          <div class="form-group"><label class="form-label">Hours</label><input id="sd-r-hours" class="form-control" value="${esc(sdFields.hours||'')}" placeholder="Mo-Su 11:00-21:00"></div>
+          <div class="form-group"><label class="form-label">Image URL</label><input id="sd-r-image" class="form-control" value="${esc(sdFields.image||'')}"></div>
+        </div>
+        <div id="pe-sd-faq" style="display:${sdType==='faq'?'':'none'}">
+          <div id="sd-faq-container">${(sdFields.questions||[]).map((qa, i) => structuredFaqRow(qa, i)).join('') || structuredFaqRow({}, 0)}</div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="BKDN.addStructuredFaqRow()" style="margin-top:8px">${iconPlus()} Add Question</button>
+        </div>
+        <button class="btn btn-primary" onclick="BKDN.saveStructuredData(${pageId})" style="margin-top:14px">${iconSave()} Save Structured Data</button>
+        `; })()}
+      </div>
     </div>
 
     <!-- Publish & Preview tab -->
@@ -769,8 +2219,8 @@ async function viewPageEditor(pageId) {
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
           <button class="btn btn-primary" onclick="BKDN.applyPageStatus(${pageId})">${iconSave()} Apply Status</button>
           ${pageStatus !== 'published'
-            ? `<button class="btn btn-secondary" onclick="BKDN.publishPage(${pageId})">${iconPublish()} Publish Now</button>`
-            : `<button class="btn btn-danger btn-sm" onclick="BKDN.unpublishPage(${pageId})">Unpublish</button>`
+            ? `<button class="btn btn-secondary" onclick="BKDN.publishPage(${pageId})">${iconPublish()} Publish ${ptMeta.label}</button>`
+            : `<button class="btn btn-danger btn-sm" onclick="BKDN.unpublishPage(${pageId})">Unpublish ${ptMeta.label}</button>`
           }
         </div>
         ${p.scheduled_publish_at ? `<div style="font-size:11px;color:#3b82f6;margin-top:10px">&#128197; Scheduled to publish: ${fmtDate(p.scheduled_publish_at)}</div>` : ''}
@@ -797,14 +2247,23 @@ async function viewPageEditor(pageId) {
         `}
         <div style="font-size:11px;color:#334155;margin-top:12px">Preview shows ALL buttons including hidden/disabled ones. Regenerate token to invalidate old links.</div>
       </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="font-weight:600;color:#94a3b8;font-size:12px;letter-spacing:.5px">VERSION HISTORY</div>
+          <button class="btn btn-ghost btn-sm" onclick="BKDN.loadVersionHistory(${pageId})" style="font-size:11px;padding:2px 8px">&#8635; Load</button>
+        </div>
+        <div id="pe-version-list" style="font-size:13px;color:#475569">Click Load to view published versions.</div>
+      </div>
     </div>
   `);
 
   initDragDrop(pageId);
 }
 
-function renderButtonList(buttons, pageId) {
-  if (!buttons.length) return `<div class="empty-state"><div class="empty-state-icon">&#128279;</div><div class="empty-state-title">No buttons yet</div><p>Add your first button to start building this page.</p><button class="btn btn-primary" onclick="BKDN.openAddButton(${pageId})">${iconPlus()} Add Button</button></div>`;
+function renderButtonList(buttons, pageId, ptMeta) {
+  const ptLabel = ptMeta ? ptMeta.label : 'Link Hub';
+  if (!buttons.length) return `<div class="empty-state"><div class="empty-state-icon">&#128279;</div><div class="empty-state-title">No buttons yet</div><p>Add your first button to start building this page.</p><button class="btn btn-primary" onclick="BKDN.openAddButton(${pageId})">${iconPlus()} Add to ${esc(ptLabel)}</button></div>`;
 
   const now = new Date().toISOString();
   return `
@@ -865,6 +2324,7 @@ function renderBtnRow(b, pageId, i) {
     <div class="btn-row-actions">
       <button class="btn btn-ghost btn-sm" onclick="BKDN.openEditButton(${b.id},${pageId})" title="Edit">${iconEdit()}</button>
       <button class="btn btn-ghost btn-sm" onclick="BKDN.duplicateButton(${b.id},${pageId})" title="Duplicate">${iconDuplicate()}</button>
+      <button class="btn btn-ghost btn-sm" onclick="BKDN.openMoveModal('button',${b.id},${pageId})" title="Move or copy to another page">${iconExternal()}</button>
       <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteButton(${b.id},${pageId})" title="Delete" style="color:#ef4444">${iconTrash()}</button>
     </div>
   </div>`;
@@ -889,10 +2349,62 @@ function renderSectionList(sections, pageId) {
         </div>
         <div class="btn-row-actions">
           <button class="btn btn-ghost btn-sm" onclick="BKDN.openSectionModal(${s.id},${pageId})" title="Edit">${iconEdit()}</button>
+          <button class="btn btn-ghost btn-sm" onclick="BKDN.openMoveModal('section',${s.id},${pageId})" title="Move or copy to another page">${iconExternal()}</button>
           <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteSection(${s.id},${pageId})" title="Delete" style="color:#ef4444">${iconTrash()}</button>
         </div>
       </div>`).join('')}
   </div>`;
+}
+
+/* ── Move / Copy to another page ─────────────────── */
+async function openMoveModal(kind, itemId, currentPageId) {
+  if (!window._allPages) {
+    const pagesRes = await GET('/admin/pages');
+    window._allPages = pagesRes?.data?.pages || [];
+  }
+  const targets = window._allPages.filter(p => Number(p.id) !== Number(currentPageId));
+  if (!targets.length) { toast('No other pages to move or copy to yet.', 'info'); return; }
+  const opts = targets.map(p => `<option value="${p.id}" data-type="${esc(p.page_type||'')}">${esc(p.title)} (${esc(getPageTypeMeta(p.page_type).label)})</option>`).join('');
+  openModal(`Move or Copy ${kind === 'section' ? 'Section' : 'Button'}`, `
+    <div class="form-group">
+      <label class="form-label">Destination Page</label>
+      <select id="mv-target-page" class="form-control">${opts}</select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Action</label>
+      <select id="mv-action" class="form-control">
+        <option value="move">Move (remove from current page)</option>
+        <option value="copy">Copy (keep on current page too)</option>
+      </select>
+    </div>
+  `,
+  `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="BKDN.confirmMove('${kind}',${itemId},${currentPageId})">Continue</button>`);
+}
+
+async function confirmMove(kind, itemId, currentPageId) {
+  const targetPageId = Number(document.getElementById('mv-target-page').value);
+  const action = document.getElementById('mv-action').value;
+  const currentPage = (window._allPages || []).find(p => Number(p.id) === Number(currentPageId));
+  const targetPage = (window._allPages || []).find(p => Number(p.id) === Number(targetPageId));
+  const crossesStaffBoundary = currentPage && targetPage && isStaffPage(currentPage.page_type) !== isStaffPage(targetPage.page_type);
+  if (crossesStaffBoundary) {
+    const fromLabel = isStaffPage(currentPage.page_type) ? 'Staff Training' : 'Customer Link Hub';
+    const toLabel = isStaffPage(targetPage.page_type) ? 'Staff Training' : 'Customer Link Hub';
+    const warned = confirm(`You are ${action === 'move' ? 'moving' : 'copying'} this ${kind} from ${fromLabel} to ${toLabel}. ${toLabel === 'Customer Link Hub' ? 'This may expose internal content publicly.' : 'This will hide it from customers.'}\n\nContinue?`);
+    if (!warned) return;
+  }
+  const endpoint = kind === 'section'
+    ? `/admin/sections/${itemId}/${action === 'move' ? 'move' : 'copy'}`
+    : `/admin/buttons/${itemId}/${action === 'move' ? 'move' : 'copy-to-page'}`;
+  const res = await POST(endpoint, { target_page_id: targetPageId });
+  if (res?.ok) {
+    toast(`${kind === 'section' ? 'Section' : 'Button'} ${action === 'move' ? 'moved' : 'copied'}.`, 'success');
+    closeModal();
+    viewPageEditor(currentPageId);
+  } else {
+    toast(res?.error || `Failed to ${action} ${kind}.`, 'error');
+  }
 }
 
 /* ── Drag-and-drop reorder ────────────────────────── */
@@ -928,7 +2440,7 @@ async function saveOrder(pageId) {
   const list = document.getElementById('btn-list-' + pageId);
   if (!list) return;
   const ids = Array.from(list.querySelectorAll('[data-id]')).map(r => parseInt(r.dataset.id));
-  const res = await POST('/links/pages/' + pageId + '/buttons/reorder', { order: ids });
+  const res = await POST('/admin/pages/' + pageId + '/buttons/reorder', { order: ids });
   if (res?.ok) { toast('Order saved!', 'success'); document.getElementById('reorder-bar')?.style && (document.getElementById('reorder-bar').style.display = 'none'); }
   else toast('Failed to save order.', 'error');
 }
@@ -938,6 +2450,43 @@ function cancelReorder() {
 }
 
 /* ── Button CRUD ─────────────────────────────────── */
+// Destination types — kept in sync with VALID_LINK_TYPES in api/index.php.
+// Never let a pasted destination get rewritten into an internal slug: each
+// type stores its raw destination as-is (only phone/email get a mechanical
+// tel:/mailto: prefix), and "Internal Link Hub Page" is the only type that
+// uses a page picker instead of a free-text URL.
+const LINK_TYPES = [
+  { value: 'external',      label: 'External Website',        placeholder: 'https://example.com' },
+  { value: 'internal_page',  label: 'Internal Link Hub Page',   placeholder: '' },
+  { value: 'youtube',       label: 'YouTube Video',           placeholder: 'https://www.youtube.com/watch?v=...' },
+  { value: 'phone',         label: 'Phone Number',             placeholder: '+1 210 555 0100' },
+  { value: 'email',         label: 'Email',                    placeholder: 'hello@bakudanramen.com' },
+  { value: 'maps',          label: 'Google Maps',              placeholder: 'https://maps.google.com/...' },
+  { value: 'pdf',           label: 'PDF or File',               placeholder: 'https://.../file.pdf' },
+  { value: 'download',      label: 'Download File',            placeholder: 'https://.../file' },
+  { value: 'toast_order',   label: 'Toast Online Ordering',    placeholder: 'https://order.toasttab.com/online/...' },
+  { value: 'toast_signup',  label: 'Toast Marketing Signup',   placeholder: 'https://www.toasttab.com/.../rewardsSignup' },
+  { value: 'instagram',     label: 'Instagram',                placeholder: 'https://www.instagram.com/...' },
+  { value: 'facebook',      label: 'Facebook',                 placeholder: 'https://www.facebook.com/...' },
+  { value: 'website',       label: 'Website',                  placeholder: 'https://...' },
+  { value: 'custom',        label: 'Custom',                   placeholder: 'https://...' },
+  { value: 'heading',       label: 'Heading (no link)',        placeholder: '' },
+  { value: 'text_block',    label: 'Text Block (no link)',     placeholder: '' },
+  { value: 'image',         label: 'Image',                    placeholder: 'https://.../image.jpg' },
+  { value: 'call_store',    label: 'Call This Location',       placeholder: '' },
+  { value: 'directions',    label: 'Get Directions',           placeholder: '' },
+  { value: 'store_hours',   label: 'Store Hours (no link)',    placeholder: '' },
+  { value: 'order_support', label: 'Order Support Email',      placeholder: '' },
+];
+
+// Content blocks that don't link anywhere — no destination URL needed.
+const NO_DESTINATION_LINK_TYPES = ['heading', 'text_block', 'store_hours'];
+
+// Location-derived destinations — the URL/target comes from the linked
+// location record (phone, maps_url, support_email), not a manually typed
+// URL, so editing a location once updates every button that points at it.
+const LOCATION_DERIVED_LINK_TYPES = ['call_store', 'directions', 'store_hours', 'order_support'];
+
 function openAddButton(pageId) {
   window._currentPageId = pageId;
   openBtnModal(null, pageId);
@@ -946,12 +2495,12 @@ function openAddButton(pageId) {
 async function openEditButton(btnId, pageId) {
   window._currentPageId = pageId;
   // Fetch current button data
-  const res = await GET('/links/pages/' + pageId + '/buttons');
+  const res = await GET('/admin/pages/' + pageId + '/buttons');
   const btn = res?.data?.buttons?.find(b => b.id === btnId);
   openBtnModal(btn, pageId);
 }
 
-function openBtnModal(btn, pageId) {
+async function openBtnModal(btn, pageId) {
   const isNew = !btn;
   const ICONS = ['order','website','email','events','instagram','facebook','directions','phone','menu','gift','ticket','shopping','youtube','external','blog','social'];
   const iconOpts = ICONS.map(k => `<option value="${k}" ${(btn?.icon_key||btn?.icon)===k?'selected':''}>${k}</option>`).join('');
@@ -959,18 +2508,49 @@ function openBtnModal(btn, pageId) {
   const sections = window._pageSections || [];
   const sectionOpts = sections.map(s => `<option value="${s.id}" ${Number(btn?.section_id)===Number(s.id)?'selected':''}>${esc(s.title)}</option>`).join('');
 
+  if (!window._allPages) {
+    const pagesRes = await GET('/admin/pages');
+    window._allPages = pagesRes?.data?.pages || [];
+  }
+  if (!window._allLocations) {
+    const locRes = await GET('/admin/locations');
+    window._allLocations = locRes?.data?.locations || [];
+  }
+  const otherPages = window._allPages.filter(p => Number(p.id) !== Number(pageId));
+  const internalOpts = otherPages.map(p => `<option value="${p.id}" ${Number(btn?.internal_page_id)===Number(p.id)?'selected':''}>${esc(p.title)}</option>`).join('');
+  const locationOpts = window._allLocations.map(l => `<option value="${l.id}" ${Number(btn?.location_id)===Number(l.id)?'selected':''}>${esc(l.name)}</option>`).join('');
+  const currentType = btn?.link_type || 'external';
+  const typeOpts = LINK_TYPES.map(t => `<option value="${t.value}" ${currentType===t.value?'selected':''}>${esc(t.label)}</option>`).join('');
+  const rawUrl = (btn?.url || '').replace(/^tel:/, '').replace(/^mailto:/, '');
+
   openModal(isNew ? 'Add Button' : 'Edit Button', `
     <div class="form-group">
       <label class="form-label">Title *</label>
       <input id="bf-title" class="form-control" placeholder="Button text" value="${esc(btn?.title||'')}">
     </div>
     <div class="form-group">
-      <label class="form-label">Subtitle</label>
+      <label class="form-label" id="bf-subtitle-label">Subtitle</label>
       <input id="bf-subtitle" class="form-control" placeholder="Optional tagline" value="${esc(btn?.subtitle||'')}">
     </div>
     <div class="form-group">
-      <label class="form-label">URL</label>
-      <input id="bf-url" class="form-control" type="url" placeholder="https://" value="${esc(btn?.url||'')}">
+      <label class="form-label">Destination Type *</label>
+      <select id="bf-linktype" class="form-control" onchange="BKDN.onLinkTypeChange()">${typeOpts}</select>
+    </div>
+    <div class="form-group" id="bf-internal-wrap" style="display:none">
+      <label class="form-label">Internal Page</label>
+      <select id="bf-internal-page" class="form-control"><option value="">Select a page…</option>${internalOpts}</select>
+    </div>
+    <div class="form-group" id="bf-location-wrap" style="display:none">
+      <label class="form-label">Location</label>
+      <select id="bf-location" class="form-control"><option value="">Select a location…</option>${locationOpts}</select>
+      <div class="form-hint">Destination is pulled from this location's phone/maps/support email — editing the location updates this button automatically.</div>
+    </div>
+    <div class="form-group" id="bf-url-wrap">
+      <label class="form-label" id="bf-url-label">Destination</label>
+      <div style="display:flex;gap:8px">
+        <input id="bf-url" class="form-control" placeholder="https://" value="${esc(rawUrl)}" style="flex:1">
+        <button type="button" class="btn btn-secondary" onclick="BKDN.testButtonUrl()">Test Link</button>
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">Section</label>
@@ -1000,6 +2580,31 @@ function openBtnModal(btn, pageId) {
         <input id="bf-end" type="datetime-local" class="form-control" value="${esc((btn?.end_at||'').replace(' ','T').slice(0,16))}">
       </div>
     </div>
+    <div class="form-group">
+      <label class="form-label">Recurring Schedule (optional)</label>
+      <div class="form-hint" style="margin-bottom:6px">Only show this on selected days — e.g. Happy Hour Mon–Fri. Leave no days checked to ignore this and always follow the dates above.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => {
+          const days = (btn?.recurring_days || '').split(',').filter(Boolean).map(Number);
+          const checked = days.includes(i);
+          return `<label style="display:flex;align-items:center;gap:4px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px 10px;cursor:pointer">
+            <input type="checkbox" class="bf-recurring-day" value="${i}" ${checked?'checked':''}> <span style="font-size:12px">${d}</span>
+          </label>`;
+        }).join('')}
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">From (time)</label>
+          <input id="bf-recurring-start" type="time" class="form-control" value="${esc(btn?.recurring_start_time||'')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Until (time)</label>
+          <input id="bf-recurring-end" type="time" class="form-control" value="${esc(btn?.recurring_end_time||'')}">
+        </div>
+      </div>
+      <div class="form-hint">Times are evaluated in America/Chicago. Leave both blank to run all day on the selected days.</div>
+    </div>
+    ${abTestSectionHtml(btn)}
     <div style="display:flex;gap:20px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px">
         <label class="toggle"><input id="bf-visible" type="checkbox" ${btn?.visible!==0?'checked':''}><span class="toggle-slider"></span></label>
@@ -1022,30 +2627,169 @@ function openBtnModal(btn, pageId) {
   `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
    <button class="btn btn-primary" onclick="BKDN.saveBtnModal(${btn?.id||'null'},${pageId})">${iconSave()} ${isNew?'Add Button':'Save Changes'}</button>`
   );
+  onLinkTypeChange();
+}
+
+function onLinkTypeChange() {
+  const type = document.getElementById('bf-linktype')?.value || 'external';
+  const meta = LINK_TYPES.find(t => t.value === type) || LINK_TYPES[0];
+  const isInternal = type === 'internal_page';
+  const isLocationDerived = LOCATION_DERIVED_LINK_TYPES.includes(type);
+  const noDestination = NO_DESTINATION_LINK_TYPES.includes(type);
+  const internalWrap = document.getElementById('bf-internal-wrap');
+  const locationWrap = document.getElementById('bf-location-wrap');
+  const urlWrap = document.getElementById('bf-url-wrap');
+  if (internalWrap) internalWrap.style.display = isInternal ? '' : 'none';
+  if (locationWrap) locationWrap.style.display = isLocationDerived ? '' : 'none';
+  if (urlWrap) urlWrap.style.display = (isInternal || isLocationDerived || noDestination) ? 'none' : '';
+  const label = document.getElementById('bf-url-label');
+  const input = document.getElementById('bf-url');
+  if (label) label.textContent = meta.label;
+  if (input) input.placeholder = meta.placeholder;
+
+  // Heading/Text Block store their actual content in the Subtitle field
+  // (there's no separate "destination" for content blocks).
+  const subtitleLabel = document.getElementById('bf-subtitle-label');
+  const subtitleInput = document.getElementById('bf-subtitle');
+  if (subtitleLabel) subtitleLabel.textContent = type === 'heading' ? 'Heading Text' : type === 'text_block' ? 'Body Text' : 'Subtitle';
+  if (subtitleInput) subtitleInput.placeholder = type === 'text_block' ? 'The paragraph text shown on the page' : type === 'heading' ? 'Optional smaller line under the heading' : 'Optional tagline';
+}
+
+function testButtonUrl() {
+  const type = document.getElementById('bf-linktype')?.value || 'external';
+  const raw = document.getElementById('bf-url')?.value.trim();
+  if (!raw) { toast('Enter a destination first.', 'error'); return; }
+  const href = type === 'phone' ? 'tel:' + raw.replace(/[^0-9+]/g, '')
+    : type === 'email' ? 'mailto:' + raw
+    : raw;
+  window.open(href, '_blank', 'noopener');
 }
 
 async function saveBtnModal(btnId, pageId) {
+  const linkType = document.getElementById('bf-linktype').value;
   const data = {
     title:           document.getElementById('bf-title').value.trim(),
     subtitle:        document.getElementById('bf-subtitle').value.trim() || null,
-    url:             document.getElementById('bf-url').value.trim(),
+    link_type:       linkType,
+    url:             (linkType === 'internal_page' || LOCATION_DERIVED_LINK_TYPES.includes(linkType) || NO_DESTINATION_LINK_TYPES.includes(linkType)) ? '' : document.getElementById('bf-url').value.trim(),
+    internal_page_id:linkType === 'internal_page' ? (document.getElementById('bf-internal-page').value || null) : null,
+    location_id:     LOCATION_DERIVED_LINK_TYPES.includes(linkType) ? (document.getElementById('bf-location').value || null) : null,
     icon_key:        document.getElementById('bf-icon').value || null,
     style_variant:   document.getElementById('bf-style').value,
     custom_icon_svg: document.getElementById('bf-svg').value.trim() || null,
     section_id:      document.getElementById('bf-section').value || null,
     start_at:        document.getElementById('bf-start').value.replace('T',' ') || null,
     end_at:          document.getElementById('bf-end').value.replace('T',' ')   || null,
+    recurring_days:  Array.from(document.querySelectorAll('.bf-recurring-day:checked')).map(el => el.value).join(',') || null,
+    recurring_start_time: document.getElementById('bf-recurring-start').value || null,
+    recurring_end_time:   document.getElementById('bf-recurring-end').value || null,
     visible:         document.getElementById('bf-visible').checked  ? 1 : 0,
     enabled:         document.getElementById('bf-enabled').checked  ? 1 : 0,
     is_featured:     document.getElementById('bf-featured').checked ? 1 : 0,
     opens_in_new_tab:document.getElementById('bf-newtab').checked   ? 1 : 0,
   };
   if (!data.title) { toast('Title is required.', 'error'); return; }
+  if (linkType === 'internal_page' && !data.internal_page_id) { toast('Select an internal page.', 'error'); return; }
+  if (LOCATION_DERIVED_LINK_TYPES.includes(linkType) && !data.location_id) { toast('Select a location.', 'error'); return; }
+  if (linkType !== 'internal_page' && !LOCATION_DERIVED_LINK_TYPES.includes(linkType) && !NO_DESTINATION_LINK_TYPES.includes(linkType) && !data.url) { toast('Enter a destination.', 'error'); return; }
   const res = btnId
-    ? await PUT('/links/buttons/' + btnId, data)
-    : await POST('/links/pages/' + pageId + '/buttons', data);
+    ? await PUT('/admin/buttons/' + btnId, data)
+    : await POST('/admin/pages/' + pageId + '/buttons', data);
   if (res?.ok) { toast(btnId ? 'Button updated.' : 'Button added.', 'success'); closeModal(); viewPageEditor(pageId); }
   else toast(res?.error || 'Failed to save button.', 'error');
+}
+
+// A/B Testing — a test pairs this button (Variant A) with a second real
+// button row (Variant B) sharing an ab_group_id. Only a new button can start
+// a test (needs a saved id first), so this section is hidden while adding.
+function abTestSectionHtml(btn) {
+  if (!btn) return '';
+  if (!btn.ab_group_id) {
+    return `
+    <div class="form-group">
+      <label class="form-label">A/B Testing</label>
+      <div class="form-hint" style="margin-bottom:6px">Test two versions of this button's title/subtitle against each other. Visitors are split consistently by device, and clicks are tracked per variant.</div>
+      <button type="button" class="btn btn-secondary" onclick="BKDN.openAbTestStartModal(${btn.id},${btn.page_id})">Start A/B Test</button>
+    </div>`;
+  }
+  return `
+    <div class="form-group">
+      <label class="form-label">A/B Testing</label>
+      <div class="form-hint" style="margin-bottom:6px">This button is Variant ${esc((btn.ab_variant||'').toUpperCase())} of an active A/B test.</div>
+      <button type="button" class="btn btn-secondary" onclick="BKDN.openAbTestResultsModal(${btn.id},${btn.page_id})">View Results / End Test</button>
+    </div>`;
+}
+
+function openAbTestStartModal(btnId, pageId) {
+  openModal('Start A/B Test', `
+    <div class="form-hint" style="margin-bottom:12px">Variant A keeps this button's current title and subtitle. Enter Variant B's title/subtitle below — traffic is split between the two, and you can compare click-through rate once you have data.</div>
+    <div class="form-group">
+      <label class="form-label">Variant B Title *</label>
+      <input id="ab-b-title" class="form-control" placeholder="Alternate title to test">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Variant B Subtitle</label>
+      <input id="ab-b-subtitle" class="form-control" placeholder="Optional alternate tagline">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Traffic Split (% of visitors who see Variant A)</label>
+      <input id="ab-split" type="number" class="form-control" min="1" max="99" value="50">
+    </div>
+  `,
+  `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="BKDN.startAbTest(${btnId},${pageId})">Start Test</button>`
+  );
+}
+
+async function startAbTest(btnId, pageId) {
+  const split = Math.max(1, Math.min(99, Number(document.getElementById('ab-split').value) || 50));
+  const data = {
+    variant_b_label: document.getElementById('ab-b-title').value.trim(),
+    variant_b_subtitle: document.getElementById('ab-b-subtitle').value.trim() || null,
+    traffic_split: split,
+  };
+  if (!data.variant_b_label) { toast('Enter a title for Variant B.', 'error'); return; }
+  const res = await POST('/admin/buttons/' + btnId + '/ab-test', data);
+  if (res?.ok) { toast('A/B test started.', 'success'); closeModal(); viewPageEditor(pageId); }
+  else toast(res?.error || 'Failed to start A/B test.', 'error');
+}
+
+async function openAbTestResultsModal(btnId, pageId) {
+  const res = await GET('/admin/buttons/' + btnId + '/ab-test');
+  if (!res?.ok || !res.data?.active) { toast('This A/B test is no longer active.', 'error'); return; }
+  const variants = res.data.variants || [];
+  const rows = variants.map(v => `
+    <tr>
+      <td>Variant ${esc((v.variant||'').toUpperCase())}${v.variant==='a'?' (original)':''}</td>
+      <td>${esc(v.label)}</td>
+      <td>${v.traffic_split}%</td>
+      <td>${v.impressions}</td>
+      <td>${v.clicks}</td>
+      <td>${(v.ctr*100).toFixed(1)}%</td>
+      <td><button type="button" class="btn btn-secondary" onclick="BKDN.closeModal();BKDN.openEditButton(${v.id},${pageId})">Edit</button></td>
+    </tr>`).join('');
+  openModal('A/B Test Results', `
+    <table class="data-table">
+      <thead><tr><th>Variant</th><th>Title</th><th>Split</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="form-hint" style="margin-top:12px">Impressions count each time a variant was shown to a new visitor bucket. Edit either variant's title/subtitle/destination with the Edit buttons above.</div>
+  `,
+  `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Close</button>
+   <button class="btn btn-secondary" onclick="BKDN.endAbTest(${btnId},${pageId},'a')">Keep Variant A</button>
+   <button class="btn btn-secondary" onclick="BKDN.endAbTest(${btnId},${pageId},'b')">Keep Variant B</button>
+   <button class="btn btn-primary" onclick="BKDN.endAbTest(${btnId},${pageId},null)">Auto-pick Winner</button>`
+  );
+}
+
+async function endAbTest(btnId, pageId, keepVariant) {
+  const msg = keepVariant
+    ? `End this A/B test and keep Variant ${keepVariant.toUpperCase()}? The other variant will move to Trash and can be restored later.`
+    : 'End this A/B test and keep the variant with the higher click-through rate? The other variant will move to Trash and can be restored later.';
+  if (!confirm(msg)) return;
+  const res = await DELETE('/admin/buttons/' + btnId + '/ab-test', keepVariant ? { keep_variant: keepVariant } : {});
+  if (res?.ok) { toast('A/B test ended — kept Variant ' + (res.data?.kept_variant||'').toUpperCase() + '.', 'success'); closeModal(); viewPageEditor(pageId); }
+  else toast(res?.error || 'Failed to end A/B test.', 'error');
 }
 
 async function toggleBtn(btnId, field, value, pageId) {
@@ -1053,19 +2797,19 @@ async function toggleBtn(btnId, field, value, pageId) {
   if (field === 'visible')   body.visible    = value ? 1 : 0;
   if (field === 'enabled')   body.enabled    = value ? 1 : 0;
   if (field === 'featured')  body.is_featured = value ? 1 : 0;
-  const res = await PUT('/links/buttons/' + btnId, body);
+  const res = await PUT('/admin/buttons/' + btnId, body);
   if (!res?.ok) toast('Failed to update button.', 'error');
 }
 
 async function duplicateButton(btnId, pageId) {
-  const res = await POST('/links/buttons/' + btnId + '/duplicate');
+  const res = await POST('/admin/buttons/' + btnId + '/duplicate');
   if (res?.ok) { toast('Button duplicated.', 'success'); viewPageEditor(pageId); }
   else toast('Failed to duplicate.', 'error');
 }
 
 async function deleteButton(btnId, pageId) {
-  if (!confirm('Delete this button? This cannot be undone.')) return;
-  const res = await DELETE('/links/buttons/' + btnId);
+  if (!confirm('Delete this button? It will move to Trash and can be restored later.')) return;
+  const res = await DELETE('/admin/buttons/' + btnId);
   if (res?.ok) { toast('Button deleted.', 'success'); viewPageEditor(pageId); }
   else toast('Failed to delete button.', 'error');
 }
@@ -1108,15 +2852,15 @@ async function saveSectionModal(sectionId, pageId) {
     is_active: document.getElementById('sf-active').checked ? 1 : 0,
   };
   const res = sectionId
-    ? await PUT('/links/sections/' + sectionId, data)
-    : await POST('/links/pages/' + pageId + '/sections', data);
+    ? await PUT('/admin/sections/' + sectionId, data)
+    : await POST('/admin/pages/' + pageId + '/sections', data);
   if (res?.ok) { toast(sectionId ? 'Section updated.' : 'Section added.', 'success'); closeModal(); viewPageEditor(pageId); }
   else toast(res?.error || 'Failed to save section.', 'error');
 }
 
 async function toggleSection(sectionId, value, pageId) {
   const section = (window._pageSections || []).find(s => Number(s.id) === Number(sectionId));
-  const res = await PUT('/links/sections/' + sectionId, {
+  const res = await PUT('/admin/sections/' + sectionId, {
     title: section?.title || 'Section',
     section_key: section?.section_key || null,
     sort_order: section?.sort_order || 0,
@@ -1127,8 +2871,8 @@ async function toggleSection(sectionId, value, pageId) {
 }
 
 async function deleteSection(sectionId, pageId) {
-  if (!confirm('Delete this section? Buttons inside it will stay on the page without a section.')) return;
-  const res = await DELETE('/links/sections/' + sectionId);
+  if (!confirm('Delete this section? It will move to Trash and can be restored later. Buttons inside it will stay on the page without a section.')) return;
+  const res = await DELETE('/admin/sections/' + sectionId);
   if (res?.ok) { toast('Section deleted.', 'success'); viewPageEditor(pageId); }
   else toast(res?.error || 'Failed to delete section.', 'error');
 }
@@ -1145,8 +2889,91 @@ async function savePage(pageId) {
   if (headline    !== undefined) body.headline    = headline;
   if (subheadline !== undefined) body.subheadline = subheadline;
   if (!Object.keys(body).length) { toast('Nothing to save.', 'info'); return; }
-  const res = await PUT('/links/pages/' + pageId, body);
+  const res = await PUT('/admin/pages/' + pageId, body);
   if (res?.ok) toast('Settings saved.', 'success');
+  else toast(res?.error || 'Save failed.', 'error');
+}
+
+async function savePageVisibility(pageId) {
+  const vis = document.getElementById('pe-visibility').value;
+  const pw  = document.getElementById('pe-password')?.value || '';
+  const pwc = document.getElementById('pe-password-confirm')?.value || '';
+  if (vis === 'password_protected' && pw && pw !== pwc) {
+    toast('Password and confirmation do not match.', 'error'); return;
+  }
+  if (vis === 'password_protected' && pw && pw.length < 4) {
+    toast('Password must be at least 4 characters.', 'error'); return;
+  }
+  const body = {
+    page_type: document.getElementById('pe-type').value,
+    visibility: vis,
+    show_on_hub: document.getElementById('pe-show-on-hub').checked ? 1 : 0,
+    allow_indexing: document.getElementById('pe-allow-indexing').checked ? 1 : 0,
+    store_slug: document.getElementById('pe-location')?.value || '',
+  };
+  if (pw) body.page_password = pw;
+  const res = await PUT('/admin/pages/' + pageId, body);
+  if (res?.ok) { toast('Page type & visibility saved.', 'success'); viewPageEditor(pageId); }
+  else toast(res?.error || 'Save failed.', 'error');
+}
+
+async function saveSeo(pageId) {
+  const body = {
+    seo_title: document.getElementById('pe-seo-title').value.trim() || null,
+    meta_description: document.getElementById('pe-meta-description').value.trim() || null,
+    og_image: document.getElementById('pe-og-image').value.trim() || null,
+    canonical_url: document.getElementById('pe-canonical').value.trim() || null,
+  };
+  const res = await PUT('/admin/pages/' + pageId, body);
+  if (res?.ok) { toast('SEO saved.', 'success'); viewPageEditor(pageId); }
+  else toast(res?.error || 'Save failed.', 'error');
+}
+
+function structuredFaqRow(qa, i) {
+  return `<div class="sd-faq-row" style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:10px;margin-bottom:8px">
+    <div class="form-group" style="margin-bottom:6px"><label class="form-label">Question</label><input class="form-control sd-faq-q" value="${esc(qa.question||'')}"></div>
+    <div class="form-group" style="margin-bottom:0"><label class="form-label">Answer</label><textarea class="form-control sd-faq-a" rows="2">${esc(qa.answer||'')}</textarea></div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('.sd-faq-row').remove()" style="color:#ef4444;margin-top:6px">${iconTrash()} Remove</button>
+  </div>`;
+}
+
+function onStructuredDataTypeChange() {
+  const type = document.getElementById('pe-sd-type')?.value;
+  const r = document.getElementById('pe-sd-restaurant');
+  const f = document.getElementById('pe-sd-faq');
+  if (r) r.style.display = type === 'restaurant' ? '' : 'none';
+  if (f) f.style.display = type === 'faq' ? '' : 'none';
+}
+
+function addStructuredFaqRow() {
+  const container = document.getElementById('sd-faq-container');
+  const div = document.createElement('div');
+  div.innerHTML = structuredFaqRow({}, 0);
+  container.appendChild(div.firstElementChild);
+}
+
+async function saveStructuredData(pageId) {
+  const type = document.getElementById('pe-sd-type').value;
+  let data = {};
+  if (type === 'restaurant') {
+    data = {
+      name: document.getElementById('sd-r-name').value.trim(),
+      cuisine: document.getElementById('sd-r-cuisine').value.trim(),
+      phone: document.getElementById('sd-r-phone').value.trim(),
+      price_range: document.getElementById('sd-r-price').value.trim(),
+      address: document.getElementById('sd-r-address').value.trim(),
+      hours: document.getElementById('sd-r-hours').value.trim(),
+      image: document.getElementById('sd-r-image').value.trim(),
+    };
+  } else if (type === 'faq') {
+    const rows = document.querySelectorAll('#sd-faq-container .sd-faq-row');
+    data.questions = Array.from(rows).map(row => ({
+      question: row.querySelector('.sd-faq-q')?.value.trim() || '',
+      answer: row.querySelector('.sd-faq-a')?.value.trim() || '',
+    })).filter(qa => qa.question && qa.answer);
+  }
+  const res = await PUT('/admin/pages/' + pageId, { structured_data_type: type || null, structured_data: data });
+  if (res?.ok) { toast('Structured data saved.', 'success'); viewPageEditor(pageId); }
   else toast(res?.error || 'Save failed.', 'error');
 }
 
@@ -1156,13 +2983,13 @@ async function applyPageStatus(pageId) {
   if (status === 'scheduled') {
     const scheduledAt = document.getElementById('pe-scheduled-at')?.value;
     if (!scheduledAt) { toast('Please set a publish date/time.', 'error'); return; }
-    const res = await POST('/links/pages/' + pageId + '/schedule', {
+    const res = await POST('/admin/pages/' + pageId + '/schedule', {
       scheduled_publish_at: scheduledAt.replace('T', ' ')
     });
     if (res?.ok) { toast(`Scheduled for ${scheduledAt}`, 'success'); viewPageEditor(pageId); }
     else toast(res?.error || 'Schedule failed.', 'error');
   } else {
-    const res = await PUT('/links/pages/' + pageId, { status, is_active: status === 'published' ? 1 : 0 });
+    const res = await PUT('/admin/pages/' + pageId, { status, is_active: status === 'published' ? 1 : 0 });
     if (res?.ok) { toast(`Status set to ${status}.`, 'success'); viewPageEditor(pageId); }
     else toast(res?.error || 'Failed.', 'error');
   }
@@ -1174,39 +3001,94 @@ function onStatusChange() {
   if (row) row.style.display = status === 'scheduled' ? '' : 'none';
 }
 
-async function publishPage(pageId) {
-  const res = await POST('/links/pages/' + pageId + '/publish');
+async function publishPage(pageId, force) {
+  const res = await POST('/admin/pages/' + pageId + '/publish', force ? { force: true } : undefined);
   if (res?.ok) {
-    toast('Page published! Live on /links/' + (res.data?.slug || ''), 'success');
-    viewPageEditor(pageId); // reload to reflect new status
-  } else toast(res?.error || 'Publish failed.', 'error');
+    const p = res.data?.page;
+    const ptMeta = getPageTypeMeta(p?.page_type || window._currentPageType || 'custom');
+    toast(`Published: ${ptMeta.label} — live at ${publicPathForPage(p)}`, 'success');
+    viewPageEditor(pageId);
+  } else if (!force && res?.error && confirm(res.error + '\n\nPublish anyway?')) {
+    publishPage(pageId, true);
+  } else {
+    toast(res?.error || 'Publish failed.', 'error');
+  }
 }
 
 async function unpublishPage(pageId) {
   if (!confirm('Unpublish this page? It will no longer be publicly accessible.')) return;
-  const res = await POST('/links/pages/' + pageId + '/unpublish');
+  const res = await POST('/admin/pages/' + pageId + '/unpublish');
   if (res?.ok) { toast('Page unpublished (set to draft).', 'success'); viewPageEditor(pageId); }
   else toast(res?.error || 'Unpublish failed.', 'error');
 }
 
 async function generatePreviewToken(pageId) {
-  const res = await POST('/links/pages/' + pageId + '/generate-preview-token');
+  const res = await POST('/admin/pages/' + pageId + '/generate-preview-token');
   if (res?.ok) {
     toast('Preview token generated!', 'success');
     viewPageEditor(pageId); // reload to show new preview URL
   } else toast(res?.error || 'Failed to generate token.', 'error');
 }
 
+async function loadVersionHistory(pageId) {
+  const el = document.getElementById('pe-version-list');
+  if (!el) return;
+  el.innerHTML = '&#8987; Loading versions...';
+  const res = await GET('/admin/pages/' + pageId + '/versions');
+  if (!res?.ok) { el.innerHTML = `<span style="color:#ef4444">Failed to load versions.</span>`; return; }
+  const versions = res.data.versions || [];
+  if (!versions.length) { el.innerHTML = 'No published versions yet.'; return; }
+  el.innerHTML = versions.map(v => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1e293b;gap:12px">
+      <div>
+        <div style="font-size:13px;color:#e2e8f0">Version ${esc(String(v.version_number))} &mdash; ${fmtDate(v.created_at)}</div>
+        <div style="font-size:11px;color:#64748b">by ${esc(v.created_by_name || 'Unknown')}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" onclick="BKDN.previewVersion(${pageId},${v.version_number})">&#128065; Preview</button>
+        <button class="btn btn-danger btn-sm" onclick="if(confirm('Restore this version? Current draft will be replaced.'))BKDN.confirmRollback(${pageId},${v.version_number})">&#8634; Restore</button>
+      </div>
+    </div>`).join('');
+}
+
+async function previewVersion(pageId, versionNumber) {
+  const res = await GET('/admin/pages/' + pageId + '/versions?version=' + versionNumber);
+  if (res?.ok && res.data?.version) {
+    const v = res.data.version;
+    toast('Preview: version ' + versionNumber + ' — opens in new tab', 'info');
+    // Open preview URL with token if available
+    const pageRes = await GET('/admin/pages/' + pageId);
+    if (pageRes?.ok && pageRes.data?.page?.preview_token) {
+      window.open('/links/preview/' + (pageRes.data.page.slug || pageId) + '?token=' + pageRes.data.page.preview_token, '_blank');
+    } else {
+      window.open('/links/' + (pageRes?.data?.page?.slug || pageId), '_blank');
+    }
+  } else {
+    toast('Could not load version preview.', 'error');
+  }
+}
+
+async function confirmRollback(pageId, versionNumber) {
+  const res = await POST('/admin/pages/' + pageId + '/rollback/' + versionNumber);
+  if (res?.ok) {
+    toast('Version ' + versionNumber + ' restored.', 'success');
+    viewPageEditor(pageId);
+  } else {
+    toast(res?.error || 'Rollback failed.', 'error');
+  }
+}
+
 async function verifySync(slug) {
   const area = document.getElementById('sync-result-area');
   if (!area) return;
-  area.innerHTML = `<div class="sync-result warn">Checking /links/${esc(slug)}...</div>`;
+  const displayPath = publicPathForPage({ slug, page_type: window._currentPageType });
+  area.innerHTML = `<div class="sync-result warn">Checking ${esc(displayPath)}...</div>`;
   const res = await GET('/public/links/' + slug);
   if (res?.ok) {
     const count = res.data.buttons?.length ?? 0;
-    area.innerHTML = `<div class="sync-result ok">&#10003; Sync OK — ${count} live button${count!==1?'s':''} on /links/${esc(slug)}</div>`;
+    area.innerHTML = `<div class="sync-result ok">&#10003; Sync OK — ${count} live button${count!==1?'s':''} on ${esc(displayPath)}</div>`;
   } else {
-    area.innerHTML = `<div class="sync-result fail">&#10007; Sync failed — could not reach /links/${esc(slug)}</div>`;
+    area.innerHTML = `<div class="sync-result fail">&#10007; Sync failed — could not reach ${esc(displayPath)}</div>`;
   }
   setTimeout(() => { area.innerHTML = ''; }, 6000);
 }
@@ -1227,11 +3109,11 @@ function switchTab(btn, tabId) {
 ═══════════════════════════════════════════════════════════════ */
 async function viewScheduling() {
   setContent(loading());
-  const pagesRes = await GET('/links/pages');
+  const pagesRes = await GET('/admin/pages');
   if (!pagesRes?.ok) { setContent(errBanner('Failed to load pages.', 'BKDN.viewScheduling()')); return; }
   const pages = pagesRes.data.pages || [];
 
-  const allFetches = pages.map(p => GET('/links/pages/' + p.id + '/buttons').then(r => ({ page: p, buttons: r?.data?.buttons || [] })));
+  const allFetches = pages.map(p => GET('/admin/pages/' + p.id + '/buttons').then(r => ({ page: p, buttons: r?.data?.buttons || [] })));
   const allData    = await Promise.all(allFetches);
 
   const now   = new Date().toISOString();
@@ -1305,8 +3187,8 @@ async function viewScheduling() {
 async function viewBlog() {
   setContent(loading());
   const [allRes, scheduledRes] = await Promise.all([
-    GET('/blog/posts'),
-    GET('/blog/posts?status=scheduled'),
+    GET('/blog'),
+    GET('/blog?status=scheduled'),
   ]);
   if (!allRes?.ok) { setContent(errBanner('Failed to load blog posts.', 'BKDN.viewBlog()')); return; }
   const posts     = allRes.data.posts || [];
@@ -1382,7 +3264,7 @@ async function viewBlogEditor(postId) {
 
   let post = null;
   if (postId) {
-    const res = await GET('/blog/posts/' + postId);
+    const res = await GET('/blog/' + postId);
     if (!res?.ok) { setContent(errBanner('Post not found.', 'BKDN.viewBlog()')); return; }
     post = res.data.post;
   }
@@ -1443,7 +3325,7 @@ async function viewBlogEditor(postId) {
               <div class="emoji-grid" id="emoji-grid">${buildEmojiGrid()}</div>
             </div>
           </div>
-          <div id="quill-editor" style="min-height:300px">${post?.content_html||''}</div>
+          <div id="quill-editor" style="min-height:300px">${post?.content||''}</div>
         </div>
 
         <!-- Caption + Hashtags -->
@@ -1514,9 +3396,9 @@ async function viewBlogEditor(postId) {
         <div class="card">
           <div class="card-title">Featured Image</div>
           <div style="margin-bottom:8px">
-            ${post?.featured_image_url ? `<img src="${esc(post.featured_image_url)}" style="width:100%;border-radius:6px;margin-bottom:8px" alt="">` : '<div style="color:#475569;font-size:12px;margin-bottom:8px">No featured image set</div>'}
+            ${post?.cover_image ? `<img src="${esc(post.cover_image)}" style="width:100%;border-radius:6px;margin-bottom:8px" alt="">` : '<div style="color:#475569;font-size:12px;margin-bottom:8px">No featured image set</div>'}
           </div>
-          <input id="blog-featured-img" class="form-control" placeholder="https://... or upload above" value="${esc(post?.featured_image_url||'')}">
+          <input id="blog-featured-img" class="form-control" placeholder="https://... or upload above" value="${esc(post?.cover_image||'')}">
           <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:8px" onclick="document.getElementById('featured-img-input').click()">${iconImage()} Upload Featured Image
             <input type="file" id="featured-img-input" accept="image/*" style="display:none" onchange="BKDN.uploadFeaturedImage(this)">
           </button>
@@ -1553,7 +3435,7 @@ async function viewBlogEditor(postId) {
       },
     });
   } else {
-    document.getElementById('quill-editor').innerHTML = `<textarea id="quill-fallback" class="form-control" style="min-height:300px" placeholder="Write your post content...">${esc(post?.content_html||'')}</textarea>`;
+    document.getElementById('quill-editor').innerHTML = `<textarea id="quill-fallback" class="form-control" style="min-height:300px" placeholder="Write your post content...">${esc(post?.content||'')}</textarea>`;
   }
 
   // Schedule field watcher
@@ -1637,12 +3519,13 @@ async function uploadMedia(input, postId) {
     try {
       const headers = {};
       if (_token) headers['Authorization'] = 'Bearer ' + _token;
-      const res  = await fetch('/api/blog/media/upload', { method:'POST', headers, body: fd });
+      const res  = await fetch('/api/upload', { method:'POST', headers, body: fd });
       const data = await res.json();
       if (data.ok) {
         const grid = document.getElementById('media-grid');
-        if (grid && data.data.id) {
-          grid.insertAdjacentHTML('beforeend', renderMediaThumb({ id: data.data.id, url: data.data.url, media_type: data.data.media_type, alt_text:'' }));
+        const upload = data.data || data;
+        if (grid && upload.url) {
+          grid.insertAdjacentHTML('beforeend', renderMediaThumb({ id: Date.now(), url: upload.url, media_type: 'image', alt_text:'' }));
         }
         toast('File uploaded.', 'success');
       } else {
@@ -1671,10 +3554,11 @@ async function uploadFeaturedImage(input) {
   fd.append('file', file);
   const headers = {};
   if (_token) headers['Authorization'] = 'Bearer ' + _token;
-  const res  = await fetch('/api/blog/media/upload', { method:'POST', headers, body: fd });
+  const res  = await fetch('/api/upload', { method:'POST', headers, body: fd });
   const data = await res.json();
   if (data.ok) {
-    document.getElementById('blog-featured-img').value = data.data.url;
+    const upload = data.data || data;
+    document.getElementById('blog-featured-img').value = upload.url;
     toast('Featured image uploaded.', 'success');
   } else toast(data.error || 'Upload failed.', 'error');
   input.value = '';
@@ -1700,13 +3584,13 @@ async function saveBlogPost(postId, publishNow) {
   const slug       = document.getElementById('blog-slug')?.value.trim() || null;
   const scheduled  = document.getElementById('blog-scheduled-at')?.value || null;
   const statusSel  = document.getElementById('blog-status')?.value || 'draft';
-  const content_html = _quill ? _quill.root.innerHTML : (document.getElementById('quill-fallback')?.value || '');
+  const content = _quill ? _quill.root.innerHTML : (document.getElementById('quill-fallback')?.value || '');
 
   if (!title) { toast('Title is required.', 'error'); return; }
 
   const body = {
-    title, excerpt, caption, hashtags, cta_label, cta_url, content_html,
-    featured_image_url: featured,
+    title, excerpt, caption, hashtags, cta_label, cta_url, content,
+    cover_image: featured,
     slug:     slug || undefined,
     status:   publishNow ? 'published' : (scheduled ? 'scheduled' : statusSel),
     scheduled_at: scheduled || null,
@@ -1714,18 +3598,14 @@ async function saveBlogPost(postId, publishNow) {
 
   let res;
   if (postId) {
-    res = await PUT('/blog/posts/' + postId, body);
+    res = await PUT('/blog/' + postId, body);
   } else {
-    res = await POST('/blog/posts', body);
+    res = await POST('/blog', body);
   }
 
   if (!res?.ok) { toast(res?.error || 'Save failed.', 'error'); return; }
 
   const savedPost = res.data.post;
-
-  if (publishNow && savedPost.status !== 'published') {
-    await POST('/blog/posts/' + savedPost.id + '/publish');
-  }
 
   toast(publishNow ? 'Post published!' : 'Draft saved.', 'success');
 
@@ -1737,9 +3617,9 @@ async function saveBlogPost(postId, publishNow) {
 async function schedulePost(postId) {
   const scheduledAt = document.getElementById('blog-scheduled-at')?.value;
   if (!scheduledAt) { toast('Set a schedule date/time first.', 'error'); return; }
-  const body = { scheduled_at: scheduledAt.replace('T', ' ') };
+  const body = { status: 'scheduled', scheduled_at: scheduledAt.replace('T', ' ') };
   const res = postId
-    ? await POST('/blog/posts/' + postId + '/schedule', body)
+    ? await PUT('/blog/' + postId, body)
     : null;
   if (res?.ok) toast('Post scheduled!', 'success');
   else toast(res?.error || 'Schedule failed.', 'error');
@@ -1751,20 +3631,31 @@ async function saveAndCreateAnother(postId) {
 }
 
 async function publishPost(postId) {
-  const res = await POST('/blog/posts/' + postId + '/publish');
+  const res = await PUT('/blog/' + postId, { status: 'published' });
   if (res?.ok) { toast('Published!', 'success'); viewBlog(); }
   else toast(res?.error || 'Publish failed.', 'error');
 }
 
 async function duplicatePost(postId) {
-  const res = await POST('/blog/posts/' + postId + '/duplicate');
+  const source = await GET('/blog/' + postId);
+  if (!source?.ok || !source.data.post) { toast('Failed to duplicate.', 'error'); return; }
+  const p = source.data.post;
+  const res = await POST('/blog', {
+    title: (p.title || 'Untitled') + ' (Copy)',
+    content: p.content || '',
+    excerpt: p.excerpt || null,
+    cover_image: p.cover_image || null,
+    category: p.category || null,
+    tags: p.tags || null,
+    status: 'draft',
+  });
   if (res?.ok) { toast('Post duplicated.', 'success'); viewBlog(); }
   else toast('Failed to duplicate.', 'error');
 }
 
 async function archivePost(postId) {
   if (!confirm('Archive this post? It will be hidden from the public blog.')) return;
-  const res = await POST('/blog/posts/' + postId + '/archive');
+  const res = await DELETE('/blog/' + postId);
   if (res?.ok) { toast('Post archived.', 'success'); viewBlog(); }
   else toast('Failed to archive.', 'error');
 }
@@ -1774,7 +3665,7 @@ async function archivePost(postId) {
 ═══════════════════════════════════════════════════════════════ */
 async function viewAnalytics() {
   setContent(loading());
-  const res = await GET('/links/analytics?days=30');
+  const res = await GET('/admin/analytics?period=30');
   if (!res?.ok) { setContent(errBanner('Failed to load analytics.', 'BKDN.viewAnalytics()')); return; }
   const d = res.data;
 
@@ -1797,11 +3688,237 @@ async function viewAnalytics() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   VIEW: QR & SHORTLINKS
+═══════════════════════════════════════════════════════════════ */
+async function viewShortlinks() {
+  setContent(loading());
+  const res = await GET('/admin/shortlinks');
+  if (!res?.ok) { setContent(errBanner('Failed to load shortlinks.', 'BKDN.viewShortlinks()')); return; }
+  const links = res.data.shortlinks || [];
+  window._shortlinks = links;
+
+  setContent(`
+    ${pageTitle('QR & Shortlinks', `${links.length} active code${links.length !== 1 ? 's' : ''}`)}
+    <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="BKDN.openShortlinkModal()">${iconPlus()} Create Shortlink</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Shortlinks</div>
+      ${!links.length ? `<div class="empty-state"><div class="empty-state-icon">&#9638;</div><div class="empty-state-title">No shortlinks yet</div><p>Create a shortlink to generate a stable QR code.</p></div>` : `
+      <table class="data-table">
+        <thead><tr><th>Code</th><th>Destination</th><th>QR</th><th>Status</th><th>Clicks</th><th></th></tr></thead>
+        <tbody>
+          ${links.map(l => `
+          <tr>
+            <td><a href="${esc(l.short_url)}" target="_blank" style="color:#60a5fa;font-weight:700">/go/${esc(l.slug)}</a><div style="font-size:11px;color:#64748b">${esc(l.label || '')}</div></td>
+            <td style="max-width:420px;word-break:break-all">${esc(l.destination)}</td>
+            <td>
+              <a href="${esc(l.qr_url)}" target="_blank"><img src="${esc(l.qr_url)}" alt="QR for /go/${esc(l.slug)}" style="width:58px;height:58px;border-radius:4px;background:#fff"></a>
+              <div><a href="${esc(l.qr_url)}" download="qr-${esc(l.slug)}.png" style="font-size:10px;color:#60a5fa">Download PNG</a></div>
+            </td>
+            <td>${Number(l.is_active) ? '<span class="badge badge-green">ACTIVE</span>' : '<span class="badge badge-gray">DISABLED</span>'}</td>
+            <td style="font-weight:700;color:#e2e8f0">${Number(l.clicks || 0)}</td>
+            <td style="text-align:right;white-space:nowrap">
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.openShortlinkModal(${Number(l.id)})" title="Edit">${iconEdit()}</button>
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.toggleShortlink(${Number(l.id)},${Number(l.is_active) ? 0 : 1})" title="${Number(l.is_active) ? 'Disable' : 'Enable'}">${iconSync()}</button>
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteShortlink(${Number(l.id)})" title="Delete" style="color:#ef4444">${iconTrash()}</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
+    </div>
+  `);
+}
+
+async function openShortlinkModal(id = null) {
+  const item = id ? (window._shortlinks || []).find(l => Number(l.id) === Number(id)) : null;
+  const campRes = await GET('/admin/campaigns');
+  const campaigns = campRes?.data?.campaigns || [];
+  const campOpts = campaigns.map(c => `<option value="${c.id}" ${Number(item?.campaign_id)===Number(c.id)?'selected':''}>${esc(c.name)}</option>`).join('');
+  openModal(id ? 'Edit Shortlink' : 'Create Shortlink', `
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Code *</label>
+        <input id="short-code" class="form-control" placeholder="summer-special" value="${esc(item?.slug || '')}" ${item ? 'disabled' : ''}>
+        <div class="form-hint">Letters, numbers, and dashes. This becomes /go/code.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Label</label>
+        <input id="short-label" class="form-control" placeholder="Campaign label" value="${esc(item?.label || '')}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Destination URL *</label>
+      <input id="short-destination" class="form-control" type="url" placeholder="https://..." value="${esc(item?.destination || '')}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Campaign</label>
+      <select id="short-campaign" class="form-control"><option value="">None</option>${campOpts}</select>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">UTM Source</label><input id="short-utm-source" class="form-control" value="${esc(item?.utm_source || '')}"></div>
+      <div class="form-group"><label class="form-label">UTM Medium</label><input id="short-utm-medium" class="form-control" value="${esc(item?.utm_medium || '')}"></div>
+      <div class="form-group"><label class="form-label">UTM Campaign</label><input id="short-utm-campaign" class="form-control" value="${esc(item?.utm_campaign || '')}"></div>
+    </div>
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveShortlink(${id || 'null'})">${item ? 'Save' : 'Create'}</button>`);
+}
+
+async function saveShortlink(id = null) {
+  const body = {
+    code: document.getElementById('short-code')?.value.trim(),
+    destination: document.getElementById('short-destination')?.value.trim(),
+    label: document.getElementById('short-label')?.value.trim() || null,
+    campaign_id: document.getElementById('short-campaign')?.value || '',
+    utm_source: document.getElementById('short-utm-source')?.value.trim() || null,
+    utm_medium: document.getElementById('short-utm-medium')?.value.trim() || null,
+    utm_campaign: document.getElementById('short-utm-campaign')?.value.trim() || null,
+  };
+  if (!body.code || !body.destination) { toast('Code and destination are required.', 'error'); return; }
+  const res = id ? await PUT('/admin/shortlinks/' + id, body) : await POST('/admin/shortlinks', body);
+  if (res?.ok) { toast(id ? 'Shortlink updated.' : 'Shortlink created.', 'success'); closeModal(); viewShortlinks(); }
+  else toast(res?.error || res?.message || 'Could not save shortlink.', 'error');
+}
+
+async function toggleShortlink(id, isActive) {
+  const item = (window._shortlinks || []).find(l => Number(l.id) === Number(id));
+  if (!item) return;
+  const res = await PUT('/admin/shortlinks/' + id, {
+    destination: item.destination,
+    label: item.label,
+    utm_source: item.utm_source,
+    utm_medium: item.utm_medium,
+    utm_campaign: item.utm_campaign,
+    is_active: isActive,
+  });
+  if (res?.ok) { toast(isActive ? 'Shortlink enabled.' : 'Shortlink disabled.', 'success'); viewShortlinks(); }
+  else toast(res?.error || res?.message || 'Could not update shortlink.', 'error');
+}
+
+async function deleteShortlink(id) {
+  if (!confirm('Delete this shortlink? Existing QR codes will stop redirecting.')) return;
+  const res = await DELETE('/admin/shortlinks/' + id);
+  if (res?.ok) { toast('Shortlink deleted.', 'success'); viewShortlinks(); }
+  else toast(res?.error || res?.message || 'Could not delete shortlink.', 'error');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VIEW: LINK HEALTH
+═══════════════════════════════════════════════════════════════ */
+async function viewLinkHealth() {
+  setContent(loading());
+  const res = await GET('/admin/link-health');
+  if (!res?.ok) { setContent(errBanner('Failed to load link health.', 'BKDN.viewLinkHealth()')); return; }
+  const results = res.data.results || [];
+  const statusColor = { healthy: 'green', redirected: 'blue', broken: 'red', removed: 'red', timed_out: 'gray', needs_review: 'gray' };
+
+  setContent(`
+    ${pageTitle('Link Health', 'Checked on demand — click below to re-check all active links.')}
+    <div class="card">
+      <button class="btn btn-primary" onclick="BKDN.runLinkHealthCheck()">${iconSync()} Check links now</button>
+      <table class="data-table" style="margin-top:16px">
+        <thead><tr><th>Button</th><th>URL</th><th>Status</th><th>HTTP</th><th>Checked</th></tr></thead>
+        <tbody>${results.map(r => `
+          <tr>
+            <td>${esc(r.label||'(deleted)')}</td>
+            <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#94a3b8">${esc(r.url)}</td>
+            <td><span class="badge badge-${statusColor[r.status]||'gray'}">${esc(r.status)}</span></td>
+            <td>${r.http_code || '—'}</td>
+            <td>${fmtDateTime(r.checked_at)}</td>
+          </tr>`).join('') || '<tr><td colspan="5" class="empty-state">No checks run yet.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `);
+}
+
+async function runLinkHealthCheck() {
+  toast('Checking links — this may take a moment…', 'info');
+  const res = await POST('/admin/link-health/check');
+  if (res?.ok) { toast(`Checked ${res.data.checked} links.`, 'success'); viewLinkHealth(); }
+  else toast(res?.error || 'Link health check failed.', 'error');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VIEW: AUDIT LOG
+═══════════════════════════════════════════════════════════════ */
+async function viewAuditLog() {
+  setContent(loading());
+  const res = await GET('/admin/audit-logs?limit=200');
+  if (!res?.ok) { setContent(errBanner('Failed to load audit log.', 'BKDN.viewAuditLog()')); return; }
+  const logs = res.data.logs || [];
+
+  setContent(`
+    ${pageTitle('Audit Log', 'Who changed what, and when.')}
+    <div class="card">
+      <table class="data-table">
+        <thead><tr><th>When</th><th>User</th><th>Action</th><th>Entity</th></tr></thead>
+        <tbody>${logs.map(l => `
+          <tr>
+            <td style="white-space:nowrap">${fmtDateTime(l.created_at)}</td>
+            <td>${esc(l.user_email||'—')}</td>
+            <td>${esc(l.action)}</td>
+            <td style="color:#94a3b8">${esc(l.entity_type||'')}${l.entity_id?' #'+l.entity_id:''}</td>
+          </tr>`).join('') || '<tr><td colspan="4" class="empty-state">No activity recorded yet.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VIEW: TRASH
+   Pages, Sections, and Buttons deleted via the normal Delete button are
+   soft-deleted (deleted_at set) and land here first — Restore brings them
+   straight back, Delete Forever is the only truly permanent action.
+═══════════════════════════════════════════════════════════════ */
+async function viewTrash() {
+  setContent(loading());
+  const res = await GET('/admin/trash');
+  if (!res?.ok) { setContent(errBanner('Failed to load trash.', 'BKDN.viewTrash()')); return; }
+  const items = res.data.trash || [];
+  const typeLabel = { page: 'Page', section: 'Section', button: 'Button' };
+  setContent(`
+    ${pageTitle('Trash', `${items.length} item${items.length!==1?'s':''} — deleted Pages, Sections, and Buttons land here before they're gone for good.`)}
+    <div class="card">
+      ${!items.length ? `<div class="empty-state">Trash is empty.</div>` : `
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Type</th><th>Page</th><th>Deleted</th><th></th></tr></thead>
+        <tbody>${items.map(i => `
+          <tr>
+            <td style="font-weight:600;color:#e2e8f0">${esc(i.name||'(untitled)')}</td>
+            <td><span class="badge badge-gray">${typeLabel[i.type]}</span></td>
+            <td style="color:#94a3b8">${esc(i.page_title || (i.type==='page' ? '—' : ''))}</td>
+            <td style="color:#94a3b8">${fmtDateTime(i.deleted_at)}</td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-secondary btn-sm" onclick="BKDN.restoreTrashItem('${i.type}',${i.id})">${iconSync()} Restore</button>
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.permanentlyDeleteTrashItem('${i.type}',${i.id})" style="color:#ef4444">${iconTrash()} Delete Forever</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
+    </div>
+  `);
+}
+
+async function restoreTrashItem(type, id) {
+  const res = await POST(`/admin/trash/${type}/${id}/restore`, {});
+  if (res?.ok) { toast(`${type[0].toUpperCase()+type.slice(1)} restored.`, 'success'); viewTrash(); }
+  else toast(res?.error || 'Could not restore item.', 'error');
+}
+
+async function permanentlyDeleteTrashItem(type, id) {
+  if (!confirm('Delete this forever? This cannot be undone — it will not be recoverable.')) return;
+  const res = await DELETE(`/admin/trash/${type}/${id}`);
+  if (res?.ok) { toast('Permanently deleted.', 'success'); viewTrash(); }
+  else toast(res?.error || 'Could not delete item.', 'error');
+}
+
+/* ═══════════════════════════════════════════════════════════════
    VIEW: SETTINGS
 ═══════════════════════════════════════════════════════════════ */
 async function viewSettings() {
   setContent(loading());
-  const res = await GET('/links/settings');
+  const res = await GET('/admin/settings');
   if (!res?.ok) { setContent(errBanner('Failed to load settings.', 'BKDN.viewSettings()')); return; }
   const s = res.data.settings || {};
 
@@ -1872,6 +3989,24 @@ async function viewSettings() {
       </div>
       <button class="btn btn-primary" onclick="BKDN.saveSettings()">${iconSave()} Save Settings</button>
     </div>
+
+    <div class="card">
+      <div class="card-title">Marketing Signup Landing Page</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:12px">Shown at /marketing-signup — customers pick a location, then continue to that location's Toast-hosted signup form. Configure per-location Toast URLs in <a href="#/locations" style="color:#60a5fa">Locations</a>.</div>
+      <div class="form-group">
+        <label class="form-label">Heading</label>
+        <input id="s-mkt-heading" class="form-control" value="${esc(s.marketing_signup_heading||'')}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea id="s-mkt-desc" class="form-control" rows="2">${esc(s.marketing_signup_description||'')}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Continue Button Label</label>
+        <input id="s-mkt-btn" class="form-control" value="${esc(s.marketing_signup_button_label||'')}">
+      </div>
+      <button class="btn btn-primary" onclick="BKDN.saveSettings()">${iconSave()} Save Settings</button>
+    </div>
   `);
 }
 
@@ -1886,27 +4021,224 @@ async function saveSettings() {
     site_url:          document.getElementById('s-site-url')?.value.trim() || '',
     links_headline:    document.getElementById('s-headline')?.value.trim() || '',
     links_subheadline: document.getElementById('s-subheadline')?.value.trim() || '',
+    marketing_signup_heading:      document.getElementById('s-mkt-heading')?.value.trim() || '',
+    marketing_signup_description:  document.getElementById('s-mkt-desc')?.value.trim() || '',
+    marketing_signup_button_label: document.getElementById('s-mkt-btn')?.value.trim() || '',
   };
-  const res = await PUT('/links/settings', settings);
+  const res = await PUT('/admin/settings', settings);
   if (res?.ok) toast('Settings saved.', 'success');
   else toast(res?.error || 'Save failed.', 'error');
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   VIEW: USERS
+   VIEW: LOCATIONS
 ═══════════════════════════════════════════════════════════════ */
-async function viewUsers() {
+async function viewLocations() {
   setContent(loading());
-  // Simple user display using /auth/me for now; full user management is super_admin only
-  const res = await GET('/auth/me');
+  const res = await GET('/admin/locations');
+  if (!res?.ok) { setContent(errBanner('Failed to load locations.', 'BKDN.viewLocations()')); return; }
+  const locations = res.data.locations || [];
+
   setContent(`
-    ${pageTitle('Users', 'Account management')}
+    ${pageTitle('Locations', 'Central address, phone, and Toast URLs — update once, used everywhere.')}
     <div class="card">
-      <div class="card-title">Your Account</div>
-      <div style="font-size:13px;color:#94a3b8;margin-bottom:12px">Logged in as: <strong style="color:#e2e8f0">${esc(res?.user?.email||'')}</strong> (${esc(res?.user?.role||'')})</div>
-      <div style="font-size:12px;color:#475569">Full user management (add/edit/deactivate) requires direct database access or a future admin UI update.</div>
+      <button class="btn btn-primary" onclick="BKDN.openLocationModal()">${iconPlus()} Add Location</button>
+      <table class="data-table" style="margin-top:16px">
+        <thead><tr><th>Name</th><th>Address</th><th>Toast Order URL</th><th>Toast Signup URL</th><th>Active</th><th></th></tr></thead>
+        <tbody>${locations.map(l => `
+          <tr>
+            <td>${esc(l.name)}</td>
+            <td style="color:#94a3b8">${esc(l.address||'—')}</td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.toast_order_url ? `<a href="${esc(l.toast_order_url)}" target="_blank" style="color:#60a5fa">${esc(l.toast_order_url)}</a>` : '<span style="color:#64748b">Not set</span>'}</td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.toast_signup_url ? `<a href="${esc(l.toast_signup_url)}" target="_blank" style="color:#60a5fa">${esc(l.toast_signup_url)}</a>` : '<span style="color:#64748b">Not set</span>'}</td>
+            <td>${l.is_active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>'}</td>
+            <td><button class="btn btn-secondary" onclick="BKDN.openLocationModal(${l.id})">${iconEdit()}</button></td>
+          </tr>`).join('') || '<tr><td colspan="6" class="empty-state">No locations yet.</td></tr>'}
+        </tbody>
+      </table>
     </div>
   `);
+}
+
+async function openLocationModal(locationId) {
+  let loc = null;
+  if (locationId) {
+    const res = await GET('/admin/locations');
+    loc = res?.data?.locations?.find(l => Number(l.id) === Number(locationId));
+  }
+  const isNew = !loc;
+  openModal(isNew ? 'Add Location' : 'Edit Location', `
+    <div class="form-group"><label class="form-label">Name *</label><input id="lf-name" class="form-control" value="${esc(loc?.name||'')}"></div>
+    <div class="form-group"><label class="form-label">Slug *</label><input id="lf-slug" class="form-control" value="${esc(loc?.slug||'')}" placeholder="the-rim" ${loc?'disabled':''}></div>
+    <div class="form-group"><label class="form-label">Address</label><input id="lf-address" class="form-control" value="${esc(loc?.address||'')}"></div>
+    <div class="form-group"><label class="form-label">Phone</label><input id="lf-phone" class="form-control" value="${esc(loc?.phone||'')}"></div>
+    <div class="form-group"><label class="form-label">Toast Order URL</label><input id="lf-order" class="form-control" value="${esc(loc?.toast_order_url||'')}" placeholder="https://order.toasttab.com/online/..."></div>
+    <div class="form-group"><label class="form-label">Toast Signup URL</label><input id="lf-signup" class="form-control" value="${esc(loc?.toast_signup_url||'')}" placeholder="https://www.toasttab.com/.../rewardsSignup"></div>
+    <div class="form-group"><label class="form-label">Maps URL</label><input id="lf-maps" class="form-control" value="${esc(loc?.maps_url||'')}"></div>
+    <div class="form-group"><label class="form-label">Support Email</label><input id="lf-support-email" class="form-control" value="${esc(loc?.support_email||'')}" placeholder="support@bakudanramen.com"></div>
+    <div class="form-group"><label class="form-label">Hours</label><textarea id="lf-hours" class="form-control" rows="2" placeholder="Mon-Sun 11am-9pm">${esc(loc?.hours_text||'')}</textarea></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <label class="toggle"><input id="lf-active" type="checkbox" ${loc?.is_active!==0?'checked':''}><span class="toggle-slider"></span></label>
+      <span class="form-label" style="margin:0">Active</span>
+    </div>
+  `,
+  `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="BKDN.saveLocationModal(${locationId||'null'})">${iconSave()} Save</button>`);
+}
+
+async function saveLocationModal(locationId) {
+  const data = {
+    name: document.getElementById('lf-name').value.trim(),
+    slug: document.getElementById('lf-slug').value.trim(),
+    address: document.getElementById('lf-address').value.trim() || null,
+    phone: document.getElementById('lf-phone').value.trim() || null,
+    toast_order_url: document.getElementById('lf-order').value.trim() || null,
+    toast_signup_url: document.getElementById('lf-signup').value.trim() || null,
+    maps_url: document.getElementById('lf-maps').value.trim() || null,
+    support_email: document.getElementById('lf-support-email').value.trim() || null,
+    hours_text: document.getElementById('lf-hours').value.trim() || null,
+    is_active: document.getElementById('lf-active').checked ? 1 : 0,
+  };
+  if (!data.name || (!locationId && !data.slug)) { toast('Name and slug are required.', 'error'); return; }
+  const res = locationId ? await PUT('/admin/locations/' + locationId, data) : await POST('/admin/locations', data);
+  if (res?.ok) { toast(locationId ? 'Location updated.' : 'Location added.', 'success'); closeModal(); viewLocations(); }
+  else toast(res?.error || 'Failed to save location.', 'error');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VIEW: USERS
+═══════════════════════════════════════════════════════════════ */
+const USER_ROLES = [
+  { value: 'super_admin',   label: 'Super Admin' },
+  { value: 'admin',         label: 'Admin' },
+  { value: 'marketing',     label: 'Marketing' },
+  { value: 'store_manager', label: 'Store Manager' },
+  { value: 'viewer',        label: 'Viewer' },
+];
+
+async function viewUsers() {
+  setContent(loading());
+  const [usersRes, meRes] = await Promise.all([GET('/admin/users'), GET('/auth/me')]);
+  if (!usersRes?.ok) { setContent(errBanner('Failed to load users.', 'BKDN.viewUsers()')); return; }
+  const users = usersRes.data.users || [];
+  const myId = meRes?.user?.id;
+  const isSuperAdmin = meRes?.user?.role === 'super_admin';
+
+  setContent(`
+    ${pageTitle('Users', `${users.length} account${users.length!==1?'s':''}`)}
+    <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+      ${isSuperAdmin ? `<button class="btn btn-primary" onclick="BKDN.openUserModal()">${iconPlus()} Add User</button>` : ''}
+    </div>
+    <div class="card">
+      <table class="data-table">
+        <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Location</th><th>Status</th><th></th></tr></thead>
+        <tbody>${users.map(u => `
+          <tr>
+            <td>${esc(u.email)}</td>
+            <td>${esc(u.name || '—')}</td>
+            <td>${esc(roleLabel(u.role))}</td>
+            <td>${u.role === 'store_manager' ? (esc(u.store_slug) || '<span style="color:#ef4444">None assigned</span>') : '<span style="color:#64748b">—</span>'}</td>
+            <td>${Number(u.is_active) ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Deactivated</span>'}</td>
+            <td style="white-space:nowrap">
+              ${isSuperAdmin ? `
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.openUserModal(${u.id})" title="Edit">${iconEdit()}</button>
+              ${u.id !== myId ? `<button class="btn btn-ghost btn-sm" onclick="BKDN.deleteUser(${u.id})" title="Delete" style="color:#ef4444">${iconTrash()}</button>` : ''}
+              ` : ''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">Roles</div>
+      <ul style="font-size:12px;color:#94a3b8;margin-left:18px;display:flex;flex-direction:column;gap:4px">
+        <li><strong>Super Admin</strong> — full access to everything, including Users.</li>
+        <li><strong>Admin / Marketing</strong> — pages, content, templates, publishing, rollback, SEO, analytics, settings.</li>
+        <li><strong>Store Manager</strong> — can only create/edit/publish/delete content on pages assigned to their one Location.</li>
+        <li><strong>Viewer</strong> — read-only.</li>
+      </ul>
+    </div>
+  `);
+}
+
+async function openUserModal(id = null) {
+  let item = null;
+  if (id) {
+    const res = await GET('/admin/users');
+    item = (res?.data?.users || []).find(u => Number(u.id) === Number(id));
+  }
+  if (!window._allLocations) {
+    const locRes = await GET('/admin/locations');
+    window._allLocations = locRes?.data?.locations || [];
+  }
+  const roleOpts = USER_ROLES.map(r => `<option value="${r.value}" ${(item?.role||'viewer')===r.value?'selected':''}>${r.label}</option>`).join('');
+  const locOpts = window._allLocations.map(l => `<option value="${esc(l.slug)}" ${item?.store_slug===l.slug?'selected':''}>${esc(l.name)}</option>`).join('');
+  openModal(id ? 'Edit User' : 'Add User', `
+    <div class="form-group">
+      <label class="form-label">Email *</label>
+      <input id="uf-email" class="form-control" value="${esc(item?.email||'')}" ${item?'disabled':''} placeholder="name@bakudanramen.com">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Name</label>
+      <input id="uf-name" class="form-control" value="${esc(item?.name||'')}">
+    </div>
+    ${!item ? `
+    <div class="form-group">
+      <label class="form-label">Password *</label>
+      <div style="position:relative">
+        <input id="uf-password" type="password" class="form-control" autocomplete="new-password" style="padding-right:40px">
+        <button type="button" onclick="BKDN.togglePasswordVisibility('uf-password', this)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;padding:4px" aria-label="Show password">${iconEyeOpen()}</button>
+      </div>
+    </div>` : ''}
+    <div class="form-group">
+      <label class="form-label">Role</label>
+      <select id="uf-role" class="form-control" onchange="BKDN.onUserRoleChange()">${roleOpts}</select>
+    </div>
+    <div class="form-group" id="uf-location-wrap" style="display:none">
+      <label class="form-label">Assigned Location</label>
+      <select id="uf-location" class="form-control"><option value="">Select a location…</option>${locOpts}</select>
+      <div class="form-hint">A Store Manager can only edit pages and buttons assigned to this location.</div>
+    </div>
+    ${item ? `
+    <div style="display:flex;align-items:center;gap:8px">
+      <label class="toggle"><input id="uf-active" type="checkbox" ${item.is_active!==0?'checked':''}><span class="toggle-slider"></span></label>
+      <span class="form-label" style="margin:0">Active</span>
+    </div>` : ''}
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveUser(${id||'null'})">${item ? 'Save' : 'Create'}</button>`);
+  onUserRoleChange();
+}
+
+function onUserRoleChange() {
+  const role = document.getElementById('uf-role')?.value;
+  const wrap = document.getElementById('uf-location-wrap');
+  if (wrap) wrap.style.display = role === 'store_manager' ? '' : 'none';
+}
+
+async function saveUser(id = null) {
+  const role = document.getElementById('uf-role').value;
+  const body = {
+    name: document.getElementById('uf-name').value.trim() || null,
+    role,
+    store_slug: role === 'store_manager' ? (document.getElementById('uf-location').value || null) : null,
+  };
+  if (!id) {
+    body.email = document.getElementById('uf-email').value.trim();
+    body.password = document.getElementById('uf-password').value;
+    if (!body.email || !body.password) { toast('Email and password are required.', 'error'); return; }
+  } else {
+    body.is_active = document.getElementById('uf-active').checked ? 1 : 0;
+  }
+  if (role === 'store_manager' && !body.store_slug) { toast('Select a location for this Store Manager.', 'error'); return; }
+  const res = id ? await PUT('/admin/users/' + id, body) : await POST('/admin/users', body);
+  if (res?.ok) { toast(id ? 'User updated.' : 'User created.', 'success'); closeModal(); viewUsers(); }
+  else toast(res?.error || 'Could not save user.', 'error');
+}
+
+async function deleteUser(id) {
+  if (!confirm('Delete this user account? This cannot be undone.')) return;
+  const res = await DELETE('/admin/users/' + id);
+  if (res?.ok) { toast('User deleted.', 'success'); viewUsers(); }
+  else toast(res?.error || 'Could not delete user.', 'error');
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1919,32 +4251,116 @@ function viewProfile() {
       <div class="form-group"><label class="form-label">Name</label><input class="form-control" value="${esc(_user?.name||'')}" disabled></div>
       <div class="form-group"><label class="form-label">Email</label><input class="form-control" value="${esc(_user?.email||'')}" disabled></div>
       <div class="form-group"><label class="form-label">Role</label><input class="form-control" value="${esc(roleLabel(_user?.role||''))}" disabled></div>
-      <div style="font-size:12px;color:#475569">To change your password, contact an admin or use the server CLI.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Change Password</div>
+      <div class="form-group">
+        <label class="form-label">Current Password *</label>
+        <div style="position:relative">
+          <input id="pw-current" type="password" class="form-control" autocomplete="current-password" style="padding-right:40px">
+          <button type="button" onclick="BKDN.togglePasswordVisibility('pw-current', this)"
+                  style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;padding:4px"
+                  aria-label="Show password">${iconEyeOpen()}</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">New Password *</label>
+        <div style="position:relative">
+          <input id="pw-new" type="password" class="form-control" autocomplete="new-password" placeholder="At least 8 characters" style="padding-right:40px">
+          <button type="button" onclick="BKDN.togglePasswordVisibility('pw-new', this)"
+                  style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;padding:4px"
+                  aria-label="Show password">${iconEyeOpen()}</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm New Password *</label>
+        <div style="position:relative">
+          <input id="pw-confirm" type="password" class="form-control" autocomplete="new-password" style="padding-right:40px">
+          <button type="button" onclick="BKDN.togglePasswordVisibility('pw-confirm', this)"
+                  style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;padding:4px"
+                  aria-label="Show password">${iconEyeOpen()}</button>
+        </div>
+      </div>
+      <div id="pw-msg" style="display:none;font-size:12px;margin-bottom:12px"></div>
+      <button class="btn btn-primary" onclick="BKDN.changePassword()">${iconSave()} Update Password</button>
+      <div style="font-size:12px;color:#475569;margin-top:10px">Changing your password signs out any other active session for this account the next time it makes a request.</div>
     </div>
   `);
+}
+
+async function changePassword() {
+  const current = document.getElementById('pw-current').value;
+  const next    = document.getElementById('pw-new').value;
+  const confirm = document.getElementById('pw-confirm').value;
+  const msgEl   = document.getElementById('pw-msg');
+  const showMsg = (text, isError) => {
+    msgEl.textContent = text;
+    msgEl.style.color = isError ? '#fca5a5' : '#86efac';
+    msgEl.style.display = 'block';
+  };
+  if (!current || !next || !confirm) { showMsg('All fields are required.', true); return; }
+  if (next.length < 8) { showMsg('New password must be at least 8 characters.', true); return; }
+  if (next !== confirm) { showMsg('New password and confirmation do not match.', true); return; }
+  const res = await POST('/auth/change-password', { current_password: current, new_password: next });
+  if (res?.ok) {
+    showMsg('Password updated.', false);
+    document.getElementById('pw-current').value = '';
+    document.getElementById('pw-new').value = '';
+    document.getElementById('pw-confirm').value = '';
+  } else {
+    showMsg(res?.error || res?.message || 'Could not update password.', true);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
    PUBLIC API (window.BKDN)
 ═══════════════════════════════════════════════════════════════ */
 window.BKDN = {
+  // Core
+  toast,
   // Auth
-  doLogin, logout,
+  doLogin, logout, togglePasswordVisibility,
   // Nav
   viewDashboard, viewProject, viewPages, viewScheduling,
   viewBlog, viewBlogEditor,
   viewAnalytics, viewSettings, viewUsers, viewProfile,
+  openUserModal, saveUser, deleteUser, onUserRoleChange,
+  viewLocations, openLocationModal, saveLocationModal,
+  updateUtmPreview, copyUtmUrl, createShortlinkFromUtm,
+  viewShortlinks, openShortlinkModal, saveShortlink, toggleShortlink, deleteShortlink,
+  viewLinkHealth, runLinkHealthCheck, viewAuditLog,
+  viewTrash, restoreTrashItem, permanentlyDeleteTrashItem,
+  changePassword,
   // Modal
   closeModal,
   // Page CRUD
-  openPageModal, savePageModal, autofillSlug, duplicatePage,
+  openPageModal, savePageModal, autofillSlug, duplicatePage, deletePage, onPageTypeChange, savePageVisibility, saveSeo,
+  onStructuredDataTypeChange, addStructuredFaqRow, saveStructuredData,
   // Page editor
   switchTab, savePage, publishPage, unpublishPage, applyPageStatus, onStatusChange,
   generatePreviewToken, verifySync, saveOrder, cancelReorder,
+  loadVersionHistory, previewVersion, confirmRollback,
   // Button CRUD
   openAddButton, openEditButton, saveBtnModal, toggleBtn, duplicateButton, deleteButton,
+  onLinkTypeChange, testButtonUrl,
+  openAbTestStartModal, startAbTest, openAbTestResultsModal, endAbTest,
   // Section CRUD
   openSectionModal, saveSectionModal, toggleSection, deleteSection,
+  openMoveModal, confirmMove,
+  // Templates
+  openSaveAsTemplateModal, saveAsTemplate, openCreatePageFromTemplateModal, createPageFromTemplate, deleteTemplate,
+  // Campaigns
+  openCampaignModal, saveCampaign, deleteCampaign, saveCampaignEditor,
+  // Forms
+  openFormModal, saveForm, deleteForm, viewFormSubmissions,
+  openFormBuilderModal, saveFormBuilder, addFieldRow,
+  // Customer Service
+  openCSModal, saveCSNotice, deleteCSNotice,
+  // Media Library
+  uploadMediaFiles, filterMedia, copyMediaUrl, deleteMediaItem,
+  // Automations
+  openAutomationModal, saveAutomation, deleteAutomation, onAutomationTypeChange, runAutomationsNow,
   // Blog
   saveBlogPost, schedulePost, saveAndCreateAnother, publishPost, duplicatePost, archivePost,
   applyTemplate, toggleEmoji, insertEmoji,
@@ -1959,7 +4375,7 @@ window.BKDN = {
 async function bootAdmin() {
   // Load server config
   try {
-    const cfgRes = await fetch(API_BASE + 'config');
+    const cfgRes = await fetch(API_BASE + '/config', { cache: 'no-store' });
     CFG = await cfgRes.json();
   } catch (e) {
     console.warn('Could not load /api/config — running with defaults');
@@ -1974,15 +4390,24 @@ async function bootAdmin() {
   const splash = document.getElementById('spa-loading');
   if (splash) splash.remove();
 
-  // Render shell if authenticated, else show login
+  // Render shell if authenticated, else show login. Only a confirmed 401
+  // (real backend auth rejection) clears the session — a network error or
+  // unrelated server hiccup must not silently sign the admin out.
   if (_token) {
-    // Validate token before rendering
-    const meRes = await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + _token } });
-    if (!meRes.ok) { _token = null; _user = null; localStorage.removeItem('bkdn_token'); localStorage.removeItem('bkdn_user'); }
-    else {
-      const meData = await meRes.json();
-      _user = meData.user;
-      localStorage.setItem('bkdn_user', JSON.stringify(_user));
+    try {
+      const meRes = await fetch(API_BASE + '/auth/me', { cache: 'no-store', headers: { Authorization: 'Bearer ' + _token } });
+      if (meRes.status === 401) {
+        _token = null; _user = null;
+        localStorage.removeItem('bkdn_token'); localStorage.removeItem('bkdn_user');
+      } else if (meRes.ok) {
+        const meData = await meRes.json();
+        _user = meData.user;
+        localStorage.setItem('bkdn_user', JSON.stringify(_user));
+      }
+      // Any other status (5xx, network hiccup already caught below): keep
+      // the existing token/user from localStorage and let router() proceed.
+    } catch (e) {
+      console.warn('Could not verify session on boot — continuing with cached session.', e);
     }
   }
 

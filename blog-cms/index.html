@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3GZ2RYDR6M"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3GZ2RYDR6M');
+    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blog — Bakudan Ramen</title>
+<meta name="description" content="Stories, updates, and news from Bakudan Ramen.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+<style>
+.blog-cms-hero { padding: 80px 5% 48px; text-align: center; }
+.blog-cms-hero h1 { font-family: 'Bebas Neue', sans-serif; font-size: 3rem; letter-spacing: 3px; margin-bottom: 12px; }
+.blog-cms-hero p  { color: var(--color-text-muted); max-width: 480px; margin: 0 auto; }
+
+.blog-cms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; max-width: 1200px; margin: 0 auto; padding: 0 5% 80px; }
+
+.blog-cms-card {
+  background: var(--color-bg-card); border: 1px solid var(--color-border);
+  border-radius: 12px; overflow: hidden; transition: border-color .2s;
+  display: flex; flex-direction: column;
+}
+.blog-cms-card:hover { border-color: var(--color-border-hover); }
+.blog-cms-card-img  { width: 100%; height: 200px; object-fit: cover; background: var(--color-bg-warm); }
+.blog-cms-card-body { padding: 20px; flex: 1; display: flex; flex-direction: column; }
+.blog-cms-card-date { font-size: 11px; color: var(--color-text-muted); letter-spacing: .5px; margin-bottom: 8px; }
+.blog-cms-card-title { font-family: 'Playfair Display', serif; font-size: 18px; margin-bottom: 8px; color: var(--color-text-light); }
+.blog-cms-card-excerpt { font-size: 13px; color: var(--color-text-muted); flex: 1; margin-bottom: 16px; }
+.blog-cms-card-cta { display: inline-block; padding: 8px 18px; background: var(--color-accent-red); color: #fff; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none; align-self: flex-start; transition: background .2s; }
+.blog-cms-card-cta:hover { background: var(--color-accent-red-dark); }
+
+.blog-cms-empty { text-align: center; padding: 80px 20px; color: var(--color-text-muted); grid-column: 1/-1; }
+</style>
+</head>
+<body>
+
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="site-header" role="banner">
+  <a href="/index.html" class="logo" aria-label="Bakudan Ramen - Home">
+    <div class="logo-icon" aria-hidden="true">&#29190;</div>
+    <span class="logo-text">BAKUDAN RAMEN</span>
+  </a>
+  <nav aria-label="Main navigation">
+    <ul class="nav-links">
+      <li><a href="/index.html">Home</a></li>
+      <li><a href="/menu.html">Menu</a></li>
+      <li><a href="/locations.html">Locations</a></li>
+      <li><a href="/happy-hour.html">Happy Hour</a></li>
+      <li><a href="/about.html">Our Story</a></li>
+      <li><a href="/blog.html">Blog</a></li>
+      <li><a href="/order.html" class="nav-cta">Order Now</a></li>
+    </ul>
+  </nav>
+  <button class="hamburger" aria-expanded="false" aria-controls="mobile-nav" aria-label="Open menu"><span></span><span></span><span></span></button>
+</header>
+<div class="mobile-nav" id="mobile-nav">
+  <a href="/index.html">Home</a><a href="/menu.html">Menu</a><a href="/locations.html">Locations</a>
+  <a href="/happy-hour.html">Happy Hour</a><a href="/about.html">Our Story</a><a href="/blog.html">Blog</a>
+  <a href="/order.html" class="nav-cta" style="margin-top:1rem">Order Now</a>
+</div>
+
+<main id="main-content">
+  <div class="blog-cms-hero">
+    <h1>Stories &amp; News</h1>
+    <p>The latest from Bakudan Ramen — promotions, updates, and behind-the-scenes stories.</p>
+  </div>
+
+  <div class="blog-cms-grid" id="blog-grid">
+    <div class="blog-cms-empty">Loading posts...</div>
+  </div>
+</main>
+
+<footer style="background:var(--color-bg-warm);padding:40px 5%;text-align:center;color:var(--color-text-muted);font-size:13px;border-top:1px solid var(--color-border)">
+  &copy; <span id="blog-year"></span> Bakudan Ramen. All rights reserved.
+  &mdash; <a href="/links" style="color:var(--color-accent-red)">Links</a>
+</footer>
+
+<script src="/js/main.js"></script>
+<script>
+document.getElementById('blog-year').textContent = new Date().getFullYear();
+
+// Check if viewing a single post
+const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
+const lastPart  = pathParts[pathParts.length - 1];
+const isSingle  = lastPart !== 'index.html' && lastPart !== '' && lastPart !== 'blog-cms';
+
+async function loadPosts() {
+  const grid = document.getElementById('blog-grid');
+  const res  = await fetch('/api/public/blog');
+  const data = await res.json();
+  const posts = data.data?.posts || [];
+
+  if (!posts.length) {
+    grid.innerHTML = '<div class="blog-cms-empty"><div style="font-size:2rem;margin-bottom:12px">&#9997;&#65039;</div><div>No posts published yet. Check back soon!</div></div>';
+    return;
+  }
+
+  grid.innerHTML = posts.map(p => `
+  <article class="blog-cms-card">
+    ${p.featured_image_url ? `<img class="blog-cms-card-img" src="${p.featured_image_url}" alt="${p.title}" loading="lazy">` : '<div class="blog-cms-card-img" style="display:flex;align-items:center;justify-content:center;font-size:3rem">爆</div>'}
+    <div class="blog-cms-card-body">
+      <div class="blog-cms-card-date">${p.published_at ? new Date(p.published_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : ''}</div>
+      <div class="blog-cms-card-title">${p.title}</div>
+      <div class="blog-cms-card-excerpt">${p.excerpt || ''}</div>
+      <a href="/blog-cms/post/${p.slug||p.id}" class="blog-cms-card-cta">${p.cta_label || 'Read More'} &rarr;</a>
+    </div>
+  </article>`).join('');
+}
+
+loadPosts().catch(console.error);
+</script>
+</body>
+</html>

@@ -1,0 +1,668 @@
+[
+  {
+    "method": "GET",
+    "path": "/public/links/bakudan-links-main",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "page": {
+        "id": 2,
+        "title": "Bakudan links Main",
+        "slug": "bakudan-links-main",
+        "status": "published",
+        "visibility": "public",
+        "page_type": "link_hub"
+      },
+      "buttons_count": 12,
+      "buttons_sample": [
+        {
+          "id": 2,
+          "page_id": 2,
+          "label": "Order Bandera",
+          "url": "https://order.toasttab.com/online/bakudan-bandera",
+          "icon": null,
+          "sort_order": 2,
+          "is_active": 1,
+          "is_featured": 1,
+          "enabled": 1,
+          "start_at": "2026-05-29 10:38",
+          "end_at": null,
+          "created_at": "2026-05-29 15:37:36",
+          "updated_at": "2026-07-02 00:14:02",
+          "section_id": 1,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "external",
+          "internal_page_id": null,
+          "title": "Order Bandera",
+          "icon_key": null,
+          "visible": 1,
+          "section_title": "Order Online",
+          "section_key": "order",
+          "section_sort_order": 10,
+          "section_is_active": 1
+        },
+        {
+          "id": 4,
+          "page_id": 2,
+          "label": "Order Stone Oak",
+          "url": "https://order.toasttab.com/online/bakudan-ramen-stone-oak",
+          "icon": null,
+          "sort_order": 3,
+          "is_active": 1,
+          "is_featured": 1,
+          "enabled": 1,
+          "start_at": null,
+          "end_at": null,
+          "created_at": "2026-05-29 15:40:22",
+          "updated_at": "2026-07-02 00:14:02",
+          "section_id": 1,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "external",
+          "internal_page_id": null,
+          "title": "Order Stone Oak",
+          "icon_key": null,
+          "visible": 1,
+          "section_title": "Order Online",
+          "section_key": "order",
+          "section_sort_order": 10,
+          "section_is_active": 1
+        },
+        {
+          "id": 5,
+          "page_id": 2,
+          "label": "Order The Rim",
+          "url": "https://order.toasttab.com/online/bakudanramen/",
+          "icon": null,
+          "sort_order": 4,
+          "is_active": 1,
+          "is_featured": 1,
+          "enabled": 1,
+          "start_at": null,
+          "end_at": null,
+          "created_at": "2026-05-29 15:40:44",
+          "updated_at": "2026-07-02 00:14:02",
+          "section_id": 1,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "external",
+          "internal_page_id": null,
+          "title": "Order The Rim",
+          "icon_key": null,
+          "visible": 1,
+          "section_title": "Order Online",
+          "section_key": "order",
+          "section_sort_order": 10,
+          "section_is_active": 1
+        }
+      ],
+      "sections_count": 3,
+      "sections_sample": [
+        {
+          "id": 1,
+          "page_id": 2,
+          "title": "Order Online",
+          "section_key": "order",
+          "sort_order": 10,
+          "is_active": 1,
+          "created_at": "2026-07-02 01:22:28",
+          "updated_at": "2026-07-02 01:22:28",
+          "status": "active",
+          "start_at": null,
+          "end_at": null
+        },
+        {
+          "id": 2,
+          "page_id": 2,
+          "title": "Rewards & Loyalty",
+          "section_key": "rewards",
+          "sort_order": 20,
+          "is_active": 1,
+          "created_at": "2026-07-02 01:22:28",
+          "updated_at": "2026-07-02 01:22:28",
+          "status": "active",
+          "start_at": null,
+          "end_at": null
+        },
+        {
+          "id": 3,
+          "page_id": 2,
+          "title": "Merchandise",
+          "section_key": "merchandise",
+          "sort_order": 30,
+          "is_active": 1,
+          "created_at": "2026-07-02 01:22:28",
+          "updated_at": "2026-07-02 01:22:28",
+          "status": "active",
+          "start_at": null,
+          "end_at": null
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/public/marketing-signup",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "locations_count": 3,
+      "locations_sample": [
+        {
+          "name": "The Rim",
+          "slug": "the-rim",
+          "toast_signup_url": "https://www.toasttab.com/bakudanramen/rewardsSignup",
+          "is_active": 1
+        },
+        {
+          "name": "Stone Oak",
+          "slug": "stone-oak",
+          "toast_signup_url": "https://www.toasttab.com/bakudan-ramen-stone-oak/rewardsSignup",
+          "is_active": 1
+        },
+        {
+          "name": "Bandera",
+          "slug": "bandera",
+          "toast_signup_url": "https://www.toasttab.com/bakudan-bandera/rewardsSignup",
+          "is_active": 1
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/public/locations",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "locations_count": 3,
+      "locations_sample": [
+        {
+          "name": "The Rim",
+          "slug": "the-rim",
+          "toast_order_url": "https://order.toasttab.com/online/bakudanramen/",
+          "toast_signup_url": "https://www.toasttab.com/bakudanramen/rewardsSignup",
+          "maps_url": null,
+          "phone": null,
+          "address": "17619 La Cantera Pkwy"
+        },
+        {
+          "name": "Stone Oak",
+          "slug": "stone-oak",
+          "toast_order_url": "https://order.toasttab.com/online/bakudan-ramen-stone-oak",
+          "toast_signup_url": "https://www.toasttab.com/bakudan-ramen-stone-oak/rewardsSignup",
+          "maps_url": null,
+          "phone": null,
+          "address": "22506 US-281 N"
+        },
+        {
+          "name": "Bandera",
+          "slug": "bandera",
+          "toast_order_url": "https://order.toasttab.com/online/bakudan-bandera",
+          "toast_signup_url": "https://www.toasttab.com/bakudan-bandera/rewardsSignup",
+          "maps_url": null,
+          "phone": null,
+          "address": "11309 Bandera Rd"
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/admin/dashboard",
+    "status": 401,
+    "ok": false,
+    "json_summary": {
+      "ok": false,
+      "message": "Unauthorized"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/auth/login",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "user": {
+        "email": "admin@bakudanramen.com",
+        "role": "super_admin",
+        "name": "Administrator"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/auth/me",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "user": {
+        "id": 1,
+        "email": "admin@bakudanramen.com",
+        "role": "super_admin",
+        "name": "Administrator"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/admin/dashboard",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "pages_count": 2,
+      "pages_sample": [
+        {
+          "id": 2,
+          "title": "Bakudan links Main",
+          "slug": "bakudan-links-main",
+          "headline": "Bakudan Ramen",
+          "store_slug": null,
+          "is_active": 1,
+          "sort_order": 0,
+          "theme": null,
+          "created_at": "2026-05-29 15:36:03",
+          "updated_at": "2026-05-29 15:49:46",
+          "page_type": "link_hub",
+          "visibility": "public",
+          "status": "published",
+          "preview_token": null,
+          "scheduled_publish_at": null,
+          "staff_password_hash": null,
+          "button_count": 15
+        },
+        {
+          "id": 4,
+          "title": "Staff Training Videos",
+          "slug": "staff-training-videos",
+          "headline": "Staff Training Videos",
+          "store_slug": null,
+          "is_active": 1,
+          "sort_order": 20,
+          "theme": null,
+          "created_at": "2026-07-02 01:09:23",
+          "updated_at": "2026-07-02 01:09:23",
+          "page_type": "link_hub",
+          "visibility": "public",
+          "status": "published",
+          "preview_token": null,
+          "scheduled_publish_at": null,
+          "staff_password_hash": null,
+          "button_count": 2
+        }
+      ],
+      "total": 17
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/admin/pages",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "pages_count": 2,
+      "pages_sample": [
+        {
+          "id": 2,
+          "title": "Bakudan links Main",
+          "slug": "bakudan-links-main",
+          "headline": "Bakudan Ramen",
+          "store_slug": null,
+          "is_active": 1,
+          "sort_order": 0,
+          "theme": null,
+          "created_at": "2026-05-29 15:36:03",
+          "updated_at": "2026-05-29 15:49:46",
+          "page_type": "link_hub",
+          "visibility": "public",
+          "status": "published",
+          "preview_token": null,
+          "scheduled_publish_at": null,
+          "staff_password_hash": null,
+          "button_count": 15
+        },
+        {
+          "id": 4,
+          "title": "Staff Training Videos",
+          "slug": "staff-training-videos",
+          "headline": "Staff Training Videos",
+          "store_slug": null,
+          "is_active": 1,
+          "sort_order": 20,
+          "theme": null,
+          "created_at": "2026-07-02 01:09:23",
+          "updated_at": "2026-07-02 01:09:23",
+          "page_type": "link_hub",
+          "visibility": "public",
+          "status": "published",
+          "preview_token": null,
+          "scheduled_publish_at": null,
+          "staff_password_hash": null,
+          "button_count": 2
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/admin/pages/2",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "page": {
+        "id": 2,
+        "title": "Bakudan links Main",
+        "slug": "bakudan-links-main",
+        "status": "published",
+        "visibility": "public",
+        "page_type": "link_hub"
+      },
+      "buttons_count": 15,
+      "buttons_sample": [
+        {
+          "id": 2,
+          "page_id": 2,
+          "label": "Order Bandera",
+          "url": "https://order.toasttab.com/online/bakudan-bandera",
+          "icon": null,
+          "sort_order": 2,
+          "is_active": 1,
+          "is_featured": 1,
+          "enabled": 1,
+          "start_at": "2026-05-29 10:38",
+          "end_at": null,
+          "created_at": "2026-05-29 15:37:36",
+          "updated_at": "2026-07-02 00:14:02",
+          "section_id": 1,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "external",
+          "internal_page_id": null,
+          "title": "Order Bandera",
+          "icon_key": null,
+          "visible": 1,
+          "section_title": "Order Online",
+          "section_key": "order",
+          "section_sort_order": 10,
+          "section_is_active": 1
+        },
+        {
+          "id": 4,
+          "page_id": 2,
+          "label": "Order Stone Oak",
+          "url": "https://order.toasttab.com/online/bakudan-ramen-stone-oak",
+          "icon": null,
+          "sort_order": 3,
+          "is_active": 1,
+          "is_featured": 1,
+          "enabled": 1,
+          "start_at": null,
+          "end_at": null,
+          "created_at": "2026-05-29 15:40:22",
+          "updated_at": "2026-07-02 00:14:02",
+          "section_id": 1,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "external",
+          "internal_page_id": null,
+          "title": "Order Stone Oak",
+          "icon_key": null,
+          "visible": 1,
+          "section_title": "Order Online",
+          "section_key": "order",
+          "section_sort_order": 10,
+          "section_is_active": 1
+        },
+        {
+          "id": 5,
+          "page_id": 2,
+          "label": "Order The Rim",
+          "url": "https://order.toasttab.com/online/bakudanramen/",
+          "icon": null,
+          "sort_order": 4,
+          "is_active": 1,
+          "is_featured": 1,
+          "enabled": 1,
+          "start_at": null,
+          "end_at": null,
+          "created_at": "2026-05-29 15:40:44",
+          "updated_at": "2026-07-02 00:14:02",
+          "section_id": 1,
+          "subtitle": null,
+          "style_variant": null,
+          "custom_icon_svg": null,
+          "opens_in_new_tab": 1,
+          "link_type": "external",
+          "internal_page_id": null,
+          "title": "Order The Rim",
+          "icon_key": null,
+          "visible": 1,
+          "section_title": "Order Online",
+          "section_key": "order",
+          "section_sort_order": 10,
+          "section_is_active": 1
+        }
+      ],
+      "sections_count": 3,
+      "sections_sample": [
+        {
+          "id": 1,
+          "page_id": 2,
+          "title": "Order Online",
+          "section_key": "order",
+          "sort_order": 10,
+          "is_active": 1,
+          "created_at": "2026-07-02 01:22:28",
+          "updated_at": "2026-07-02 01:22:28",
+          "status": "active",
+          "start_at": null,
+          "end_at": null
+        },
+        {
+          "id": 2,
+          "page_id": 2,
+          "title": "Rewards & Loyalty",
+          "section_key": "rewards",
+          "sort_order": 20,
+          "is_active": 1,
+          "created_at": "2026-07-02 01:22:28",
+          "updated_at": "2026-07-02 01:22:28",
+          "status": "active",
+          "start_at": null,
+          "end_at": null
+        },
+        {
+          "id": 3,
+          "page_id": 2,
+          "title": "Merchandise",
+          "section_key": "merchandise",
+          "sort_order": 30,
+          "is_active": 1,
+          "created_at": "2026-07-02 01:22:28",
+          "updated_at": "2026-07-02 01:22:28",
+          "status": "active",
+          "start_at": null,
+          "end_at": null
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/admin/analytics?period=30",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "views": 135,
+      "clicks": 35,
+      "ctr": 0.2593,
+      "top_buttons": [
+        {
+          "title": "Stone Oak Rewards",
+          "clicks": 8
+        },
+        {
+          "title": "Bandera Rewards",
+          "clicks": 6
+        },
+        {
+          "title": "The Rim Rewards",
+          "clicks": 4
+        },
+        {
+          "title": "Email Club & Offers",
+          "clicks": 4
+        },
+        {
+          "title": "Training Videos Coming Soon",
+          "clicks": 3
+        },
+        {
+          "title": "Text Updates & Offers",
+          "clicks": 2
+        },
+        {
+          "title": "Visit Website",
+          "clicks": 2
+        },
+        {
+          "title": "Order The Rim",
+          "clicks": 2
+        },
+        {
+          "title": "Order Stone Oak",
+          "clicks": 2
+        },
+        {
+          "title": "Order Bandera",
+          "clicks": 1
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/admin/locations",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "locations_count": 3,
+      "locations_sample": [
+        {
+          "id": 1,
+          "name": "The Rim",
+          "slug": "the-rim",
+          "address": "17619 La Cantera Pkwy",
+          "phone": null,
+          "toast_order_url": "https://order.toasttab.com/online/bakudanramen/",
+          "toast_signup_url": "https://www.toasttab.com/bakudanramen/rewardsSignup",
+          "maps_url": null,
+          "is_active": 1,
+          "sort_order": 10,
+          "created_at": "2026-07-04 00:11:36",
+          "updated_at": "2026-07-04 00:11:36"
+        },
+        {
+          "id": 2,
+          "name": "Stone Oak",
+          "slug": "stone-oak",
+          "address": "22506 US-281 N",
+          "phone": null,
+          "toast_order_url": "https://order.toasttab.com/online/bakudan-ramen-stone-oak",
+          "toast_signup_url": "https://www.toasttab.com/bakudan-ramen-stone-oak/rewardsSignup",
+          "maps_url": null,
+          "is_active": 1,
+          "sort_order": 20,
+          "created_at": "2026-07-04 00:11:36",
+          "updated_at": "2026-07-04 00:11:36"
+        },
+        {
+          "id": 3,
+          "name": "Bandera",
+          "slug": "bandera",
+          "address": "11309 Bandera Rd",
+          "phone": null,
+          "toast_order_url": "https://order.toasttab.com/online/bakudan-bandera",
+          "toast_signup_url": "https://www.toasttab.com/bakudan-bandera/rewardsSignup",
+          "maps_url": null,
+          "is_active": 1,
+          "sort_order": 30,
+          "created_at": "2026-07-04 00:11:36",
+          "updated_at": "2026-07-04 00:11:36"
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/admin/link-health",
+    "status": 200,
+    "ok": true,
+    "json_summary": {
+      "ok": true,
+      "message": null,
+      "results": []
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/admin/audit-log",
+    "status": 404,
+    "ok": false,
+    "json_summary": {
+      "ok": false,
+      "message": "Not found."
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/admin/pages/2/buttons",
+    "status": 400,
+    "ok": false,
+    "json_summary": {
+      "ok": false,
+      "message": "External destinations must be a valid https:// URL."
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/admin/pages/2/buttons",
+    "status": 400,
+    "ok": false,
+    "json_summary": {
+      "ok": false,
+      "message": "YouTube destinations must be a youtube.com or youtu.be URL."
+    }
+  }
+]

@@ -1,0 +1,155 @@
+{
+  "browserPlugin": "invocation_failed_fallback_chrome",
+  "publicScreenshots": [
+    {
+      "name": "public-links-desktop",
+      "url": "https://www.bakudanramen.com/links/?audit=20260704",
+      "viewport": {
+        "width": 1365,
+        "height": 920
+      },
+      "screenshot": "D:/Project/Master/Bakudan/bakudanramen.com-current/evidence/screenshots/public-links-desktop.png",
+      "textSample": "爆 Bakudan Ramen ORDER ONLINE Order Bandera 11309 Bandera Rd Order Stone Oak 22506 US-281 N Order The Rim 17619 La Cantera Pkwy REWARDS & LOYALTY Stone Oak Rewards Earn rewards at Stone Oak The Rim Rewards Earn rewards at The Rim Bandera Rewards Earn rewards at Bandera Follow on Instagram Email Club ",
+      "logs": [],
+      "errors": [],
+      "failedResponses": []
+    },
+    {
+      "name": "public-links-iphone",
+      "url": "https://www.bakudanramen.com/links/?audit=20260704",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "D:/Project/Master/Bakudan/bakudanramen.com-current/evidence/screenshots/public-links-iphone.png",
+      "textSample": "爆 Bakudan Ramen ORDER ONLINE Order Bandera 11309 Bandera Rd Order Stone Oak 22506 US-281 N Order The Rim 17619 La Cantera Pkwy REWARDS & LOYALTY Stone Oak Rewards Earn rewards at Stone Oak The Rim Rewards Earn rewards at The Rim Bandera Rewards Earn rewards at Bandera Follow on Instagram Email Club ",
+      "logs": [],
+      "errors": [],
+      "failedResponses": []
+    },
+    {
+      "name": "public-links-android",
+      "url": "https://www.bakudanramen.com/links/?audit=20260704",
+      "viewport": {
+        "width": 412,
+        "height": 915
+      },
+      "screenshot": "D:/Project/Master/Bakudan/bakudanramen.com-current/evidence/screenshots/public-links-android.png",
+      "textSample": "爆 Bakudan Ramen ORDER ONLINE Order Bandera 11309 Bandera Rd Order Stone Oak 22506 US-281 N Order The Rim 17619 La Cantera Pkwy REWARDS & LOYALTY Stone Oak Rewards Earn rewards at Stone Oak The Rim Rewards Earn rewards at The Rim Bandera Rewards Earn rewards at Bandera Follow on Instagram Email Club ",
+      "logs": [],
+      "errors": [],
+      "failedResponses": []
+    }
+  ],
+  "adminRoutes": [
+    {
+      "name": "Dashboard",
+      "route": "/dashboard",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Dashboard View Public Si"
+    },
+    {
+      "name": "Project",
+      "route": "/project",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Project Overview View Pu"
+    },
+    {
+      "name": "Pages",
+      "route": "/pages",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Pages & Buttons View Pub"
+    },
+    {
+      "name": "Page Editor",
+      "route": "/pages/2",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Pages & Buttons View Pub"
+    },
+    {
+      "name": "Scheduling",
+      "route": "/scheduling",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Scheduling View Public S"
+    },
+    {
+      "name": "Blog",
+      "route": "/blog",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Blog View Public Site ad"
+    },
+    {
+      "name": "Analytics",
+      "route": "/analytics",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Analytics View Public Si"
+    },
+    {
+      "name": "Locations",
+      "route": "/locations",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Locations View Public Si"
+    },
+    {
+      "name": "Link Health",
+      "route": "/link-health",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Link Health View Public "
+    },
+    {
+      "name": "Audit Log",
+      "route": "/audit-log",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Audit Log View Public Si"
+    },
+    {
+      "name": "Settings",
+      "route": "/settings",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Settings View Public Sit"
+    },
+    {
+      "name": "Users",
+      "route": "/users",
+      "pass": true,
+      "red": [],
+      "logs": [],
+      "errors": [],
+      "textSample": "爆 LINKS HUB Marketing Admin A Administrator Super Admin Version: v3.0.2-lite Last deploy: — MAIN Dashboard Project Overview Pages & Buttons Scheduling CONTENT Blog Analytics Locations ADMIN Link Health Audit Log Settings Users Sign Out Users View Public Site a"
+    }
+  ],
+  "youtubeInAdminEditor": true
+}

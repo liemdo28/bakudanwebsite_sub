@@ -1,0 +1,24 @@
+AuthType Basic
+AuthName "Bakudan Private"
+AuthUserFile /home/dh_d5ng5e/rim.bakudanramen.com/.htpasswd
+Require valid-user
+
+# ── SEO 404 Fix — Phase 23E (2026-06-24) ─────────────────────────────────────
+# Redirect clean URLs → .html files (Apache DirectoryIndex doesn't handle these)
+Options +FollowSymlinks
+RewriteEngine On
+
+# Clean URL rewrites — /about → /about.html
+RewriteRule ^about/?$         /about.html         [R=301,L]
+RewriteRule ^privacy/?$       /privacy.html       [R=301,L]
+RewriteRule ^privacy-policy/?$ /privacy.html      [R=301,L]
+RewriteRule ^terms/?$         /terms.html         [R=301,L]
+RewriteRule ^terms-of-service/?$ /terms.html      [R=301,L]
+RewriteRule ^happy-hour/?$    /happy-hour.html    [R=301,L]
+RewriteRule ^menu/?$          /menu.html          [R=301,L]
+RewriteRule ^blog/?$          /blog.html          [R=301,L]
+
+# Missing pages — redirect to nearest equivalent
+RewriteRule ^gift-cards?/?$   /order              [R=301,L]
+RewriteRule ^loyalty/?$       /order              [R=301,L]
+RewriteRule ^drinks/?$        /menu.html          [R=301,L]

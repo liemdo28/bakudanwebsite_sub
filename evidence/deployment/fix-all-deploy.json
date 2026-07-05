@@ -1,0 +1,10 @@
+{
+  "backup_dir": "/home/hoale24new/bakudan-deploy-backups/20260704-083434-fix-all-ui-api",
+  "php_lint": "No syntax errors detected in /home/hoale24new/bakudanramen.com/api/index.php.codex-tmp-20260704-083434",
+  "files": [
+    "api/index.php",
+    "links-admin/app.js",
+    "links-admin/index.html",
+    ".htaccess"
+  ]
+}

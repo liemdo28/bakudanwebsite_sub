@@ -1,0 +1,61 @@
+Staff Training Fix — Live Production API Verification Log
+Captured via SSH (paramiko) -> curl -sL against https://www.bakudanramen.com from the
+DreamHost host itself, on 2026-07-04. Not a browser network panel — this sandbox's
+preview browser tool cannot navigate to external live domains, so verification was
+done at the HTTP/API level directly instead (see STAFF_TRAINING_DEPLOYMENT_REPORT.md
+for why, and what still needs a manual browser check).
+
+=== 1. Customer hub — GET /api/public/links/bakudan-links-main ===
+Request:  GET https://www.bakudanramen.com/api/public/links/bakudan-links-main
+Result:   HTTP 200, ok:true
+Buttons returned (title | link_type | url):
+  Order Bandera | external | https://order.toasttab.com/online/bakudan-bandera
+  Order Stone Oak | external | https://order.toasttab.com/online/bakudan-ramen-stone-oak
+  Order The Rim | external | https://order.toasttab.com/online/bakudanramen/
+  Stone Oak Rewards | external | https://www.toasttab.com/bakudan-ramen-stone-oak/rewardsSignup
+  The Rim Rewards | external | https://www.toasttab.com/bakudanramen/rewardsSignup
+  Bandera Rewards | external | https://www.toasttab.com/bakudan-bandera/rewardsSignup
+  Follow on Instagram | external | https://www.instagram.com/bakudanramen/
+  Email Club & Offers | website | https://www.bakudanramen.com/marketing-signup/
+  Facebook | external | https://www.facebook.com/profile.php?id=61583741613406
+  Visit Website | external | https://www.bakudanramen.com/
+youtube-linked buttons present: 0  <-- confirms training videos are gone from customer hub
+
+=== 2. Staff Training — GET /api/public/links/staff-training-videos (no token) ===
+Request:  GET https://www.bakudanramen.com/api/public/links/staff-training-videos
+Result:   HTTP 403
+Body:     {"ok":false,"message":"This page requires a staff access link.","error":"This page requires a staff access link."}
+Confirms: page is gated (visibility=staff_only), not publicly viewable without the token.
+
+=== 3. Staff Training — GET /api/public/links/staff-training-videos?token=<preview_token> ===
+Request:  GET https://www.bakudanramen.com/api/public/links/staff-training-videos?token=17c2eb3a60f84a51c6c0918d444b319697c7b9955a38a7ac
+Result:   HTTP 200, ok:true
+page.visibility: staff_only
+page.page_type:  staff_training
+page.show_on_hub: 0
+Buttons returned:
+  YouTube Short: Bakudan Ramen 1 | youtube | https://youtube.com/shorts/_qfiQL9phTk?is=UgYZuaCDNzpVLKwJ
+  YouTube Short: Bakudan Ramen 2 | youtube | https://youtube.com/shorts/9tZobv-gB4A?is=MIECFTu1FBke9_mm
+Section: "Training Videos"
+
+=== 4. Public page directory — GET /api/public/pages/all ===
+Request:  GET https://www.bakudanramen.com/api/public/pages/all
+Result:   HTTP 200
+Body:     {"ok":true,"pages":[{"id":2,"title":"Bakudan links Main","slug":"bakudan-links-main", ...}]}
+Confirms: staff-training-videos does NOT appear in the public page directory (show_on_hub=0 filter working).
+
+=== 5. Schema/migration verification (direct DB inspection, read-only download) ===
+buttons.link_type column present: True
+pages.page_type column present:   True
+locations table present:          True
+settings.migration_staff_training_v1 = '1'
+settings.migration_staff_training_v2 = '1'
+
+=== Known gap ===
+No browser DevTools console/network panel capture exists for the LIVE
+bakudanramen.com domain — the sandboxed preview browser used in this session can
+only navigate to servers it starts locally, not external live sites. All checks
+above were done via direct HTTPS requests instead, which verify the same
+underlying behavior (data returned, gating enforced) but are not a substitute for
+opening the real page in a real browser. Recommend the user does one real-browser
+pass per STAFF_TRAINING_TEST_RESULTS.md's "Manual verification still needed" section.

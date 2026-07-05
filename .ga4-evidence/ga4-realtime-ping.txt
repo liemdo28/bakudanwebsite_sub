@@ -1,0 +1,26 @@
+============================================================ 
+============================================================ 
+ 
+[PING 1] HOMEPAGE: 
+  URL : https://www.google-analytics.com/g/collect?v=2^&tid=G-3GZ2RYDR6M^&cid=11111111-aaaa-bbbb-cccc-222222222222^&en=page_view^&dl=https://bakudanramen.com/^&dt=Best0Ramen0in0San0Antonio0|0Bakudan0Ramen0--030Locations^&sid=1700000000001^&_s=1^&seg=1 
+   STATUS: HTTP/204  BYTES: 0 
+[PING 2] MENU: 
+  URL : https://www.google-analytics.com/g/collect?v=2^&tid=G-3GZ2RYDR6M^&cid=22222222-aaaa-bbbb-cccc-333333333333^&en=page_view^&dl=https://bakudanramen.com/menu.html^&dt=Menu0-0Bakudan0Ramen0|0Authentic0Japanese0Ramen0in0San0Antonio^&sid=1700000000002^&_s=1 
+   STATUS: HTTP/204  BYTES: 0 
+[PING 3] LOCATIONS: 
+  URL : https://www.google-analytics.com/g/collect?v=2^&tid=G-3GZ2RYDR6M^&cid=33333333-aaaa-bbbb-cccc-444444444444^&en=page_view^&dl=https://bakudanramen.com/locations.html^&dt=Locations0-0Bakudan0Ramen^&sid=1700000000003^&_s=1 
+   STATUS: HTTP/204  BYTES: 0 
+[PING 4] ORDER: 
+  URL : https://www.google-analytics.com/g/collect?v=2^&tid=G-3GZ2RYDR6M^&cid=44444444-aaaa-bbbb-cccc-555555555555^&en=page_view^&dl=https://bakudanramen.com/order.html^&dt=Order0Bakudan0Ramen0|0Pickup060Delivery0in0San0Antonio^&sid=1700000000004^&_s=1 
+   STATUS: HTTP/204  BYTES: 0 
+[PING 5] CATERING/FUNDRAISER: 
+  URL : https://www.google-analytics.com/g/collect?v=2^&tid=G-3GZ2RYDR6M^&cid=55555555-aaaa-bbbb-cccc-666666666666^&en=page_view^&dl=https://bakudanramen.com/fundraiser.html^&dt=Fundraiser0Program0-0Bakudan0Ramen^&sid=1700000000005^&_s=1 
+   STATUS: HTTP/204  BYTES: 0 
+[PING 6] REWARDS/LOYALTY (about): 
+  URL : https://www.google-analytics.com/g/collect?v=2^&tid=G-3GZ2RYDR6M^&cid=66666666-aaaa-bbbb-cccc-777777777777^&en=page_view^&dl=https://bakudanramen.com/about.html^&dt=Our0Story0-0Bakudan0Ramen0|0Rewards060Loyalty^&sid=1700000000006^&_s=1 
+   STATUS: HTTP/204  BYTES: 0 
+[PING 7] CONTACT/BLOG: 
+  URL : https://www.google-analytics.com/g/collect?v=2^&tid=G-3GZ2RYDR6M^&cid=77777777-aaaa-bbbb-cccc-888888888888^&en=page_view^&dl=https://bakudanramen.com/blog.html^&dt=Blog0-0Contact0Bakudan0Ramen^&sid=1700000000007^&_s=1 
+   STATUS: HTTP/204  BYTES: 0 
+============================================================ 
+============================================================ 

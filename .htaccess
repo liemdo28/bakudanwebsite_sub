@@ -1,12 +1,10 @@
-AuthType Basic
-AuthName "Bakudan Private"
-AuthUserFile /home/dh_d5ng5e/rim.bakudanramen.com/.htpasswd
-Require valid-user
-
 # ── SEO 404 Fix — Phase 23E (2026-06-24) ─────────────────────────────────────
 # Redirect clean URLs → .html files (Apache DirectoryIndex doesn't handle these)
 Options +FollowSymlinks
 RewriteEngine On
+
+# Shortlinks / QR destinations
+RewriteRule ^go/([^/?#]+)/?$ /api/public/shortlinks/$1 [QSA,L]
 
 # Clean URL rewrites — /about → /about.html
 RewriteRule ^about/?$         /about.html         [R=301,L]

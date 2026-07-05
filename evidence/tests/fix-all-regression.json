@@ -1,0 +1,204 @@
+[
+  {
+    "name": "login",
+    "status": 200,
+    "ok": true,
+    "message": null
+  },
+  {
+    "name": "create_shortlink",
+    "status": 200,
+    "ok": true,
+    "message": null,
+    "slug": "codex-audit-083558",
+    "short_url": "https://bakudanramen.com/go/codex-audit-083558",
+    "qr_url": "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https%3A%2F%2Fbakudanramen.com%2Fgo%2Fcodex-audit-083558",
+    "destination": "https://example.com/first",
+    "is_active": 1
+  },
+  {
+    "name": "go_redirect_initial",
+    "status": 404,
+    "ok": false,
+    "message": "Not found."
+  },
+  {
+    "name": "update_shortlink_destination",
+    "status": 200,
+    "ok": true,
+    "message": null,
+    "shortlink": {
+      "id": 1,
+      "slug": "codex-audit-083558",
+      "destination": "https://example.com/second",
+      "label": "Codex Audit QR Updated",
+      "utm_source": "codex",
+      "utm_medium": null,
+      "utm_campaign": null,
+      "clicks": 0,
+      "is_active": 1,
+      "created_at": "2026-07-04 01:36:00",
+      "updated_at": "2026-07-04 01:36:02",
+      "qr_url": "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https%3A%2F%2Fbakudanramen.com%2Fgo%2Fcodex-audit-083558",
+      "short_url": "https://bakudanramen.com/go/codex-audit-083558"
+    },
+    "slug": "codex-audit-083558",
+    "short_url": "https://bakudanramen.com/go/codex-audit-083558",
+    "qr_url": "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https%3A%2F%2Fbakudanramen.com%2Fgo%2Fcodex-audit-083558",
+    "destination": "https://example.com/second",
+    "is_active": 1
+  },
+  {
+    "name": "go_redirect_updated",
+    "status": 404,
+    "ok": false,
+    "message": "Not found."
+  },
+  {
+    "name": "disable_shortlink",
+    "status": 200,
+    "ok": true,
+    "message": null,
+    "shortlink": {
+      "id": 1,
+      "slug": "codex-audit-083558",
+      "destination": "https://example.com/second",
+      "label": "Codex Audit QR Updated",
+      "utm_source": "codex",
+      "utm_medium": null,
+      "utm_campaign": null,
+      "clicks": 0,
+      "is_active": 0,
+      "created_at": "2026-07-04 01:36:00",
+      "updated_at": "2026-07-04 01:36:04",
+      "qr_url": "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https%3A%2F%2Fbakudanramen.com%2Fgo%2Fcodex-audit-083558",
+      "short_url": "https://bakudanramen.com/go/codex-audit-083558"
+    },
+    "slug": "codex-audit-083558",
+    "short_url": "https://bakudanramen.com/go/codex-audit-083558",
+    "qr_url": "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https%3A%2F%2Fbakudanramen.com%2Fgo%2Fcodex-audit-083558",
+    "destination": "https://example.com/second",
+    "is_active": 0
+  },
+  {
+    "name": "go_disabled_404",
+    "status": 404,
+    "ok": false,
+    "message": "Not found."
+  },
+  {
+    "name": "delete_shortlink",
+    "status": 200,
+    "ok": true,
+    "message": null
+  },
+  {
+    "name": "invalid_shortlink_rejected",
+    "status": 400,
+    "ok": false,
+    "message": "Shortlink destination must be a valid https:// URL."
+  },
+  {
+    "name": "list_shortlinks",
+    "status": 200,
+    "ok": true,
+    "message": null,
+    "shortlinks_count": 0,
+    "shortlinks_sample": []
+  },
+  {
+    "name": "rerun_link_health",
+    "status": 200,
+    "ok": true,
+    "message": null,
+    "checked": 14
+  },
+  {
+    "name": "link_health_after_fix",
+    "status": 200,
+    "ok": true,
+    "message": null,
+    "results_count": 14,
+    "results_sample": [
+      {
+        "id": 27,
+        "button_id": 22,
+        "url": "https://youtube.com/shorts/9tZobv-gB4A?is=MIECFTu1FBke9_mm",
+        "status": "redirected",
+        "http_code": 301,
+        "checked_at": "2026-07-04 01:36:18",
+        "label": "YouTube Short: Bakudan Ramen 2",
+        "page_id": 2
+      },
+      {
+        "id": 26,
+        "button_id": 21,
+        "url": "https://youtube.com/shorts/_qfiQL9phTk?is=UgYZuaCDNzpVLKwJ",
+        "status": "redirected",
+        "http_code": 301,
+        "checked_at": "2026-07-04 01:36:16",
+        "label": "YouTube Short: Bakudan Ramen 1",
+        "page_id": 2
+      },
+      {
+        "id": 20,
+        "button_id": 8,
+        "url": "https://www.facebook.com/profile.php?id=61583741613406",
+        "status": "redirected",
+        "http_code": 302,
+        "checked_at": "2026-07-04 01:36:14",
+        "label": "Facebook",
+        "page_id": 2
+      },
+      {
+        "id": 16,
+        "button_id": 2,
+        "url": "https://order.toasttab.com/online/bakudan-bandera",
+        "status": "needs_review",
+        "http_code": 403,
+        "checked_at": "2026-07-04 01:36:13",
+        "label": "Order Bandera",
+        "page_id": 2
+      },
+      {
+        "id": 17,
+        "button_id": 4,
+        "url": "https://order.toasttab.com/online/bakudan-ramen-stone-oak",
+        "status": "needs_review",
+        "http_code": 403,
+        "checked_at": "2026-07-04 01:36:13",
+        "label": "Order Stone Oak",
+        "page_id": 2
+      },
+      {
+        "id": 18,
+        "button_id": 5,
+        "url": "https://order.toasttab.com/online/bakudanramen/",
+        "status": "needs_review",
+        "http_code": 403,
+        "checked_at": "2026-07-04 01:36:13",
+        "label": "Order The Rim",
+        "page_id": 2
+      }
+    ]
+  },
+  {
+    "name": "public_links_smoke",
+    "status": 200,
+    "ok": true,
+    "message": null,
+    "page": {
+      "slug": "bakudan-links-main",
+      "status": "published",
+      "visibility": "public",
+      "page_type": "link_hub"
+    },
+    "buttons_count": 12
+  },
+  {
+    "name": "admin_dashboard_smoke",
+    "status": 200,
+    "ok": true,
+    "message": null
+  }
+]

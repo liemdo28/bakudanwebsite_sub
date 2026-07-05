@@ -1,0 +1,21 @@
+{
+  "timestamp": "20260704-075706",
+  "remote_backup_dir": "/home/hoale24new/bakudan-deploy-backups/20260704-075706-linkhub2-audit",
+  "stdout": "backup complete",
+  "stderr": "",
+  "backup_files": [
+    "/home/hoale24new/bakudan-deploy-backups/20260704-075706-linkhub2-audit/source/api-index.php|89884|2026-07-03 17:10:56.7541427250",
+    "/home/hoale24new/bakudan-deploy-backups/20260704-075706-linkhub2-audit/source/links-index.html|19861|2026-07-01 18:22:07.1776652790",
+    "/home/hoale24new/bakudan-deploy-backups/20260704-075706-linkhub2-audit/source/links-admin-index.html|2616|2026-07-03 17:51:08.7188914390",
+    "/home/hoale24new/bakudan-deploy-backups/20260704-075706-linkhub2-audit/source/links-admin-app.js|130202|2026-07-03 17:51:03.1907704250",
+    "/home/hoale24new/bakudan-deploy-backups/20260704-075706-linkhub2-audit/bakudan.db|155648|2026-07-03 17:53:39.7781998690"
+  ],
+  "live_hashes": [
+    "09b41d846db23d9844733ce28d0554a1d191d84a01b7e3f17187d6b1c192ed1a  /home/hoale24new/bakudan-app/data/bakudan.db",
+    "24edf5be9bcda82584da8355977222b4ca7eb84b0589d9bdf743606eaa6838a4  /home/hoale24new/bakudanramen.com/api/index.php",
+    "2e79d47d3e7c51457e59238b3286214cbb97496e5ec7e424afbc79fb4f286727  /home/hoale24new/bakudanramen.com/links/index.html",
+    "dc42ef25ae158659e6781214661444828cbbb8873197b93639ac75bb15e50998  /home/hoale24new/bakudanramen.com/links-admin/index.html",
+    "a29256ad93fe581e7d1c020bd0b993b28fd1317817fc967afcf87a677c8392f5  /home/hoale24new/bakudanramen.com/links-admin/app.js"
+  ],
+  "route_grep": "api route exists: 450:// directly (e.g. /api/admin/pages, /api/public/links/{slug}). Legacy\r\n564:if ($path === '/admin/dashboard' && $METHOD === 'GET') {\r\n591:if ($path === '/admin/pages' && $METHOD === 'GET') {\r\n596:if ($path === '/admin/pages' && $METHOD === 'POST') {\r\n615:if (preg_match('#^/admin/pages/(\\d+)$#', $path, $m)) {\r\n655:if (preg_match('#^/admin/pages/(\\d+)/duplicate$#', $path, $m) && $METHOD === 'POST') {\r\n694:if (preg_match('#^/admin/pages/(\\d+)/publish$#', $path, $m) && $METHOD === 'POST') {\r\n724:if (preg_match('#^/admin/pages/(\\d+)/unpublish$#', $path, $m) && $METHOD === 'POST') {\r\n733:if (preg_match('#^/admin/pages/(\\d+)/schedule$#', $path, $m) && $METHOD === 'POST') {\r\n744:if (preg_match('#^/admin/pages/(\\d+)/generate-preview-token$#', $path, $m) && $METHOD === 'POST') {\r\n752:if (preg_match('#^/admin/pages/(\\d+)/versions$#', $path, $m) && $METHOD === 'GET') {\r\n757:if (preg_match('#^/admin/pages/(\\d+)/rollback/(\\d+)$#', $path, $m) && $METHOD === 'POST') {\r\n795:if (preg_match('#^/admin/pages/(\\d+)/sections$#', $path, $m)) {\r\n839:if (preg_match('#^/admin/pages/(\\d+)/buttons$#', $path, $m)) {\r\n863:if (preg_match('#^/admin/pages/(\\d+)/buttons/reorder$#', $path, $m) && ($METHOD === 'PATCH' || $METHOD === 'POST')) {\r\n924:if (preg_match('#^/admin/pages/(\\d+)/redirects$#', $path, $m)) {\r\n1093:if (preg_match('#^/admin/pages/(\\d+)/analytics$#', $path, $m) && $METHOD === 'GET') {\r\n1374:// Public SPA calls /api/public/links/{slug} with response shape:\r\n1396:if (preg_match('#^/public/links/preview/(.+)$#', $path, $m) && $METHOD === 'GET') {\r\n1415:if (preg_match('#^/public/links/(.+)$#', $path, $m) && $METHOD === 'GET') {\r\n"
+}

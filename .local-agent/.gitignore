@@ -1,0 +1,8 @@
+# local-agent internal files — do not commit
+logs/
+index/
+memory/
+backups/
+patches/
+reports/
+*.tmp

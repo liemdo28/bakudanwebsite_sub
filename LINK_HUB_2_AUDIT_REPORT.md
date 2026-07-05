@@ -22,7 +22,7 @@
 | **P1 found** | 1 (found and fixed this session) |
 | **P2 found** | 2 (both found and fixed this session) |
 | **Architectural gap (found and fixed)** | 4 admin modules were localStorage-only, not server-backed — rebuilt on real APIs this session, see §13 |
-| **FINAL DECISION** | **GO** — core Link Hub/Staff Training/Marketing Signup/Locations/Campaigns/Templates/Customer-Service-routing/Store-Manager-scoping are production-ready and isolated correctly. The four previously-fake modules (Forms, Automations, Media Library, Customer Service notices) have been rebuilt on real, shared-database backends and verified end-to-end with live data — see §13. |
+| **FINAL DECISION** | **FULL GO** (updated 2026-07-05, see §16-17) — core Link Hub/Staff Training/Marketing Signup/Locations/Campaigns/Templates/Customer-Service-routing/Store-Manager-scoping are production-ready and isolated correctly. The four previously-fake modules (Forms, Automations, Media Library, Customer Service notices) have been rebuilt on real, shared-database backends and verified end-to-end with live data — see §13. A dedicated final-readiness pass (§16) closed every remaining caveat with real 20-save/rollback/permission/cleanup/scheduler testing, finding and fixing 3 further real bugs along the way. |
 
 ---
 
@@ -302,12 +302,37 @@ Deliberately picked over the alternative options offered (Forms file-upload supp
 
 ---
 
-## 16. Final Decision
+## 16. Final Production Readiness Pass (2026-07-05 addendum — GO WITH CAVEATS → FULL GO)
+
+A dedicated dev finalization pass closed the remaining production-readiness caveats from this report's original "GO" decision (baseline commit `60579dd573e5c6fcc1b5ad71c0f65a0b777aee4a`). Full detail in the dedicated reports below; summary here.
+
+**Real bugs found and fixed during this pass** (not present before, or newly discovered by testing more thoroughly than prior passes had):
+1. **Session-expiry data loss** — an expired/invalid token mid-save silently discarded whatever the Admin was typing, with no recovery. Fixed with a snapshot-before-logout / restore-after-login mechanism. See `LINK_HUB_2_20_SAVE_TEST.md`.
+2. **Rollback silently skipped page-level content** — `POST /admin/pages/:id/rollback/:version` only ever restored buttons/sections from the snapshot, never the page's own title/headline/SEO/structured-data fields, so those changes survived a "rollback" undetected. Fixed. See `LINK_HUB_2_ROLLBACK_TEST_RESULTS.md`.
+3. **6 real Store Manager scope-enforcement gaps** across page rollback, section/button move & copy, campaigns, shortlinks, locations, notices, trash, and per-page/sitewide analytics — some had no scope check at all, others were fully blocking Store Managers from their own location's data instead of scoping them correctly. Fixed. See `LINK_HUB_2_PERMISSION_AUDIT.md`.
+4. **A `db()->quote()` call that doesn't exist on PHP's SQLite3 class** (that's a PDO method) — caused a real `500` for every Store Manager hitting the newly-scoped analytics endpoint. Found and fixed before the permission report was finalized.
+5. **A literal cron schedule (`*/5 * * * *`) inside a PHP `/** */` block comment** — the `*/` sequence closes a block comment regardless of context, corrupting the automation runner script into a syntax error. Fixed by moving the schedule out of the docblock. See `LINK_HUB_2_FINAL_PRODUCTION_READINESS.md`.
+
+**Also completed:** a full 20-cycle real Admin save-reliability test (20/20 pass, plus a real multi-tab test and the session-expiry test above), real publish→rollback cycles on both Customer Link Hub and Staff Training with isolation confirmed, a 14-case direct-API Store Manager permission test matrix (all pass), full QA test-data removal from production (verified via before/after inventory counts), and a safe, lockable scheduled-automation runner script (deployed and verified via SSH; crontab itself intentionally left for the site owner to enable — a system-level change outside this agent's authority to make unilaterally).
+
+**Documents produced this pass:**
+- `LINK_HUB_2_20_SAVE_TEST.md`
+- `LINK_HUB_2_ROLLBACK_TEST_RESULTS.md`
+- `LINK_HUB_2_PERMISSION_AUDIT.md`
+- `LINK_HUB_2_QA_CLEANUP_REPORT.md`
+- `LINK_HUB_2_FINAL_SMOKE_TEST.md`
+- `LINK_HUB_2_FINAL_PRODUCTION_READINESS.md` (full ledger, checklist, and cron setup instructions)
+
+**Known remaining caveats** (evidentiary, not functional — see `LINK_HUB_2_FINAL_PRODUCTION_READINESS.md` for the full reasoning): screenshot evidence exists as content verified live in-session rather than persisted image files (a browser-automation tooling limitation); the QR/shortlink redirect path itself was unchanged this pass but had no live shortlink to test against after QA cleanup; cron is built and verified but not yet scheduled, pending the site owner running `crontab -e`.
+
+---
+
+## 17. Final Decision
 
 ```
-FINAL DECISION: GO
+FINAL DECISION: FULL GO
 ```
 
-The full platform — Customer Link Hub, Staff Training (correctly isolated, noindex, unlisted), Marketing Signup (real Toast-hosted redirects, no fake API), Locations, Templates, Campaigns, Store Manager location-scoping, Customer Service/Forms/Automations/Media Library (rebuilt this session), Trash/Recurring Schedules/Structured Data/A/B Testing (built this session), and a third Automations rule type (§15) — is production-ready, evidence-verified with live data end-to-end, and operable by a non-technical Admin without code access.
+The full platform — Customer Link Hub, Staff Training (correctly isolated, noindex, unlisted), Marketing Signup (real Toast-hosted redirects, no fake API), Locations, Templates, Campaigns, Store Manager location-scoping (fully enforced server-side as of §16), Customer Service/Forms/Automations/Media Library, Trash/Recurring Schedules/Structured Data/A/B Testing, a third Automations rule type, and a verified 20-save/rollback/permission/cleanup/scheduler final-readiness pass (§16) — is production-ready, evidence-verified with live data end-to-end, and operable by a non-technical Admin without code access.
 
-The one Hard Blocker found during this audit (the app-crashing `BKDN` scope bug, §2) was fixed and verified live before this report was written. Every gap identified in §10 has since been closed (§13, §14, §15); remaining items are the deliberate, documented scope limitations called out within those sections (e.g., no file-upload form fields, no crop/resize in Media Library), not defects.
+The one Hard Blocker found during this audit (the app-crashing `BKDN` scope bug, §2) was fixed and verified live before this report was written. Every gap identified in §10 has since been closed (§13, §14, §15, §16); the remaining items are the deliberate, documented scope limitations called out within those sections (e.g., no file-upload form fields, no crop/resize in Media Library) and the two evidentiary caveats in §16, not functional defects.

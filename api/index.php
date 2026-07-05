@@ -1228,8 +1228,26 @@ if (preg_match('#^/admin/pages/(\d+)/rollback/(\d+)$#', $path, $m) && $METHOD ==
             run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [$pid,$newSectionId,$b['label'],$b['url'],$b['link_type']??'external',$b['internal_page_id']??null,$b['icon']??null,$b['subtitle']??null,$b['style_variant']??null,$b['custom_icon_svg']??null,$b['opens_in_new_tab']??1,$b['sort_order']??0,$b['is_active']??1,$b['is_featured']??0,$b['enabled']??1,$b['start_at']??null,$b['end_at']??null]);
         }
-        // Rollback itself becomes a new version so history stays append-only
-        $newSnapshot = ['page' => $page, 'sections' => q("SELECT * FROM link_sections WHERE page_id=?", [$pid]), 'buttons' => q("SELECT * FROM buttons WHERE page_id=?", [$pid])];
+        // Restore page-level CONTENT fields from the snapshot too — a prior bug
+        // here meant rollback only ever reverted buttons/sections, silently
+        // leaving title/headline/SEO/structured-data changes made after that
+        // version live. Deliberately excludes operational/config fields
+        // (slug, store_slug, visibility, status, is_active, allow_indexing,
+        // show_on_hub, preview_token, scheduled_publish_at) since those
+        // reflect the admin's current configuration choices, not "content",
+        // and rolling them back could unexpectedly hide/reassign the page.
+        $snapPage = $data['page'] ?? [];
+        if ($snapPage) {
+            run("UPDATE pages SET title=?,headline=?,theme=?,seo_title=?,meta_description=?,og_image=?,canonical_url=?,structured_data_type=?,structured_data_json=?,updated_at=datetime('now') WHERE id=?",
+                [$snapPage['title'] ?? $page['title'], $snapPage['headline'] ?? null, $snapPage['theme'] ?? null,
+                 $snapPage['seo_title'] ?? null, $snapPage['meta_description'] ?? null, $snapPage['og_image'] ?? null,
+                 $snapPage['canonical_url'] ?? null, $snapPage['structured_data_type'] ?? null, $snapPage['structured_data_json'] ?? null,
+                 $pid]);
+        }
+        // Rollback itself becomes a new version so history stays append-only.
+        // Re-fetch the page row here (not the stale pre-rollback $page) so this
+        // new version snapshot reflects the content we just rolled back to.
+        $newSnapshot = ['page' => q1("SELECT * FROM pages WHERE id=?", [$pid]), 'sections' => q("SELECT * FROM link_sections WHERE page_id=?", [$pid]), 'buttons' => q("SELECT * FROM buttons WHERE page_id=?", [$pid])];
         $lastVersion = (int)db()->querySingle("SELECT COALESCE(MAX(version_number),0) FROM page_versions WHERE page_id=$pid");
         run("INSERT INTO page_versions (page_id,version_number,snapshot_json,published_by) VALUES (?,?,?,?)",
             [$pid, $lastVersion + 1, json_encode($newSnapshot), $user['id']]);

@@ -30,3 +30,15 @@ build/
 
 # Logs
 *.log
+
+# Python scratch/cache
+__pycache__/
+*.pyc
+
+# One-off local scratch scripts and their debug output (not part of the app)
+*_out.txt
+data.py
+
+# Local-only deploy safety net (timestamped pre-deploy backups, DB snapshots)
+scripts/_deploy_backups/
+scripts/_backup_*.html

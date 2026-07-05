@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, follow">
+<title>Bakudan Ramen — Form</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: 'Noto Sans JP', system-ui, sans-serif;
+  background: #111;
+  color: #fafafa;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px 60px;
+}
+.form-container { width: 100%; max-width: 460px; }
+.form-logo { text-align: center; margin-bottom: 24px; }
+.form-logo-icon {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: linear-gradient(135deg, #EC4A5E, #A01830);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 36px; margin-bottom: 14px;
+  box-shadow: 0 4px 24px rgba(236,74,94,.3);
+}
+.form-heading { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 1px; color: #fff; line-height: 1.2; }
+.form-description { font-size: 13px; color: #aaa; margin-top: 10px; line-height: 1.5; }
+
+.field-group { margin-top: 18px; }
+.field-label { display: block; font-size: 12px; font-weight: 700; letter-spacing: .4px; color: #ccc; margin-bottom: 6px; }
+.field-label .req { color: #EC4A5E; }
+.field-input, .field-textarea, .field-select {
+  width: 100%; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
+  border-radius: 8px; padding: 12px 14px; color: #fafafa; font-size: 14px; font-family: inherit; outline: none;
+  transition: border-color .2s;
+}
+.field-input:focus, .field-textarea:focus, .field-select:focus { border-color: #EC4A5E; }
+.field-textarea { resize: vertical; min-height: 90px; }
+.field-radio-row, .field-checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; color: #ddd; }
+
+.submit-btn {
+  width: 100%; margin-top: 26px; padding: 16px 18px; border-radius: 12px;
+  background: #EC4A5E; color: #fff; border: none; font-family: inherit;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(236,74,94,.35); transition: all .18s;
+}
+.submit-btn:disabled { background: rgba(255,255,255,.08); color: #666; box-shadow: none; cursor: not-allowed; }
+.submit-btn:not(:disabled):hover { background: #c73a4c; transform: translateY(-1px); }
+
+#form-loading, #form-error { text-align: center; padding: 60px 20px; color: #555; }
+.form-success { text-align: center; padding: 40px 20px; }
+.form-success-icon { font-size: 40px; margin-bottom: 14px; }
+.form-footer { margin-top: 40px; text-align: center; font-size: 11px; color: #444; }
+.form-footer a { color: #666; text-decoration: none; }
+.field-note { font-size: 11px; color: #666; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div class="form-container">
+  <div id="form-loading">Loading...</div>
+  <div id="form-content" style="display:none">
+    <div class="form-logo">
+      <div class="form-logo-icon">爆</div>
+      <div class="form-heading" id="form-heading"></div>
+      <div class="form-description" id="form-description"></div>
+    </div>
+    <form id="form-fields"></form>
+  </div>
+  <div id="form-success" class="form-success" style="display:none">
+    <div class="form-success-icon">✓</div>
+    <div style="color:#fff;font-weight:700;margin-bottom:8px">Thank you!</div>
+    <div style="font-size:13px;color:#aaa">Your submission has been received.</div>
+  </div>
+  <div id="form-error" style="display:none">
+    <div style="font-size:28px;margin-bottom:12px">爆</div>
+    <div style="color:#EC4A5E;font-weight:700;margin-bottom:8px">Form unavailable</div>
+    <div style="font-size:13px">This form could not be loaded. Please check the link or try again later.</div>
+  </div>
+</div>
+
+<div class="form-footer">
+  &copy; <span id="form-year"></span> Bakudan Ramen &mdash; <a href="/">bakudanramen.com</a>
+</div>
+
+<script>
+(function() {
+  document.getElementById('form-year').textContent = new Date().getFullYear();
+  const params = new URLSearchParams(location.search);
+  const formId = params.get('id');
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+    }[ch]));
+  }
+
+  function renderField(f, i) {
+    const name = 'f' + i;
+    const req = f.required ? '<span class="req"> *</span>' : '';
+    const label = `<label class="field-label" for="${name}">${escapeHtml(f.label)}${req}</label>`;
+    if (f.type === 'textarea') {
+      return `<div class="field-group">${label}<textarea class="field-textarea" id="${name}" name="${escapeHtml(f.label)}" placeholder="${escapeHtml(f.placeholder||'')}" ${f.required?'required':''}></textarea></div>`;
+    }
+    if (f.type === 'select') {
+      const opts = (f.options||'').split(',').map(o => o.trim()).filter(Boolean);
+      return `<div class="field-group">${label}<select class="field-select" id="${name}" name="${escapeHtml(f.label)}" ${f.required?'required':''}>
+        <option value="">Select…</option>${opts.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}
+      </select></div>`;
+    }
+    if (f.type === 'radio') {
+      const opts = (f.options||'').split(',').map(o => o.trim()).filter(Boolean);
+      return `<div class="field-group">${label}${opts.map((o,oi) => `
+        <div class="field-radio-row"><input type="radio" id="${name}_${oi}" name="${escapeHtml(f.label)}" value="${escapeHtml(o)}" ${f.required?'required':''}><label for="${name}_${oi}">${escapeHtml(o)}</label></div>`).join('')}</div>`;
+    }
+    if (f.type === 'checkbox') {
+      return `<div class="field-group"><div class="field-checkbox-row"><input type="checkbox" id="${name}" name="${escapeHtml(f.label)}"><label for="${name}">${escapeHtml(f.label)}${req}</label></div></div>`;
+    }
+    if (f.type === 'file') {
+      return `<div class="field-group">${label}<div class="field-note">File uploads aren't supported on this form yet — please email attachments instead.</div></div>`;
+    }
+    const inputType = ['email','tel','date','number'].includes(f.type) ? f.type : 'text';
+    return `<div class="field-group">${label}<input class="field-input" type="${inputType}" id="${name}" name="${escapeHtml(f.label)}" placeholder="${escapeHtml(f.placeholder||'')}" ${f.required?'required':''}></div>`;
+  }
+
+  async function load() {
+    if (!formId) {
+      document.getElementById('form-loading').style.display = 'none';
+      document.getElementById('form-error').style.display = 'block';
+      return;
+    }
+    let data;
+    try {
+      const res = await fetch('/api/public/forms/' + encodeURIComponent(formId), { cache: 'no-store' });
+      data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data?.message || 'Failed to load');
+    } catch (e) {
+      document.getElementById('form-loading').style.display = 'none';
+      document.getElementById('form-error').style.display = 'block';
+      return;
+    }
+    const form = data.form;
+    document.getElementById('form-loading').style.display = 'none';
+    document.getElementById('form-heading').textContent = form.name;
+    document.getElementById('form-description').textContent = form.description || '';
+
+    const fields = form.fields || [];
+    const fieldsEl = document.getElementById('form-fields');
+    fieldsEl.innerHTML = fields.map(renderField).join('') + '<button type="submit" class="submit-btn">Submit</button>';
+
+    fieldsEl.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = fieldsEl.querySelector('.submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting…';
+      const values = {};
+      fields.forEach((f, i) => {
+        const name = 'f' + i;
+        if (f.type === 'radio') {
+          const checked = fieldsEl.querySelector(`input[name="${CSS.escape(f.label)}"]:checked`);
+          values[f.label] = checked ? checked.value : '';
+        } else if (f.type === 'checkbox') {
+          values[f.label] = fieldsEl.querySelector('#' + name)?.checked || false;
+        } else if (f.type !== 'file') {
+          values[f.label] = fieldsEl.querySelector('#' + name)?.value || '';
+        }
+      });
+      try {
+        const res = await fetch('/api/public/forms/' + encodeURIComponent(formId) + '/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: values }),
+        });
+        const result = await res.json();
+        if (res.ok && result.ok) {
+          document.getElementById('form-content').style.display = 'none';
+          document.getElementById('form-success').style.display = 'block';
+        } else {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Submit';
+          alert(result?.message || 'Submission failed. Please try again.');
+        }
+      } catch (err) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit';
+        alert('Submission failed. Please check your connection and try again.');
+      }
+    });
+
+    document.getElementById('form-content').style.display = 'block';
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

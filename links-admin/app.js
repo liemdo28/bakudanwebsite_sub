@@ -42,6 +42,7 @@ const ROUTES = [
   { pattern: /^\/shortlinks$/,          view: viewShortlinks },
   { pattern: /^\/link-health$/,         view: viewLinkHealth },
   { pattern: /^\/audit-log$/,           view: viewAuditLog },
+  { pattern: /^\/trash$/,               view: viewTrash },
   { pattern: /^\/settings$/,            view: viewSettings },
   { pattern: /^\/users$/,               view: viewUsers },
   { pattern: /^\/profile$/,            view: viewProfile },
@@ -67,6 +68,7 @@ const NAV_LABELS = {
   '/shortlinks': 'QR & Shortlinks',
   '/link-health': 'Link Health',
   '/audit-log': 'Audit Log',
+  '/trash': 'Trash',
   '/settings': 'Settings',
   '/users': 'Users',
 };
@@ -260,7 +262,7 @@ async function viewCampaignEditor(id) {
   `);
 }
 
-BKDN.saveCampaignEditor = async function(id) {
+async function saveCampaignEditor(id) {
   const name = document.getElementById('ce-name').value.trim();
   if (!name) { toast('Campaign name is required.', 'error'); return; }
   const body = {
@@ -312,7 +314,7 @@ async function viewSEOManager() {
             <tr>
               <td><div style="font-weight:600;color:#e2e8f0">${esc(p.title)}</div><div style="font-size:10px;color:#64748b">/links/${esc(p.slug||'')}</div></td>
               <td>${pageTypeBadge(p.page_type, 'font-size:10px')}</td>
-              <td style="max-width:160px">${p.seo_title ? `<div style="overflow:hidden;text-over ellipsis;white-space:nowrap" title="${esc(p.seo_title)}">${esc(p.seo_title)}</div>` : '<span style="color:#ef4444">&#9888; Missing</span>'}</td>
+              <td style="max-width:160px">${p.seo_title ? `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.seo_title)}">${esc(p.seo_title)}</div>` : '<span style="color:#ef4444">&#9888; Missing</span>'}</td>
               <td style="max-width:180px">${p.meta_description ? `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.meta_description)}">${esc(p.meta_description)}</div>` : '<span style="color:#ef4444">&#9888; Missing</span>'}</td>
               <td>${p.og_image ? `<a href="${esc(p.og_image)}" target="_blank" style="color:#60a5fa;font-size:11px">View</a>` : '<span style="color:#64748b">—</span>'}</td>
               <td>${indexAllowed ? '<span class="badge badge-green">INDEX</span>' : '<span class="badge badge-gray">NOINDEX</span>'}</td>
@@ -338,13 +340,16 @@ async function viewSEOManager() {
 
 /* ═══════════════════════════════════════════════════════════════
    VIEW: FORMS BUILDER
-   LocalStorage CRUD — no backend API yet (future: /admin/forms)
+   Real server storage via /admin/forms — form definitions and
+   submissions persist in the shared database, visible to every admin.
+   Customers submit at /forms/?id=N (see forms/index.html), which posts
+   to /public/forms/{id}/submit.
 ═══════════════════════════════════════════════════════════════ */
-function _getForms() { try { return JSON.parse(localStorage.getItem('bkdn_forms') || '[]'); } catch { return []; } }
-function _saveForms(list) { localStorage.setItem('bkdn_forms', JSON.stringify(list)); }
-
 async function viewForms() {
-  const forms = _getForms();
+  setContent(loading());
+  const res = await GET('/admin/forms');
+  if (!res?.ok) { setContent(errBanner('Failed to load forms.', 'BKDN.viewForms()')); return; }
+  const forms = res.data.forms || [];
   setContent(`
     ${pageTitle('Forms', `Build and manage custom forms. ${forms.length} form${forms.length!==1?'s':''}.`)}
     <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
@@ -357,14 +362,16 @@ async function viewForms() {
           <p>Forms let you collect information from customers or staff — surveys, contact requests, event sign-ups, and more.</p>
         </div>` : `
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Type</th><th>Fields</th><th>Created</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Type</th><th>Fields</th><th>Submissions</th><th>Created</th><th></th></tr></thead>
           <tbody>${forms.map(f => `
             <tr>
-              <td style="font-weight:600;color:#e2e8f0">${esc(f.name)}</td>
+              <td style="font-weight:600;color:#e2e8f0">${esc(f.name)}${Number(f.is_active)?'':' <span class="badge badge-gray">Inactive</span>'}</td>
               <td><span class="badge badge-gray">${esc(f.form_type||'custom')}</span></td>
               <td>${(f.fields||[]).length} field${(f.fields||[]).length!==1?'s':''}</td>
+              <td><a href="#" onclick="BKDN.viewFormSubmissions(${f.id});return false;" style="color:#60a5fa">${Number(f.submission_count||0)}</a></td>
               <td style="color:#94a3b8">${fmtDate(f.created_at)}</td>
               <td style="white-space:nowrap">
+                <a class="btn btn-ghost btn-sm" href="/forms/?id=${f.id}" target="_blank" title="Open public form">${iconExternal()}</a>
                 <button class="btn btn-ghost btn-sm" onclick="BKDN.openFormBuilderModal(${f.id})">${iconEdit()}</button>
                 <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteForm(${f.id})" style="color:#ef4444">${iconTrash()}</button>
               </td>
@@ -372,30 +379,38 @@ async function viewForms() {
           </tbody>
         </table>`}
     </div>
-    <div class="card" style="margin-top:12px">
-      <div class="card-title">Coming Soon</div>
-      <p style="font-size:13px;color:#94a3b8">Form submissions, email notifications, and server-side storage are planned. Currently stored in browser localStorage.</p>
+  `);
+}
+
+async function viewFormSubmissions(formId) {
+  setContent(loading());
+  const [formsRes, subsRes] = await Promise.all([GET('/admin/forms'), GET('/admin/forms/' + formId + '/submissions')]);
+  const form = (formsRes?.data?.forms || []).find(f => Number(f.id) === Number(formId));
+  const submissions = subsRes?.data?.submissions || [];
+  setContent(`
+    ${pageTitle((form?.name || 'Form') + ' — Submissions', `${submissions.length} submission${submissions.length!==1?'s':''}`)}
+    <div style="margin-bottom:16px"><a href="#/forms" class="btn btn-ghost btn-sm">&#8592; Back to Forms</a></div>
+    <div class="card">
+      ${!submissions.length ? `<div class="empty-state">No submissions yet.</div>` : `
+      <table class="data-table">
+        <thead><tr><th>Submitted</th><th>Data</th></tr></thead>
+        <tbody>${submissions.map(s => `
+          <tr>
+            <td style="color:#94a3b8;white-space:nowrap">${fmtDate(s.created_at)}</td>
+            <td style="font-size:12px">${Object.entries(s.data||{}).map(([k,v]) => `<div><strong style="color:#94a3b8">${esc(k)}:</strong> ${esc(String(v))}</div>`).join('')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
     </div>
   `);
 }
 
 async function viewFormEditor(formId) {
-  const list = _getForms();
-  const form = list.find(f => String(f.id) === String(formId));
-  if (!form) { setContent(errBanner('Form not found.')); return; }
-  setContent(`
-    ${pageTitle('Edit Form: ' + form.name)}
-    <div style="margin-bottom:16px"><a href="#/forms" class="btn btn-ghost btn-sm">&#8592; Back to Forms</a></div>
-    <div class="card">
-      <div class="form-group"><label class="form-label">Form Name</label><input id="fe-name" class="form-control" value="${esc(form.name||'')}"></div>
-      <div class="form-group"><label class="form-label">Description</label><textarea id="fe-desc" class="form-control" rows="2">${esc(form.description||'')}</textarea></div>
-      <div style="font-size:13px;color:#94a3b8;margin-bottom:12px">Edit the form builder to add or remove fields.</div>
-      <button class="btn btn-primary" onclick="BKDN.openFormBuilderModal(${formId})">${iconEdit()} Open Form Builder</button>
-    </div>
-  `);
+  await viewForms();
+  openFormBuilderModal(Number(formId));
 }
 
-BKDN.openFormModal = function() {
+function openFormModal() {
   openModal('Create Form', `
     <div class="form-group"><label class="form-label">Form Name *</label><input id="fm-name" class="form-control" placeholder="e.g. Customer Feedback Survey"></div>
     <div class="form-group"><label class="form-label">Type</label>
@@ -410,31 +425,27 @@ BKDN.openFormModal = function() {
     </div>
     <div class="form-group"><label class="form-label">Description</label><textarea id="fm-desc" class="form-control" rows="2" placeholder="Brief description shown above the form"></textarea></div>
   `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveForm()">${iconSave()} Create Form</button>`);
-};
+}
 
-BKDN.saveForm = function() {
+async function saveForm() {
   const name = document.getElementById('fm-name')?.value.trim();
   if (!name) { toast('Form name is required.', 'error'); return; }
-  const form = { id: Date.now(), name, form_type: document.getElementById('fm-type')?.value || 'custom', description: document.getElementById('fm-desc')?.value.trim() || '', fields: [], created_at: new Date().toISOString() };
-  const list = _getForms();
-  list.unshift(form);
-  _saveForms(list);
-  toast('Form created.', 'success');
-  closeModal();
-  viewForms();
-};
+  const body = { name, form_type: document.getElementById('fm-type')?.value || 'custom', description: document.getElementById('fm-desc')?.value.trim() || null, fields: [] };
+  const res = await POST('/admin/forms', body);
+  if (res?.ok) { toast('Form created.', 'success'); closeModal(); viewForms(); }
+  else toast(res?.error || 'Could not create form.', 'error');
+}
 
-BKDN.deleteForm = function(id) {
-  if (!confirm('Delete this form? This cannot be undone.')) return;
-  const list = _getForms().filter(f => String(f.id) !== String(id));
-  _saveForms(list);
-  toast('Form deleted.', 'success');
-  viewForms();
-};
+async function deleteForm(id) {
+  if (!confirm('Delete this form? Its submissions will be deleted too. This cannot be undone.')) return;
+  const res = await DELETE('/admin/forms/' + id);
+  if (res?.ok) { toast('Form deleted.', 'success'); viewForms(); }
+  else toast(res?.error || 'Could not delete form.', 'error');
+}
 
-BKDN.openFormBuilderModal = function(formId) {
-  const list = _getForms();
-  const form = list.find(f => String(f.id) === String(formId));
+async function openFormBuilderModal(formId) {
+  const res = await GET('/admin/forms');
+  const form = (res?.data?.forms || []).find(f => Number(f.id) === Number(formId));
   if (!form) return;
   const fieldTypeOptions = ['text','email','tel','textarea','select','radio','checkbox','date','number','file'].map(t => `<option value="${t}">${t}</option>`).join('');
   const fieldRows = (form.fields||[]).map((f,i) => `
@@ -461,7 +472,7 @@ BKDN.openFormBuilderModal = function(formId) {
   `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveFormBuilder(${formId})">${iconSave()} Save Form</button>`);
 };
 
-BKDN.addFieldRow = function() {
+function addFieldRow() {
   const opts = ['text','email','tel','textarea','select','radio','checkbox','date','number','file'].map(t => `<option value="${t}">${t}</option>`).join('');
   const row = document.createElement('div');
   row.className = 'field-row';
@@ -470,7 +481,7 @@ BKDN.addFieldRow = function() {
   document.getElementById('fb-fields-container').appendChild(row);
 };
 
-BKDN.saveFormBuilder = function(formId) {
+async function saveFormBuilder(formId) {
   const name = document.getElementById('fb-name')?.value.trim();
   if (!name) { toast('Form name is required.', 'error'); return; }
   const rows = document.querySelectorAll('#fb-fields-container .field-row');
@@ -481,13 +492,9 @@ BKDN.saveFormBuilder = function(formId) {
     options: row.querySelector('.field-type')?.value === 'select' || row.querySelector('.field-type')?.value === 'radio' ? row.querySelector('.field-opts')?.value.trim() : '',
     required: row.querySelector('.field-required')?.checked || false,
   })).filter(f => f.label);
-  const list = _getForms();
-  const idx = list.findIndex(f => String(f.id) === String(formId));
-  if (idx >= 0) { list[idx].name = name; list[idx].fields = fields; }
-  _saveForms(list);
-  toast('Form saved.', 'success');
-  closeModal();
-  viewForms();
+  const res = await PUT('/admin/forms/' + formId, { name, fields });
+  if (res?.ok) { toast('Form saved.', 'success'); closeModal(); viewForms(); }
+  else toast(res?.error || 'Could not save form.', 'error');
 };
 
 async function viewTemplates() {
@@ -576,104 +583,140 @@ async function deleteTemplate(templateId) {
    VIEW: AUTOMATIONS
    LocalStorage CRUD — no backend API yet (future: /admin/automations)
 ═══════════════════════════════════════════════════════════════ */
-function _getAutomations() { try { return JSON.parse(localStorage.getItem('bkdn_automations') || '[]'); } catch { return []; } }
-function _saveAutomations(list) { localStorage.setItem('bkdn_automations', JSON.stringify(list)); }
+const AUTOMATION_RULE_TYPES = [
+  { value: 'campaign_auto_expire', label: 'Auto-end expired campaigns', needsLocation: false,
+    desc: 'When a campaign\'s end date has passed and it is still Active, set its status to Ended.' },
+  { value: 'location_closure_hides_buttons', label: 'Hide buttons when a location closes', needsLocation: true,
+    desc: 'When the selected location is marked Inactive, automatically hide every button pointed at it (Order, Call, Directions, etc).' },
+  { value: 'location_closure_posts_notice', label: 'Post a closure notice when a location closes', needsLocation: true, needsMessage: true,
+    desc: 'When the selected location is marked Inactive, automatically show a dismissible notice site-wide explaining it\'s temporarily closed. The notice is removed automatically once the location is reactivated.' },
+];
 
 async function viewAutomations() {
-  const rules = _getAutomations();
+  setContent(loading());
+  const res = await GET('/admin/automations');
+  if (!res?.ok) { setContent(errBanner('Failed to load automations.', 'BKDN.viewAutomations()')); return; }
+  const rules = res.data.automations || [];
   setContent(`
-    ${pageTitle('Automations', 'Automatically trigger actions based on events — schedules, link clicks, or page conditions.')}
-    <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+    ${pageTitle('Automations', 'A small, fixed set of safe rules — not a general scripting engine.')}
+    <div style="display:flex;justify-content:space-between;margin-bottom:16px;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-secondary" onclick="BKDN.runAutomationsNow()">${iconSync()} Run Automations Now</button>
       <button class="btn btn-primary" onclick="BKDN.openAutomationModal()">${iconPlus()} New Automation</button>
     </div>
     <div class="card">
       ${!rules.length ? `
         <div class="empty-state">
           <div class="empty-state-title">No automations yet</div>
-          <p>Automations let you schedule content changes, send alerts, or trigger campaigns automatically.</p>
+          <p>Add a rule below, then click "Run Automations Now" whenever you want it evaluated — rules never run on a hidden schedule.</p>
         </div>` : `
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Trigger</th><th>Action</th><th>Status</th><th></th></tr></thead>
-          <tbody>${rules.map(r => `
+          <thead><tr><th>Name</th><th>Rule</th><th>Status</th><th>Last Run</th><th></th></tr></thead>
+          <tbody>${rules.map(r => {
+            const meta = AUTOMATION_RULE_TYPES.find(t => t.value === r.rule_type);
+            return `
             <tr>
               <td style="font-weight:600;color:#e2e8f0">${esc(r.name)}</td>
-              <td style="color:#94a3b8">${esc(r.trigger)}</td>
-              <td style="color:#94a3b8">${esc(r.action)}</td>
-              <td>${Number(r.enabled) ? '<span class="badge badge-green">ON</span>' : '<span class="badge badge-gray">OFF</span>'}</td>
+              <td style="color:#94a3b8">${esc(meta?.label || r.rule_type)}${r.location_name ? ' — ' + esc(r.location_name) : ''}</td>
+              <td>${Number(r.is_active) ? '<span class="badge badge-green">ON</span>' : '<span class="badge badge-gray">OFF</span>'}</td>
+              <td style="color:#94a3b8;font-size:12px;max-width:260px">${r.last_run_at ? fmtDate(r.last_run_at) + '<div style="color:#64748b">' + esc(r.last_run_summary||'') + '</div>' : 'Never run'}</td>
               <td style="white-space:nowrap">
                 <button class="btn btn-ghost btn-sm" onclick="BKDN.openAutomationModal(${r.id})">${iconEdit()}</button>
-                <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteAutomation(${r.id})" style="color:#ef4440">${iconTrash()}</button>
+                <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteAutomation(${r.id})" style="color:#ef4444">${iconTrash()}</button>
               </td>
-            </tr>`).join('')}</tbody>
+            </tr>`;
+          }).join('')}</tbody>
         </table>`}
-    </div>
-    <div class="card" style="margin-top:12px">
-      <div class="card-title">Coming Soon</div>
-      <p style="font-size:13px;color:#94a3b8">Backend integration for automations is planned. Currently stored in browser localStorage.</p>
     </div>
   `);
 }
 
-BKDN.openAutomationModal = function(id) {
-  const list = _getAutomations();
-  const item = id ? list.find(r => Number(r.id) === Number(id)) : null;
-  const triggerOpts = ['schedule_daily','schedule_weekly','page_publish','link_click_threshold','campaign_expires','scheduled_start','scheduled_end'].map(t => `<option value="${t}" ${(item?.trigger||'')===t?'selected':''}>${t.replace(/_/g,' ')}</option>`).join('');
-  const actionOpts = ['send_email','show_notice','update_page','send_slack','publish_page','pause_campaign'].map(a => `<option value="${a}" ${(item?.action||'')===a?'selected':''}>${a.replace(/_/g,' ')}</option>`).join('');
+async function openAutomationModal(id) {
+  let item = null;
+  if (id) {
+    const res = await GET('/admin/automations');
+    item = (res?.data?.automations || []).find(r => Number(r.id) === Number(id));
+  }
+  if (!window._allLocations) {
+    const locRes = await GET('/admin/locations');
+    window._allLocations = locRes?.data?.locations || [];
+  }
+  const config = item?.config_json ? JSON.parse(item.config_json) : {};
+  const typeOpts = AUTOMATION_RULE_TYPES.map(t => `<option value="${t.value}" ${(item?.rule_type||AUTOMATION_RULE_TYPES[0].value)===t.value?'selected':''}>${t.label}</option>`).join('');
+  const locOpts = window._allLocations.map(l => `<option value="${l.id}" ${Number(config.location_id)===Number(l.id)?'selected':''}>${esc(l.name)}</option>`).join('');
   openModal(item ? 'Edit Automation' : 'New Automation', `
-    <div class="form-group"><label class="form-label">Name *</label><input id="auto-name" class="form-control" value="${esc(item?.name||'')}" placeholder="e.g. Daily 3PM Happy Hour Alert"></div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Trigger</label>
-        <select id="auto-trigger" class="form-control">${triggerOpts}</select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Action</label>
-        <select id="auto-action" class="form-control">${actionOpts}</select>
-      </div>
+    <div class="form-group"><label class="form-label">Name *</label><input id="auto-name" class="form-control" value="${esc(item?.name||'')}" placeholder="e.g. Auto-close expired summer campaigns"></div>
+    <div class="form-group">
+      <label class="form-label">Rule</label>
+      <select id="auto-type" class="form-control" onchange="BKDN.onAutomationTypeChange()" ${item?'disabled':''}>${typeOpts}</select>
+      <div class="form-hint" id="auto-type-desc"></div>
     </div>
-    <div class="form-group"><label class="form-label">Configuration (JSON)</label><textarea id="auto-config" class="form-control" rows="3" placeholder='{"key": "value"}'>${esc(item?.config ? JSON.stringify(item.config) : '{}')}</textarea></div>
+    <div class="form-group" id="auto-location-wrap" style="display:none">
+      <label class="form-label">Location</label>
+      <select id="auto-location" class="form-control"><option value="">Select a location…</option>${locOpts}</select>
+    </div>
+    <div class="form-group" id="auto-message-wrap" style="display:none">
+      <label class="form-label">Notice Message (optional)</label>
+      <textarea id="auto-message" class="form-control" rows="2" placeholder="Leave blank to use a default message">${esc(config.message||'')}</textarea>
+    </div>
     <div style="display:flex;align-items:center;gap:8px">
-      <label class="toggle"><input id="auto-enabled" type="checkbox" ${item ? (Number(item.enabled)?'checked':'') : 'checked'}><span class="toggle-slider"></span></label>
-      <span class="form-label" style="margin:0">Enabled</span>
+      <label class="toggle"><input id="auto-active" type="checkbox" ${item ? (Number(item.is_active)?'checked':'') : 'checked'}><span class="toggle-slider"></span></label>
+      <span class="form-label" style="margin:0">Active</span>
     </div>
   `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveAutomation(${id||'null'})">${iconSave()} Save</button>`);
-};
+  onAutomationTypeChange();
+}
 
-BKDN.saveAutomation = function(id) {
+function onAutomationTypeChange() {
+  const type = document.getElementById('auto-type')?.value;
+  const meta = AUTOMATION_RULE_TYPES.find(t => t.value === type);
+  const wrap = document.getElementById('auto-location-wrap');
+  const msgWrap = document.getElementById('auto-message-wrap');
+  const desc = document.getElementById('auto-type-desc');
+  if (wrap) wrap.style.display = meta?.needsLocation ? '' : 'none';
+  if (msgWrap) msgWrap.style.display = meta?.needsMessage ? '' : 'none';
+  if (desc) desc.textContent = meta?.desc || '';
+}
+
+async function saveAutomation(id) {
   const name = document.getElementById('auto-name').value.trim();
   if (!name) { toast('Automation name is required.', 'error'); return; }
-  let config = {};
-  try { config = JSON.parse(document.getElementById('auto-config').value || '{}'); } catch { config = {}; }
-  const rule = {
-    id: id ? Number(id) : Date.now(),
-    name,
-    trigger: document.getElementById('auto-trigger').value,
-    action: document.getElementById('auto-action').value,
-    config,
-    enabled: document.getElementById('auto-enabled').checked ? 1 : 0,
-    updated_at: new Date().toISOString(),
-  };
-  const list = _getAutomations();
-  if (id) {
-    const idx = list.findIndex(r => Number(r.id) === Number(id));
-    if (idx >= 0) list[idx] = rule;
-  } else {
-    rule.created_at = rule.updated_at;
-    list.unshift(rule);
+  const ruleType = document.getElementById('auto-type').value;
+  const meta = AUTOMATION_RULE_TYPES.find(t => t.value === ruleType);
+  const config = {};
+  if (meta?.needsLocation) {
+    const locId = document.getElementById('auto-location').value;
+    if (!locId) { toast('Select a location for this rule.', 'error'); return; }
+    config.location_id = Number(locId);
   }
-  _saveAutomations(list);
-  toast(id ? 'Automation updated.' : 'Automation created.', 'success');
-  closeModal();
-  viewAutomations();
-};
+  if (meta?.needsMessage) {
+    const msg = document.getElementById('auto-message').value.trim();
+    if (msg) config.message = msg;
+  }
+  const body = { name, rule_type: ruleType, config, is_active: document.getElementById('auto-active').checked ? 1 : 0 };
+  const res = id ? await PUT('/admin/automations/' + id, body) : await POST('/admin/automations', body);
+  if (res?.ok) { toast(id ? 'Automation updated.' : 'Automation created.', 'success'); closeModal(); viewAutomations(); }
+  else toast(res?.error || 'Could not save automation.', 'error');
+}
 
-BKDN.deleteAutomation = function(id) {
+async function deleteAutomation(id) {
   if (!confirm('Delete this automation?')) return;
-  const list = _getAutomations().filter(r => Number(r.id) !== Number(id));
-  _saveAutomations(list);
-  toast('Automation deleted.', 'success');
-  viewAutomations();
-};
+  const res = await DELETE('/admin/automations/' + id);
+  if (res?.ok) { toast('Automation deleted.', 'success'); viewAutomations(); }
+  else toast(res?.error || 'Could not delete automation.', 'error');
+}
+
+async function runAutomationsNow() {
+  toast('Running automations…', 'success');
+  const res = await POST('/admin/automations/run', {});
+  if (res?.ok) {
+    const results = res.data.results || [];
+    if (!results.length) { toast('No active automations to run.', 'success'); return; }
+    toast(`Ran ${results.length} automation(s) — see Last Run column for details.`, 'success');
+    viewAutomations();
+  } else {
+    toast(res?.error || 'Could not run automations.', 'error');
+  }
+}
 async function viewUTMBuilder() {
   const locRes = await GET('/admin/locations');
   const locations = locRes?.data?.locations || [];
@@ -762,14 +805,15 @@ async function createShortlinkFromUtm() {
 }
 /* ═══════════════════════════════════════════════════════════════
    VIEW: MEDIA LIBRARY
-   LocalStorage cache + upload via /upload endpoint
-   (future: /admin/media with full server-side storage)
+   Real files uploaded via /upload, real shared metadata via /admin/media —
+   visible and searchable by every admin, not just the browser that
+   uploaded the file.
 ═══════════════════════════════════════════════════════════════ */
-function _getMedia() { try { return JSON.parse(localStorage.getItem('bkdn_media') || '[]'); } catch { return []; } }
-function _saveMedia(list) { localStorage.setItem('bkdn_media', JSON.stringify(list)); }
-
 async function viewMediaLibrary() {
-  const items = _getMedia();
+  setContent(loading());
+  const res = await GET('/admin/media');
+  if (!res?.ok) { setContent(errBanner('Failed to load media library.', 'BKDN.viewMediaLibrary()')); return; }
+  const items = res.data.media || [];
   setContent(`
     ${pageTitle('Media Library', `Browse and manage uploaded files. ${items.length} item${items.length!==1?'s':''}.`)}
     <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
@@ -784,18 +828,18 @@ async function viewMediaLibrary() {
     </div>
     <div id="ml-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
       ${items.length ? items.map(m => `
-        <div class="media-card" data-name="${esc(m.name.toLowerCase())}" style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;overflow:hidden;position:relative">
-          ${m.type && m.type.startsWith('image/') ? `<img src="${esc(m.url)}" style="width:100%;height:120px;object-fit:cover;display:block" loading="lazy">` : `
+        <div class="media-card" data-name="${esc(m.filename.toLowerCase())}" style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;overflow:hidden;position:relative">
+          ${(m.mime_type||'').startsWith('image/') ? `<img src="${esc(m.url)}" style="width:100%;height:120px;object-fit:cover;display:block" loading="lazy">` : `
           <div style="width:100%;height:120px;display:flex;align-items:center;justify-content:center;background:#1e293b">
             <span style="font-size:32px;color:#475569">${iconImage()}</span>
           </div>`}
           <div style="padding:8px">
-            <div style="font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.name)}">${esc(m.name)}</div>
-            <div style="font-size:10px;color:#475569;margin-top:2px">${m.size}</div>
+            <div style="font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.filename)}">${esc(m.filename)}</div>
+            <div style="font-size:10px;color:#475569;margin-top:2px">${_formatSize(Number(m.size_bytes||0))}</div>
           </div>
           <div style="position:absolute;top:6px;right:6px;display:flex;gap:4px;opacity:0;transition:opacity 0.2s" class="media-actions">
             <button class="btn btn-ghost btn-sm" onclick="BKDN.copyMediaUrl('${esc(m.url)}')" title="Copy URL" style="padding:2px 6px;background:rgba(0,0,0,0.6)">${iconCopy()}</button>
-            <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteMediaItem('${esc(m.id)}')" title="Delete" style="padding:2px 6px;background:rgba(0,0,0,0.6);color:#ef4444">${iconTrash()}</button>
+            <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteMediaItem(${m.id})" title="Delete" style="padding:2px 6px;background:rgba(0,0,0,0.6);color:#ef4444">${iconTrash()}</button>
           </div>
         </div>`).join('') : `
         <div style="grid-column:1/-1;text-align:center;padding:40px;color:#475569">
@@ -807,68 +851,43 @@ async function viewMediaLibrary() {
   `);
 }
 
-BKDN.uploadMediaFiles = async function(files) {
+async function uploadMediaFiles(files) {
   if (!files?.length) return;
-  const list = _getMedia();
   for (const file of files) {
     const formData = new FormData();
     formData.append('file', file);
     try {
       const res = await fetch(API_BASE + '/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + _token }, body: formData });
       const data = await res.json();
-      if (data?.ok) {
-        list.unshift({ id: Date.now() + Math.random(), name: file.name, url: data.url || data.data?.url || '', type: file.type, size: _formatSize(file.size), uploaded_at: new Date().toISOString() });
+      if (data?.ok && data.url) {
+        await POST('/admin/media', { filename: file.name, url: data.url, mime_type: file.type, size_bytes: file.size });
         toast('Uploaded: ' + file.name, 'success');
       } else {
-        // Fallback: store as base64 data URL for small files
-        if (file.size < 500000) {
-          const base64 = await _fileToBase64(file);
-          list.unshift({ id: Date.now() + Math.random(), name: file.name, url: base64, type: file.type, size: _formatSize(file.size), uploaded_at: new Date().toISOString() });
-          toast('Stored locally: ' + file.name, 'success');
-        } else {
-          toast('Upload failed: ' + (data?.error || file.name), 'error');
-        }
+        toast('Upload failed for ' + file.name + ': ' + (data?.error || data?.message || 'unknown error'), 'error');
       }
     } catch (e) {
-      if (file.size < 500000) {
-        const base64 = await _fileToBase64(file);
-        list.unshift({ id: Date.now() + Math.random(), name: file.name, url: base64, type: file.type, size: _formatSize(file.size), uploaded_at: new Date().toISOString() });
-        toast('Stored locally: ' + file.name, 'success');
-      } else {
-        toast('Upload failed: ' + file.name, 'error');
-      }
+      toast('Upload failed for ' + file.name + ' — check your connection and try again.', 'error');
     }
   }
-  _saveMedia(list);
   viewMediaLibrary();
-};
+}
 
-BKDN.filterMedia = function(query) {
+function filterMedia(query) {
   const q = query.toLowerCase();
   document.querySelectorAll('.media-card').forEach(el => {
     el.style.display = el.dataset.name.includes(q) ? '' : 'none';
   });
-};
+}
 
-BKDN.copyMediaUrl = function(url) {
+function copyMediaUrl(url) {
   navigator.clipboard?.writeText(url).then(() => toast('URL copied.')).catch(() => toast('Could not copy.', 'error'));
-};
+}
 
-BKDN.deleteMediaItem = function(id) {
-  if (!confirm('Remove this item from the library?')) return;
-  const list = _getMedia().filter(m => String(m.id) !== String(id));
-  _saveMedia(list);
-  toast('Removed from library.', 'success');
-  viewMediaLibrary();
-};
-
-function _fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+async function deleteMediaItem(id) {
+  if (!confirm('Remove this item from the library? The file will be deleted from the server too.')) return;
+  const res = await DELETE('/admin/media/' + id);
+  if (res?.ok) { toast('Removed from library.', 'success'); viewMediaLibrary(); }
+  else toast(res?.error || 'Could not delete media item.', 'error');
 }
 
 function _formatSize(bytes) {
@@ -881,38 +900,32 @@ function _formatSize(bytes) {
    VIEW: CUSTOMER SERVICE
    Manages public-facing customer service notices via /admin/notices
 ═══════════════════════════════════════════════════════════════ */
-function _getCSNotices() { try { return JSON.parse(localStorage.getItem('bkdn_cs_notices') || '[]'); } catch { return []; } }
-function _saveCSNotices(list) { localStorage.setItem('bkdn_cs_notices', JSON.stringify(list)); }
-
 async function viewCustomerService() {
   setContent(loading());
-  // Try server-side notices first, fall back to localStorage
-  let notices = _getCSNotices();
-  let serverSource = false;
-  try {
-    const res = await GET('/admin/notices');
-    if (res?.ok && res.data?.notices) {
-      notices = res.data.notices;
-      serverSource = true;
-    }
-  } catch (e) { /* fall back to localStorage */ }
+  const res = await GET('/admin/notices');
+  if (!res?.ok) { setContent(errBanner('Failed to load notices.', 'BKDN.viewCustomerService()')); return; }
+  const notices = res.data.notices || [];
 
-  const now = new Date().toISOString();
-  const active = notices.filter(n => Number(n.is_active) === 1 && (!n.end_at || n.end_at > now));
-  const expired = notices.filter(n => !Number(n.is_active) === 1 || (n.end_at && n.end_at <= now));
+  const now = new Date().toISOString().slice(0,10);
+  const active = notices.filter(n => Number(n.is_active) === 1 && (!n.end_at || n.end_at.slice(0,10) >= now));
+  const expired = notices.filter(n => !(Number(n.is_active) === 1 && (!n.end_at || n.end_at.slice(0,10) >= now)));
+  const severityBadge = { info: 'badge-blue', warning: 'badge-yellow', critical: 'badge-red' };
 
   setContent(`
     ${pageTitle('Customer Service', `${active.length} active notice${active.length !== 1 ? 's' : ''}`)}
+    <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="BKDN.openCSModal()">${iconPlus()} New Notice</button>
+    </div>
     <div class="card">
       <div class="card-title">Active Notices</div>
       ${!active.length ? `<div class="empty-state">No active notices — all clear!</div>` : `
       <table class="data-table">
-        <thead><tr><th>Title</th><th>Type</th><th>Scope</th><th>From</th><th>Until</th><th></th></tr></thead>
+        <thead><tr><th>Message</th><th>Severity</th><th>Page</th><th>From</th><th>Until</th><th></th></tr></thead>
         <tbody>${active.map(n => `
           <tr>
-            <td><div style="font-weight:600;color:#e2e8f0">${esc(n.title)}</div>${n.message ? `<div style="font-size:11px;color:#64748b">${esc(n.message.slice(0,60))}...</div>` : ''}</td>
-            <td><span class="badge badge-blue">${esc(n.notice_type||'info')}</span></td>
-            <td><span class="badge badge-gray">${esc(n.scope||'global')}</span></td>
+            <td style="max-width:320px">${esc(n.message)}</td>
+            <td><span class="badge ${severityBadge[n.severity]||'badge-blue'}">${esc(n.severity)}</span></td>
+            <td>${n.page_title ? esc(n.page_title) : '<span style="color:#64748b">All pages</span>'}</td>
             <td style="color:#94a3b8">${n.start_at ? fmtDate(n.start_at) : 'Now'}</td>
             <td style="color:#94a3b8">${n.end_at ? fmtDate(n.end_at) : 'Open-ended'}</td>
             <td style="white-space:nowrap">
@@ -925,17 +938,14 @@ async function viewCustomerService() {
     </div>
 
     <div class="card" style="margin-top:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div class="card-title">Expired / Inactive Notices</div>
-        <button class="btn btn-primary btn-sm" onclick="BKDN.openCSModal()">${iconPlus()} New Notice</button>
-      </div>
+      <div class="card-title">Expired / Inactive Notices</div>
       ${!expired.length ? `<div class="empty-state">No expired notices.</div>` : `
       <table class="data-table">
-        <thead><tr><th>Title</th><th>Type</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Message</th><th>Severity</th><th>Status</th><th></th></tr></thead>
         <tbody>${expired.map(n => `
           <tr>
-            <td>${esc(n.title)}</td>
-            <td><span class="badge badge-gray">${esc(n.notice_type||'info')}</span></td>
+            <td style="max-width:320px">${esc(n.message)}</td>
+            <td><span class="badge ${severityBadge[n.severity]||'badge-blue'}">${esc(n.severity)}</span></td>
             <td><span class="badge badge-gray">Inactive</span></td>
             <td>
               <button class="btn btn-ghost btn-sm" onclick="BKDN.openCSModal(${n.id})">${iconEdit()}</button>
@@ -947,86 +957,84 @@ async function viewCustomerService() {
     </div>
 
     <div class="card" style="margin-top:14px">
-      <div class="card-title">&#128222; How Customer Service Notices Work</div>
+      <div class="card-title">How Customer Service Notices Work</div>
       <ul style="font-size:13px;color:#94a3b8;margin-left:18px;display:flex;flex-direction:column;gap:6px">
-        <li>Notices appear as banners at the top of the Link Hub page</li>
-        <li>Scope controls which pages see the notice: <strong style="color:#e2e8f0">global</strong>, <strong style="color:#e2e8f0">specific store</strong>, or <strong style="color:#e2e8f0">all locations</strong></li>
-        <li>Set start and end times to auto-expire temporary notices (e.g., holiday hours)</li>
-        <li>Common types: <em>temporary_hours</em>, <em>event_closure</em>, <em>promotion</em>, <em>menu_update</em>, <em>general</em></li>
-        <li>Server-side notice integration is planned — currently stored in localStorage</li>
+        <li>Notices appear as real banners at the top of the live Customer Link Hub page — this is fully server-backed, not a local preview.</li>
+        <li>Leave "Target Page" blank to show the notice on every public page, or pick one page to show it there only.</li>
+        <li>Set start and end dates to auto-expire temporary notices (e.g., a holiday closure).</li>
+        <li>Severity controls the banner color: info (blue), warning (yellow), critical (red).</li>
       </ul>
     </div>
   `);
 }
 
-BKDN.openCSModal = function(id) {
-  const notices = _getCSNotices();
-  const item = id ? notices.find(n => String(n.id) === String(id)) : null;
-  const typeOpts = ['temporary_hours','event_closure','promotion','menu_update','general'].map(t => `<option value="${t}" ${(item?.notice_type||'')===t?'selected':''}>${t.replace(/_/g,' ')}</option>`).join('');
+async function openCSModal(id) {
+  let item = null;
+  if (id) {
+    const res = await GET('/admin/notices');
+    item = (res?.data?.notices || []).find(n => Number(n.id) === Number(id));
+  }
+  if (!window._allPages) {
+    const pagesRes = await GET('/admin/pages');
+    window._allPages = pagesRes?.data?.pages || [];
+  }
+  const pageOpts = window._allPages.map(p => `<option value="${p.id}" ${Number(item?.page_id)===Number(p.id)?'selected':''}>${esc(p.title)}</option>`).join('');
   openModal(item ? 'Edit Notice' : 'New Notice', `
-    <div class="form-group"><label class="form-label">Title *</label><input id="cs-title" class="form-control" placeholder="e.g. Holiday Hours — Christmas Eve" value="${esc(item?.title||'')}"></div>
-    <div class="form-group"><label class="form-label">Message</label><textarea id="cs-msg" class="form-control" rows="3" placeholder="Optional detailed message shown to customers">${esc(item?.message||'')}</textarea></div>
+    <div class="form-group"><label class="form-label">Message *</label><textarea id="cs-msg" class="form-control" rows="3" placeholder="e.g. Online ordering is temporarily unavailable at Stone Oak.">${esc(item?.message||'')}</textarea></div>
     <div class="form-row">
       <div class="form-group">
-        <label class="form-label">Notice Type</label>
-        <select id="cs-type" class="form-control">${typeOpts}</select>
+        <label class="form-label">Severity</label>
+        <select id="cs-severity" class="form-control">
+          <option value="info" ${(item?.severity||'info')==='info'?'selected':''}>Info</option>
+          <option value="warning" ${item?.severity==='warning'?'selected':''}>Warning</option>
+          <option value="critical" ${item?.severity==='critical'?'selected':''}>Critical</option>
+        </select>
       </div>
       <div class="form-group">
-        <label class="form-label">Scope</label>
-        <select id="cs-scope" class="form-control">
-          <option value="global" ${(item?.scope||'global')==='global'?'selected':''}>Global (all locations)</option>
-          <option value="specific" ${(item?.scope)==='specific'?'selected':''}>Specific store</option>
-          <option value="all" ${(item?.scope)==='all'?'selected':''}>All locations</option>
-        </select>
+        <label class="form-label">Target Page</label>
+        <select id="cs-page" class="form-control"><option value="">All pages</option>${pageOpts}</select>
       </div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Start Date</label><input id="cs-start" type="date" class="form-control" value="${esc((item?.start_at||'').slice(0,10))}"></div>
       <div class="form-group"><label class="form-label">End Date</label><input id="cs-end" type="date" class="form-control" value="${esc((item?.end_at||'').slice(0,10))}"></div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <label class="toggle"><input id="cs-active" type="checkbox" ${item ? (Number(item.is_active)?'checked':'') : 'checked'}><span class="toggle-slider"></span></label>
-      <span class="form-label" style="margin:0">Active</span>
+    <div style="display:flex;gap:20px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <label class="toggle"><input id="cs-active" type="checkbox" ${item ? (Number(item.is_active)?'checked':'') : 'checked'}><span class="toggle-slider"></span></label>
+        <span class="form-label" style="margin:0">Active</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label class="toggle"><input id="cs-dismissible" type="checkbox" ${item ? (Number(item.dismissible)?'checked':'') : 'checked'}><span class="toggle-slider"></span></label>
+        <span class="form-label" style="margin:0">Customer can dismiss</span>
+      </div>
     </div>
   `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveCSNotice(${id||'null'})">${iconSave()} ${item?'Save Changes':'Create Notice'}</button>`);
-};
+}
 
-BKDN.saveCSNotice = function(id) {
-  const title = document.getElementById('cs-title')?.value.trim();
-  if (!title) { toast('Title is required.', 'error'); return; }
-  const notice = {
-    id: id ? String(id) : String(Date.now()),
-    title,
-    message: document.getElementById('cs-msg')?.value.trim() || '',
-    notice_type: document.getElementById('cs-type')?.value || 'general',
-    scope: document.getElementById('cs-scope')?.value || 'global',
-    start_at: document.getElementById('cs-start')?.value || null,
-    end_at: document.getElementById('cs-end')?.value || null,
-    is_active: document.getElementById('cs-active')?.checked ? 1 : 0,
-    updated_at: new Date().toISOString(),
+async function saveCSNotice(id) {
+  const message = document.getElementById('cs-msg')?.value.trim();
+  if (!message) { toast('Message is required.', 'error'); return; }
+  const body = {
+    message,
+    severity: document.getElementById('cs-severity').value,
+    page_id: document.getElementById('cs-page').value || '',
+    start_at: document.getElementById('cs-start').value || null,
+    end_at: document.getElementById('cs-end').value || null,
+    is_active: document.getElementById('cs-active').checked ? 1 : 0,
+    dismissible: document.getElementById('cs-dismissible').checked ? 1 : 0,
   };
-  const list = _getCSNotices();
-  if (id) {
-    const idx = list.findIndex(n => String(n.id) === String(id));
-    if (idx >= 0) list[idx] = notice;
-    else list.unshift(notice);
-  } else {
-    notice.created_at = notice.updated_at;
-    list.unshift(notice);
-  }
-  _saveCSNotices(list);
-  toast(id ? 'Notice updated.' : 'Notice created.', 'success');
-  closeModal();
-  viewCustomerService();
-};
+  const res = id ? await PUT('/admin/notices/' + id, body) : await POST('/admin/notices', body);
+  if (res?.ok) { toast(id ? 'Notice updated.' : 'Notice created.', 'success'); closeModal(); viewCustomerService(); }
+  else toast(res?.error || 'Could not save notice.', 'error');
+}
 
-BKDN.deleteCSNotice = function(id) {
+async function deleteCSNotice(id) {
   if (!confirm('Delete this notice?')) return;
-  const list = _getCSNotices().filter(n => String(n.id) !== String(id));
-  _saveCSNotices(list);
-  toast('Notice deleted.', 'success');
-  viewCustomerService();
-};
+  const res = await DELETE('/admin/notices/' + id);
+  if (res?.ok) { toast('Notice deleted.', 'success'); viewCustomerService(); }
+  else toast(res?.error || 'Could not delete notice.', 'error');
+}
 
 async function viewStaffTraining() {
   setContent(loading());
@@ -1199,7 +1207,7 @@ function sessionExpired() {
 const GET    = (ep)       => apiFetch('GET',    ep);
 const POST   = (ep, body) => apiFetch('POST',   ep, body);
 const PUT    = (ep, body) => apiFetch('PUT',    ep, body);
-const DELETE = (ep)       => apiFetch('DELETE', ep);
+const DELETE = (ep, body) => apiFetch('DELETE', ep, body);
 
 /* ═══════════════════════════════════════════════════════════════
    UI HELPERS
@@ -1423,6 +1431,7 @@ function renderShell() {
         <a class="sidebar-link" href="#/analytics"       data-path="/analytics">${iconChart()} <span>Analytics</span></a>
         <a class="sidebar-link" href="#/media-library"  data-path="/media-library">${iconMedia()} <span>Media Library</span></a>
         <a class="sidebar-link" href="#/audit-log"       data-path="/audit-log">${iconAudit()} <span>Audit Log</span></a>
+        <a class="sidebar-link" href="#/trash"           data-path="/trash">${iconTrash()} <span>Trash</span></a>
 
         <div class="sidebar-section-label">System</div>
         <a class="sidebar-link" href="#/blog"     data-path="/blog">${iconBlog()} <span>Blog</span></a>
@@ -1716,7 +1725,8 @@ async function viewPages() {
     return `
       <a href="#/pages/${p.id}" class="btn btn-primary btn-sm">${iconEdit()} Edit</a>
       ${liveLink}
-      <button class="btn btn-ghost btn-sm" onclick="BKDN.duplicatePage(${p.id})" title="Duplicate">${iconDuplicate()}</button>`;
+      <button class="btn btn-ghost btn-sm" onclick="BKDN.duplicatePage(${p.id})" title="Duplicate">${iconDuplicate()}</button>
+      <button class="btn btn-ghost btn-sm" onclick="BKDN.deletePage(${p.id})" title="Delete" style="color:#ef4444">${iconTrash()}</button>`;
   };
 
   setContent(`
@@ -1929,6 +1939,13 @@ async function duplicatePage(pageId) {
   else toast(res?.error || 'Failed to duplicate page.', 'error');
 }
 
+async function deletePage(pageId) {
+  if (!confirm('Delete this page? It will move to Trash and can be restored later — its sections and buttons stay intact and become visible again automatically when you restore it.')) return;
+  const res = await DELETE('/admin/pages/' + pageId);
+  if (res?.ok) { toast('Page moved to Trash.', 'success'); viewPages(); }
+  else toast(res?.error || 'Failed to delete page.', 'error');
+}
+
 /* ═══════════════════════════════════════════════════════════════
    VIEW: PAGE EDITOR
 ═══════════════════════════════════════════════════════════════ */
@@ -1942,6 +1959,10 @@ async function viewPageEditor(pageId) {
   window._pageSections = sections;
   window._currentPageId = Number(pageId);
   window._currentPageType = p.page_type || 'custom';
+  if (!window._allLocations) {
+    const locRes = await GET('/admin/locations');
+    window._allLocations = locRes?.data?.locations || [];
+  }
 
   const pageStatus = p.status || (p.is_active ? 'published' : 'draft');
   const statusDot  = { draft:'#f59e0b', private:'#64748b', scheduled:'#3b82f6', published:'#22c55e' };
@@ -2068,6 +2089,14 @@ async function viewPageEditor(pageId) {
             </select>
           </div>
         </div>
+        <div class="form-group">
+          <label class="form-label">Location Scope</label>
+          <select id="pe-location" class="form-control">
+            <option value="">General page — not location-specific</option>
+            ${(window._allLocations||[]).map(l => `<option value="${esc(l.slug)}" ${p.store_slug===l.slug?'selected':''}>${esc(l.name)}</option>`).join('')}
+          </select>
+          <div class="form-hint">If set, only a Store Manager assigned to this location (see Users) can edit this page's buttons and sections.</div>
+        </div>
         <div id="pe-pw-row" style="margin-bottom:12px;${p.visibility!=='password_protected'?'display:none':''}">
           <div class="form-group" style="margin-bottom:6px">
             <label class="form-label">Page Password</label>
@@ -2122,6 +2151,44 @@ async function viewPageEditor(pageId) {
           <div style="color:#bdc1c6;font-size:12px">${esc(p.meta_description || 'No meta description set yet.')}</div>
         </div>
         <button class="btn btn-primary" onclick="BKDN.saveSeo(${pageId})">${iconSave()} Save SEO</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Structured Data (Rich Search Results)</div>
+        <div class="form-hint" style="margin-bottom:10px">Helps Google show extra details (hours, phone, FAQ) directly in search results. Fill in the form below — no code or raw JSON required.</div>
+        ${(() => {
+          const sdType = p.structured_data_type || '';
+          let sdFields = {};
+          try { sdFields = JSON.parse(p.structured_data_json || '{}'); } catch { sdFields = {}; }
+          window._structuredDataFields = sdFields;
+          return `
+        <div class="form-group">
+          <label class="form-label">Type</label>
+          <select id="pe-sd-type" class="form-control" onchange="BKDN.onStructuredDataTypeChange()">
+            <option value="" ${sdType===''?'selected':''}>None</option>
+            <option value="restaurant" ${sdType==='restaurant'?'selected':''}>Restaurant</option>
+            <option value="faq" ${sdType==='faq'?'selected':''}>FAQ Page</option>
+          </select>
+        </div>
+        <div id="pe-sd-restaurant" style="display:${sdType==='restaurant'?'':'none'}">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Business Name</label><input id="sd-r-name" class="form-control" value="${esc(sdFields.name||'')}"></div>
+            <div class="form-group"><label class="form-label">Cuisine</label><input id="sd-r-cuisine" class="form-control" value="${esc(sdFields.cuisine||'')}" placeholder="Japanese, Ramen"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Phone</label><input id="sd-r-phone" class="form-control" value="${esc(sdFields.phone||'')}"></div>
+            <div class="form-group"><label class="form-label">Price Range</label><input id="sd-r-price" class="form-control" value="${esc(sdFields.price_range||'')}" placeholder="$$"></div>
+          </div>
+          <div class="form-group"><label class="form-label">Address</label><input id="sd-r-address" class="form-control" value="${esc(sdFields.address||'')}"></div>
+          <div class="form-group"><label class="form-label">Hours</label><input id="sd-r-hours" class="form-control" value="${esc(sdFields.hours||'')}" placeholder="Mo-Su 11:00-21:00"></div>
+          <div class="form-group"><label class="form-label">Image URL</label><input id="sd-r-image" class="form-control" value="${esc(sdFields.image||'')}"></div>
+        </div>
+        <div id="pe-sd-faq" style="display:${sdType==='faq'?'':'none'}">
+          <div id="sd-faq-container">${(sdFields.questions||[]).map((qa, i) => structuredFaqRow(qa, i)).join('') || structuredFaqRow({}, 0)}</div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="BKDN.addStructuredFaqRow()" style="margin-top:8px">${iconPlus()} Add Question</button>
+        </div>
+        <button class="btn btn-primary" onclick="BKDN.saveStructuredData(${pageId})" style="margin-top:14px">${iconSave()} Save Structured Data</button>
+        `; })()}
       </div>
     </div>
 
@@ -2510,6 +2577,31 @@ async function openBtnModal(btn, pageId) {
         <input id="bf-end" type="datetime-local" class="form-control" value="${esc((btn?.end_at||'').replace(' ','T').slice(0,16))}">
       </div>
     </div>
+    <div class="form-group">
+      <label class="form-label">Recurring Schedule (optional)</label>
+      <div class="form-hint" style="margin-bottom:6px">Only show this on selected days — e.g. Happy Hour Mon–Fri. Leave no days checked to ignore this and always follow the dates above.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => {
+          const days = (btn?.recurring_days || '').split(',').filter(Boolean).map(Number);
+          const checked = days.includes(i);
+          return `<label style="display:flex;align-items:center;gap:4px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px 10px;cursor:pointer">
+            <input type="checkbox" class="bf-recurring-day" value="${i}" ${checked?'checked':''}> <span style="font-size:12px">${d}</span>
+          </label>`;
+        }).join('')}
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">From (time)</label>
+          <input id="bf-recurring-start" type="time" class="form-control" value="${esc(btn?.recurring_start_time||'')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Until (time)</label>
+          <input id="bf-recurring-end" type="time" class="form-control" value="${esc(btn?.recurring_end_time||'')}">
+        </div>
+      </div>
+      <div class="form-hint">Times are evaluated in America/Chicago. Leave both blank to run all day on the selected days.</div>
+    </div>
+    ${abTestSectionHtml(btn)}
     <div style="display:flex;gap:20px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px">
         <label class="toggle"><input id="bf-visible" type="checkbox" ${btn?.visible!==0?'checked':''}><span class="toggle-slider"></span></label>
@@ -2585,6 +2677,9 @@ async function saveBtnModal(btnId, pageId) {
     section_id:      document.getElementById('bf-section').value || null,
     start_at:        document.getElementById('bf-start').value.replace('T',' ') || null,
     end_at:          document.getElementById('bf-end').value.replace('T',' ')   || null,
+    recurring_days:  Array.from(document.querySelectorAll('.bf-recurring-day:checked')).map(el => el.value).join(',') || null,
+    recurring_start_time: document.getElementById('bf-recurring-start').value || null,
+    recurring_end_time:   document.getElementById('bf-recurring-end').value || null,
     visible:         document.getElementById('bf-visible').checked  ? 1 : 0,
     enabled:         document.getElementById('bf-enabled').checked  ? 1 : 0,
     is_featured:     document.getElementById('bf-featured').checked ? 1 : 0,
@@ -2599,6 +2694,99 @@ async function saveBtnModal(btnId, pageId) {
     : await POST('/admin/pages/' + pageId + '/buttons', data);
   if (res?.ok) { toast(btnId ? 'Button updated.' : 'Button added.', 'success'); closeModal(); viewPageEditor(pageId); }
   else toast(res?.error || 'Failed to save button.', 'error');
+}
+
+// A/B Testing — a test pairs this button (Variant A) with a second real
+// button row (Variant B) sharing an ab_group_id. Only a new button can start
+// a test (needs a saved id first), so this section is hidden while adding.
+function abTestSectionHtml(btn) {
+  if (!btn) return '';
+  if (!btn.ab_group_id) {
+    return `
+    <div class="form-group">
+      <label class="form-label">A/B Testing</label>
+      <div class="form-hint" style="margin-bottom:6px">Test two versions of this button's title/subtitle against each other. Visitors are split consistently by device, and clicks are tracked per variant.</div>
+      <button type="button" class="btn btn-secondary" onclick="BKDN.openAbTestStartModal(${btn.id},${btn.page_id})">Start A/B Test</button>
+    </div>`;
+  }
+  return `
+    <div class="form-group">
+      <label class="form-label">A/B Testing</label>
+      <div class="form-hint" style="margin-bottom:6px">This button is Variant ${esc((btn.ab_variant||'').toUpperCase())} of an active A/B test.</div>
+      <button type="button" class="btn btn-secondary" onclick="BKDN.openAbTestResultsModal(${btn.id},${btn.page_id})">View Results / End Test</button>
+    </div>`;
+}
+
+function openAbTestStartModal(btnId, pageId) {
+  openModal('Start A/B Test', `
+    <div class="form-hint" style="margin-bottom:12px">Variant A keeps this button's current title and subtitle. Enter Variant B's title/subtitle below — traffic is split between the two, and you can compare click-through rate once you have data.</div>
+    <div class="form-group">
+      <label class="form-label">Variant B Title *</label>
+      <input id="ab-b-title" class="form-control" placeholder="Alternate title to test">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Variant B Subtitle</label>
+      <input id="ab-b-subtitle" class="form-control" placeholder="Optional alternate tagline">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Traffic Split (% of visitors who see Variant A)</label>
+      <input id="ab-split" type="number" class="form-control" min="1" max="99" value="50">
+    </div>
+  `,
+  `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="BKDN.startAbTest(${btnId},${pageId})">Start Test</button>`
+  );
+}
+
+async function startAbTest(btnId, pageId) {
+  const split = Math.max(1, Math.min(99, Number(document.getElementById('ab-split').value) || 50));
+  const data = {
+    variant_b_label: document.getElementById('ab-b-title').value.trim(),
+    variant_b_subtitle: document.getElementById('ab-b-subtitle').value.trim() || null,
+    traffic_split: split,
+  };
+  if (!data.variant_b_label) { toast('Enter a title for Variant B.', 'error'); return; }
+  const res = await POST('/admin/buttons/' + btnId + '/ab-test', data);
+  if (res?.ok) { toast('A/B test started.', 'success'); closeModal(); viewPageEditor(pageId); }
+  else toast(res?.error || 'Failed to start A/B test.', 'error');
+}
+
+async function openAbTestResultsModal(btnId, pageId) {
+  const res = await GET('/admin/buttons/' + btnId + '/ab-test');
+  if (!res?.ok || !res.data?.active) { toast('This A/B test is no longer active.', 'error'); return; }
+  const variants = res.data.variants || [];
+  const rows = variants.map(v => `
+    <tr>
+      <td>Variant ${esc((v.variant||'').toUpperCase())}${v.variant==='a'?' (original)':''}</td>
+      <td>${esc(v.label)}</td>
+      <td>${v.traffic_split}%</td>
+      <td>${v.impressions}</td>
+      <td>${v.clicks}</td>
+      <td>${(v.ctr*100).toFixed(1)}%</td>
+      <td><button type="button" class="btn btn-secondary" onclick="BKDN.closeModal();BKDN.openEditButton(${v.id},${pageId})">Edit</button></td>
+    </tr>`).join('');
+  openModal('A/B Test Results', `
+    <table class="data-table">
+      <thead><tr><th>Variant</th><th>Title</th><th>Split</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="form-hint" style="margin-top:12px">Impressions count each time a variant was shown to a new visitor bucket. Edit either variant's title/subtitle/destination with the Edit buttons above.</div>
+  `,
+  `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Close</button>
+   <button class="btn btn-secondary" onclick="BKDN.endAbTest(${btnId},${pageId},'a')">Keep Variant A</button>
+   <button class="btn btn-secondary" onclick="BKDN.endAbTest(${btnId},${pageId},'b')">Keep Variant B</button>
+   <button class="btn btn-primary" onclick="BKDN.endAbTest(${btnId},${pageId},null)">Auto-pick Winner</button>`
+  );
+}
+
+async function endAbTest(btnId, pageId, keepVariant) {
+  const msg = keepVariant
+    ? `End this A/B test and keep Variant ${keepVariant.toUpperCase()}? The other variant will move to Trash and can be restored later.`
+    : 'End this A/B test and keep the variant with the higher click-through rate? The other variant will move to Trash and can be restored later.';
+  if (!confirm(msg)) return;
+  const res = await DELETE('/admin/buttons/' + btnId + '/ab-test', keepVariant ? { keep_variant: keepVariant } : {});
+  if (res?.ok) { toast('A/B test ended — kept Variant ' + (res.data?.kept_variant||'').toUpperCase() + '.', 'success'); closeModal(); viewPageEditor(pageId); }
+  else toast(res?.error || 'Failed to end A/B test.', 'error');
 }
 
 async function toggleBtn(btnId, field, value, pageId) {
@@ -2617,7 +2805,7 @@ async function duplicateButton(btnId, pageId) {
 }
 
 async function deleteButton(btnId, pageId) {
-  if (!confirm('Delete this button? This cannot be undone.')) return;
+  if (!confirm('Delete this button? It will move to Trash and can be restored later.')) return;
   const res = await DELETE('/admin/buttons/' + btnId);
   if (res?.ok) { toast('Button deleted.', 'success'); viewPageEditor(pageId); }
   else toast('Failed to delete button.', 'error');
@@ -2680,7 +2868,7 @@ async function toggleSection(sectionId, value, pageId) {
 }
 
 async function deleteSection(sectionId, pageId) {
-  if (!confirm('Delete this section? Buttons inside it will stay on the page without a section.')) return;
+  if (!confirm('Delete this section? It will move to Trash and can be restored later. Buttons inside it will stay on the page without a section.')) return;
   const res = await DELETE('/admin/sections/' + sectionId);
   if (res?.ok) { toast('Section deleted.', 'success'); viewPageEditor(pageId); }
   else toast(res?.error || 'Failed to delete section.', 'error');
@@ -2718,6 +2906,7 @@ async function savePageVisibility(pageId) {
     visibility: vis,
     show_on_hub: document.getElementById('pe-show-on-hub').checked ? 1 : 0,
     allow_indexing: document.getElementById('pe-allow-indexing').checked ? 1 : 0,
+    store_slug: document.getElementById('pe-location')?.value || '',
   };
   if (pw) body.page_password = pw;
   const res = await PUT('/admin/pages/' + pageId, body);
@@ -2734,6 +2923,54 @@ async function saveSeo(pageId) {
   };
   const res = await PUT('/admin/pages/' + pageId, body);
   if (res?.ok) { toast('SEO saved.', 'success'); viewPageEditor(pageId); }
+  else toast(res?.error || 'Save failed.', 'error');
+}
+
+function structuredFaqRow(qa, i) {
+  return `<div class="sd-faq-row" style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:10px;margin-bottom:8px">
+    <div class="form-group" style="margin-bottom:6px"><label class="form-label">Question</label><input class="form-control sd-faq-q" value="${esc(qa.question||'')}"></div>
+    <div class="form-group" style="margin-bottom:0"><label class="form-label">Answer</label><textarea class="form-control sd-faq-a" rows="2">${esc(qa.answer||'')}</textarea></div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('.sd-faq-row').remove()" style="color:#ef4444;margin-top:6px">${iconTrash()} Remove</button>
+  </div>`;
+}
+
+function onStructuredDataTypeChange() {
+  const type = document.getElementById('pe-sd-type')?.value;
+  const r = document.getElementById('pe-sd-restaurant');
+  const f = document.getElementById('pe-sd-faq');
+  if (r) r.style.display = type === 'restaurant' ? '' : 'none';
+  if (f) f.style.display = type === 'faq' ? '' : 'none';
+}
+
+function addStructuredFaqRow() {
+  const container = document.getElementById('sd-faq-container');
+  const div = document.createElement('div');
+  div.innerHTML = structuredFaqRow({}, 0);
+  container.appendChild(div.firstElementChild);
+}
+
+async function saveStructuredData(pageId) {
+  const type = document.getElementById('pe-sd-type').value;
+  let data = {};
+  if (type === 'restaurant') {
+    data = {
+      name: document.getElementById('sd-r-name').value.trim(),
+      cuisine: document.getElementById('sd-r-cuisine').value.trim(),
+      phone: document.getElementById('sd-r-phone').value.trim(),
+      price_range: document.getElementById('sd-r-price').value.trim(),
+      address: document.getElementById('sd-r-address').value.trim(),
+      hours: document.getElementById('sd-r-hours').value.trim(),
+      image: document.getElementById('sd-r-image').value.trim(),
+    };
+  } else if (type === 'faq') {
+    const rows = document.querySelectorAll('#sd-faq-container .sd-faq-row');
+    data.questions = Array.from(rows).map(row => ({
+      question: row.querySelector('.sd-faq-q')?.value.trim() || '',
+      answer: row.querySelector('.sd-faq-a')?.value.trim() || '',
+    })).filter(qa => qa.question && qa.answer);
+  }
+  const res = await PUT('/admin/pages/' + pageId, { structured_data_type: type || null, structured_data: data });
+  if (res?.ok) { toast('Structured data saved.', 'success'); viewPageEditor(pageId); }
   else toast(res?.error || 'Save failed.', 'error');
 }
 
@@ -3626,6 +3863,54 @@ async function viewAuditLog() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   VIEW: TRASH
+   Pages, Sections, and Buttons deleted via the normal Delete button are
+   soft-deleted (deleted_at set) and land here first — Restore brings them
+   straight back, Delete Forever is the only truly permanent action.
+═══════════════════════════════════════════════════════════════ */
+async function viewTrash() {
+  setContent(loading());
+  const res = await GET('/admin/trash');
+  if (!res?.ok) { setContent(errBanner('Failed to load trash.', 'BKDN.viewTrash()')); return; }
+  const items = res.data.trash || [];
+  const typeLabel = { page: 'Page', section: 'Section', button: 'Button' };
+  setContent(`
+    ${pageTitle('Trash', `${items.length} item${items.length!==1?'s':''} — deleted Pages, Sections, and Buttons land here before they're gone for good.`)}
+    <div class="card">
+      ${!items.length ? `<div class="empty-state">Trash is empty.</div>` : `
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Type</th><th>Page</th><th>Deleted</th><th></th></tr></thead>
+        <tbody>${items.map(i => `
+          <tr>
+            <td style="font-weight:600;color:#e2e8f0">${esc(i.name||'(untitled)')}</td>
+            <td><span class="badge badge-gray">${typeLabel[i.type]}</span></td>
+            <td style="color:#94a3b8">${esc(i.page_title || (i.type==='page' ? '—' : ''))}</td>
+            <td style="color:#94a3b8">${fmtDateTime(i.deleted_at)}</td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-secondary btn-sm" onclick="BKDN.restoreTrashItem('${i.type}',${i.id})">${iconSync()} Restore</button>
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.permanentlyDeleteTrashItem('${i.type}',${i.id})" style="color:#ef4444">${iconTrash()} Delete Forever</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
+    </div>
+  `);
+}
+
+async function restoreTrashItem(type, id) {
+  const res = await POST(`/admin/trash/${type}/${id}/restore`, {});
+  if (res?.ok) { toast(`${type[0].toUpperCase()+type.slice(1)} restored.`, 'success'); viewTrash(); }
+  else toast(res?.error || 'Could not restore item.', 'error');
+}
+
+async function permanentlyDeleteTrashItem(type, id) {
+  if (!confirm('Delete this forever? This cannot be undone — it will not be recoverable.')) return;
+  const res = await DELETE(`/admin/trash/${type}/${id}`);
+  if (res?.ok) { toast('Permanently deleted.', 'success'); viewTrash(); }
+  else toast(res?.error || 'Could not delete item.', 'error');
+}
+
+/* ═══════════════════════════════════════════════════════════════
    VIEW: SETTINGS
 ═══════════════════════════════════════════════════════════════ */
 async function viewSettings() {
@@ -3820,18 +4105,137 @@ async function saveLocationModal(locationId) {
 /* ═══════════════════════════════════════════════════════════════
    VIEW: USERS
 ═══════════════════════════════════════════════════════════════ */
+const USER_ROLES = [
+  { value: 'super_admin',   label: 'Super Admin' },
+  { value: 'admin',         label: 'Admin' },
+  { value: 'marketing',     label: 'Marketing' },
+  { value: 'store_manager', label: 'Store Manager' },
+  { value: 'viewer',        label: 'Viewer' },
+];
+
 async function viewUsers() {
   setContent(loading());
-  // Simple user display using /auth/me for now; full user management is super_admin only
-  const res = await GET('/auth/me');
+  const [usersRes, meRes] = await Promise.all([GET('/admin/users'), GET('/auth/me')]);
+  if (!usersRes?.ok) { setContent(errBanner('Failed to load users.', 'BKDN.viewUsers()')); return; }
+  const users = usersRes.data.users || [];
+  const myId = meRes?.user?.id;
+  const isSuperAdmin = meRes?.user?.role === 'super_admin';
+
   setContent(`
-    ${pageTitle('Users', 'Account management')}
+    ${pageTitle('Users', `${users.length} account${users.length!==1?'s':''}`)}
+    <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+      ${isSuperAdmin ? `<button class="btn btn-primary" onclick="BKDN.openUserModal()">${iconPlus()} Add User</button>` : ''}
+    </div>
     <div class="card">
-      <div class="card-title">Your Account</div>
-      <div style="font-size:13px;color:#94a3b8;margin-bottom:12px">Logged in as: <strong style="color:#e2e8f0">${esc(res?.user?.email||'')}</strong> (${esc(res?.user?.role||'')})</div>
-      <div style="font-size:12px;color:#475569">Full user management (add/edit/deactivate) requires direct database access or a future admin UI update.</div>
+      <table class="data-table">
+        <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Location</th><th>Status</th><th></th></tr></thead>
+        <tbody>${users.map(u => `
+          <tr>
+            <td>${esc(u.email)}</td>
+            <td>${esc(u.name || '—')}</td>
+            <td>${esc(roleLabel(u.role))}</td>
+            <td>${u.role === 'store_manager' ? (esc(u.store_slug) || '<span style="color:#ef4444">None assigned</span>') : '<span style="color:#64748b">—</span>'}</td>
+            <td>${Number(u.is_active) ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Deactivated</span>'}</td>
+            <td style="white-space:nowrap">
+              ${isSuperAdmin ? `
+              <button class="btn btn-ghost btn-sm" onclick="BKDN.openUserModal(${u.id})" title="Edit">${iconEdit()}</button>
+              ${u.id !== myId ? `<button class="btn btn-ghost btn-sm" onclick="BKDN.deleteUser(${u.id})" title="Delete" style="color:#ef4444">${iconTrash()}</button>` : ''}
+              ` : ''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">Roles</div>
+      <ul style="font-size:12px;color:#94a3b8;margin-left:18px;display:flex;flex-direction:column;gap:4px">
+        <li><strong>Super Admin</strong> — full access to everything, including Users.</li>
+        <li><strong>Admin / Marketing</strong> — pages, content, templates, publishing, rollback, SEO, analytics, settings.</li>
+        <li><strong>Store Manager</strong> — can only create/edit/publish/delete content on pages assigned to their one Location.</li>
+        <li><strong>Viewer</strong> — read-only.</li>
+      </ul>
     </div>
   `);
+}
+
+async function openUserModal(id = null) {
+  let item = null;
+  if (id) {
+    const res = await GET('/admin/users');
+    item = (res?.data?.users || []).find(u => Number(u.id) === Number(id));
+  }
+  if (!window._allLocations) {
+    const locRes = await GET('/admin/locations');
+    window._allLocations = locRes?.data?.locations || [];
+  }
+  const roleOpts = USER_ROLES.map(r => `<option value="${r.value}" ${(item?.role||'viewer')===r.value?'selected':''}>${r.label}</option>`).join('');
+  const locOpts = window._allLocations.map(l => `<option value="${esc(l.slug)}" ${item?.store_slug===l.slug?'selected':''}>${esc(l.name)}</option>`).join('');
+  openModal(id ? 'Edit User' : 'Add User', `
+    <div class="form-group">
+      <label class="form-label">Email *</label>
+      <input id="uf-email" class="form-control" value="${esc(item?.email||'')}" ${item?'disabled':''} placeholder="name@bakudanramen.com">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Name</label>
+      <input id="uf-name" class="form-control" value="${esc(item?.name||'')}">
+    </div>
+    ${!item ? `
+    <div class="form-group">
+      <label class="form-label">Password *</label>
+      <div style="position:relative">
+        <input id="uf-password" type="password" class="form-control" autocomplete="new-password" style="padding-right:40px">
+        <button type="button" onclick="BKDN.togglePasswordVisibility('uf-password', this)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;padding:4px" aria-label="Show password">${iconEyeOpen()}</button>
+      </div>
+    </div>` : ''}
+    <div class="form-group">
+      <label class="form-label">Role</label>
+      <select id="uf-role" class="form-control" onchange="BKDN.onUserRoleChange()">${roleOpts}</select>
+    </div>
+    <div class="form-group" id="uf-location-wrap" style="display:none">
+      <label class="form-label">Assigned Location</label>
+      <select id="uf-location" class="form-control"><option value="">Select a location…</option>${locOpts}</select>
+      <div class="form-hint">A Store Manager can only edit pages and buttons assigned to this location.</div>
+    </div>
+    ${item ? `
+    <div style="display:flex;align-items:center;gap:8px">
+      <label class="toggle"><input id="uf-active" type="checkbox" ${item.is_active!==0?'checked':''}><span class="toggle-slider"></span></label>
+      <span class="form-label" style="margin:0">Active</span>
+    </div>` : ''}
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveUser(${id||'null'})">${item ? 'Save' : 'Create'}</button>`);
+  onUserRoleChange();
+}
+
+function onUserRoleChange() {
+  const role = document.getElementById('uf-role')?.value;
+  const wrap = document.getElementById('uf-location-wrap');
+  if (wrap) wrap.style.display = role === 'store_manager' ? '' : 'none';
+}
+
+async function saveUser(id = null) {
+  const role = document.getElementById('uf-role').value;
+  const body = {
+    name: document.getElementById('uf-name').value.trim() || null,
+    role,
+    store_slug: role === 'store_manager' ? (document.getElementById('uf-location').value || null) : null,
+  };
+  if (!id) {
+    body.email = document.getElementById('uf-email').value.trim();
+    body.password = document.getElementById('uf-password').value;
+    if (!body.email || !body.password) { toast('Email and password are required.', 'error'); return; }
+  } else {
+    body.is_active = document.getElementById('uf-active').checked ? 1 : 0;
+  }
+  if (role === 'store_manager' && !body.store_slug) { toast('Select a location for this Store Manager.', 'error'); return; }
+  const res = id ? await PUT('/admin/users/' + id, body) : await POST('/admin/users', body);
+  if (res?.ok) { toast(id ? 'User updated.' : 'User created.', 'success'); closeModal(); viewUsers(); }
+  else toast(res?.error || 'Could not save user.', 'error');
+}
+
+async function deleteUser(id) {
+  if (!confirm('Delete this user account? This cannot be undone.')) return;
+  const res = await DELETE('/admin/users/' + id);
+  if (res?.ok) { toast('User deleted.', 'success'); viewUsers(); }
+  else toast(res?.error || 'Could not delete user.', 'error');
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3918,15 +4322,18 @@ window.BKDN = {
   viewDashboard, viewProject, viewPages, viewScheduling,
   viewBlog, viewBlogEditor,
   viewAnalytics, viewSettings, viewUsers, viewProfile,
+  openUserModal, saveUser, deleteUser, onUserRoleChange,
   viewLocations, openLocationModal, saveLocationModal,
   updateUtmPreview, copyUtmUrl, createShortlinkFromUtm,
   viewShortlinks, openShortlinkModal, saveShortlink, toggleShortlink, deleteShortlink,
   viewLinkHealth, runLinkHealthCheck, viewAuditLog,
+  viewTrash, restoreTrashItem, permanentlyDeleteTrashItem,
   changePassword,
   // Modal
   closeModal,
   // Page CRUD
-  openPageModal, savePageModal, autofillSlug, duplicatePage, onPageTypeChange, savePageVisibility, saveSeo,
+  openPageModal, savePageModal, autofillSlug, duplicatePage, deletePage, onPageTypeChange, savePageVisibility, saveSeo,
+  onStructuredDataTypeChange, addStructuredFaqRow, saveStructuredData,
   // Page editor
   switchTab, savePage, publishPage, unpublishPage, applyPageStatus, onStatusChange,
   generatePreviewToken, verifySync, saveOrder, cancelReorder,
@@ -3934,22 +4341,23 @@ window.BKDN = {
   // Button CRUD
   openAddButton, openEditButton, saveBtnModal, toggleBtn, duplicateButton, deleteButton,
   onLinkTypeChange, testButtonUrl,
+  openAbTestStartModal, startAbTest, openAbTestResultsModal, endAbTest,
   // Section CRUD
   openSectionModal, saveSectionModal, toggleSection, deleteSection,
   openMoveModal, confirmMove,
   // Templates
   openSaveAsTemplateModal, saveAsTemplate, openCreatePageFromTemplateModal, createPageFromTemplate, deleteTemplate,
   // Campaigns
-  openCampaignModal, saveCampaign, deleteCampaign,
+  openCampaignModal, saveCampaign, deleteCampaign, saveCampaignEditor,
   // Forms
-  openFormModal, saveForm, deleteForm,
-  openFormBuilderModal, saveFormBuilder,
+  openFormModal, saveForm, deleteForm, viewFormSubmissions,
+  openFormBuilderModal, saveFormBuilder, addFieldRow,
   // Customer Service
   openCSModal, saveCSNotice, deleteCSNotice,
   // Media Library
   uploadMediaFiles, filterMedia, copyMediaUrl, deleteMediaItem,
   // Automations
-  openAutomationModal, saveAutomation, deleteAutomation,
+  openAutomationModal, saveAutomation, deleteAutomation, onAutomationTypeChange, runAutomationsNow,
   // Blog
   saveBlogPost, schedulePost, saveAndCreateAnother, publishPost, duplicatePost, archivePost,
   applyTemplate, toggleEmoji, insertEmoji,

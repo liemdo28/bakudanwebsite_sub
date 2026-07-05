@@ -17,7 +17,7 @@ Steps:
 Does NOT touch any other pending/modified file in the repo (about.html,
 .htaccess, blog pages, etc.) — those are out of scope for this deploy.
 """
-import paramiko, pathlib, sqlite3, sys, time
+import hashlib, re, paramiko, pathlib, sqlite3, sys, time
 from _deploy_static_pages import HOST, PORT, USER, PASS, REMOTE_WR
 
 _here = pathlib.Path(__file__).parent
@@ -32,11 +32,35 @@ STAMP = time.strftime('%Y%m%d_%H%M%S')
 BACKUP_DIR = _here / '_deploy_backups' / STAMP
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
+def sync_admin_cache_bust():
+    """Rewrite links-admin/index.html's app.js?v=... to a content hash of
+    app.js itself, so every deploy auto-busts the browser cache — no more
+    manually-edited version strings to forget (this caused real stale-JS
+    bugs in earlier deploys this session)."""
+    app_js = (_repo / 'links-admin/app.js').read_bytes()
+    content_hash = hashlib.sha1(app_js).hexdigest()[:12]
+    index_path = _repo / 'links-admin/index.html'
+    html = index_path.read_text(encoding='utf-8')
+    new_html, n = re.subn(
+        r'(/links-admin/app\.js\?v=)[^"]*',
+        r'\g<1>' + content_hash,
+        html,
+    )
+    if n == 0:
+        print('  !! could not find app.js script tag to cache-bust in links-admin/index.html')
+    elif new_html != html:
+        index_path.write_text(new_html, encoding='utf-8')
+        print(f'  cache-bust version -> {content_hash}')
+    else:
+        print(f'  cache-bust version already up to date ({content_hash})')
+
 FILES_TO_DEPLOY = [
     ('api/index.php',              REMOTE_WR + '/api/index.php'),
     ('links-admin/app.js',         REMOTE_WR + '/links-admin/app.js'),
+    ('links-admin/index.html',     REMOTE_WR + '/links-admin/index.html'),
     ('links/index.html',           REMOTE_WR + '/links/index.html'),
     ('marketing-signup/index.html', REMOTE_WR + '/marketing-signup/index.html'),
+    ('forms/index.html',           REMOTE_WR + '/forms/index.html'),
 ]
 
 def ensure_remote_dir(sftp, remote_path):
@@ -71,6 +95,10 @@ def main():
     try_get(sftp, REMOTE_DB + '-wal', BACKUP_DIR / 'bakudan.db-wal')
     try_get(sftp, REMOTE_DB + '-shm', BACKUP_DIR / 'bakudan.db-shm')
     print(f'Backup stored at {BACKUP_DIR}\n')
+
+    print('== Step 1b: sync admin cache-bust version ==')
+    sync_admin_cache_bust()
+    print()
 
     print('== Step 2: upload ==')
     for local_rel, remote_path in FILES_TO_DEPLOY:

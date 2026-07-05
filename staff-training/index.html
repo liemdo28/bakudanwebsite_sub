@@ -11,13 +11,9 @@
     </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="robots" id="meta-robots" content="index, follow">
-<title id="meta-title">Bakudan Ramen — Links</title>
-<meta name="description" id="meta-description" content="Quick links for Bakudan Ramen — order online, view menu, find us on social media.">
-<link rel="canonical" id="meta-canonical" href="">
-<meta property="og:title" id="meta-og-title" content="Bakudan Ramen — Links">
-<meta property="og:description" id="meta-og-description" content="Quick links for Bakudan Ramen — order online, view menu, find us on social media.">
-<meta property="og:image" id="meta-og-image" content="">
+<meta name="robots" id="meta-robots" content="noindex, nofollow">
+<title>Bakudan Ramen — Staff Training</title>
+<meta name="description" content="Internal Bakudan Ramen staff training resources.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 <style>
@@ -103,20 +99,6 @@ body {
 #links-loading { text-align: center; padding: 60px 20px; color: #555; }
 #links-error   { text-align: center; padding: 40px 20px; color: #888; }
 
-/* Password gate */
-#links-password-gate { display: none; text-align: center; padding: 40px 20px; }
-#links-password-gate .pw-icon { font-size: 40px; margin-bottom: 16px; color: #EC4A5E; }
-#links-password-gate .pw-title { font-size: 16px; font-weight: 700; color: #fafafa; margin-bottom: 8px; }
-#links-password-gate .pw-subtitle { font-size: 13px; color: #888; margin-bottom: 24px; }
-#links-password-gate .pw-form { display: flex; flex-direction: column; gap: 12px; align-items: center; }
-#links-password-gate .pw-input { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 12px 16px; color: #fafafa; font-size: 14px; width: 240px; outline: none; transition: border-color .2s; }
-#links-password-gate .pw-input:focus { border-color: #EC4A5E; }
-#links-password-gate .pw-input::placeholder { color: #555; }
-#links-password-gate .pw-submit { background: #EC4A5E; color: #fff; border: none; border-radius: 8px; padding: 12px 28px; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s; }
-#links-password-gate .pw-submit:hover { background: #c73a4c; }
-#links-password-gate .pw-submit:disabled { opacity: .5; cursor: not-allowed; }
-#links-password-gate .pw-error { font-size: 12px; color: #f87171; margin-top: -4px; }
-
 /* Preview mode */
 .preview-banner {
   background: #1e3a5f; border: 1px solid #2563eb;
@@ -130,21 +112,6 @@ body {
 .links-btn.disabled-preview {
   opacity: .45; cursor: default; pointer-events: none;
 }
-
-/* Service status / notice banners */
-.notice-banner {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;
-  font-size: 12px; line-height: 1.4;
-}
-.notice-info     { background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.4); color: #93c5fd; }
-.notice-warning  { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); color: #fcd34d; }
-.notice-critical { background: rgba(220,38,38,.15); border: 1px solid rgba(220,38,38,.5); color: #fca5a5; }
-.notice-dismiss {
-  background: none; border: none; color: inherit; font-size: 18px; line-height: 1;
-  cursor: pointer; opacity: .7; flex-shrink: 0;
-}
-.notice-dismiss:hover { opacity: 1; }
 </style>
 </head>
 <body>
@@ -164,16 +131,6 @@ body {
     <div style="color:#EC4A5E;font-weight:700;margin-bottom:8px">Page not found</div>
     <div style="font-size:13px" data-error-detail>This link page is not available.</div>
   </div>
-  <div id="links-password-gate">
-    <div class="pw-icon">🔒</div>
-    <div class="pw-title">This page is password protected</div>
-    <div class="pw-subtitle">Enter the password to view this content</div>
-    <div class="pw-form">
-      <input id="pw-input" class="pw-input" type="password" placeholder="Enter password" autocomplete="off">
-      <div id="pw-msg" class="pw-error" style="display:none"></div>
-      <button id="pw-submit" class="pw-submit" type="button">Unlock Page</button>
-    </div>
-  </div>
 </div>
 
 <div class="links-footer">
@@ -189,9 +146,11 @@ body {
   const isPreview = pathParts.includes('preview');
   const previewToken = new URLSearchParams(window.location.search).get('token');
 
+  const forcedSlug = 'staff-training';
+
   // Slug: last path segment (unless it's 'links' or 'preview' -> default public customer page)
   const lastSeg = pathParts[pathParts.length - 1];
-  const slug = (lastSeg === 'links' || lastSeg === 'preview' || !lastSeg) ? 'bakudan-links-main' : lastSeg;
+  const slug = forcedSlug || ((lastSeg === 'links' || lastSeg === 'preview' || !lastSeg) ? 'bakudan-links-main' : lastSeg);
 
   // Apply noindex for preview pages
   if (isPreview) {
@@ -292,18 +251,7 @@ body {
     const rawSubtitle = b.subtitle || '';
     const isEnabled = b.enabled === undefined ? true : Number(b.enabled) === 1 || b.enabled === true;
     const isVisible = b.visible === undefined ? Number(b.is_active ?? 1) === 1 : !!b.visible;
-    // Location-derived destinations: the link target comes from the joined
-    // location record, not a pasted URL, so one location edit updates every
-    // button that points at it.
-    let locationHref = null;
-    if (b.link_type === 'call_store' && b.location_phone) {
-      locationHref = 'tel:' + b.location_phone.replace(/[^0-9+]/g, '');
-    } else if (b.link_type === 'directions' && b.location_maps_url) {
-      locationHref = b.location_maps_url;
-    } else if (b.link_type === 'order_support' && b.location_support_email) {
-      locationHref = 'mailto:' + b.location_support_email;
-    }
-    const href = locationHref || (b.url && b.url !== '#' ? b.url : '#');
+    const href = b.url && b.url !== '#' ? b.url : '#';
     const isExternal = /^https?:\/\//i.test(href) || /^mailto:|^tel:/i.test(href);
     const copy = polishButtonCopy(rawTitle, rawSubtitle, href);
     return {
@@ -325,41 +273,6 @@ body {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ page_id: pageId, button_id: btnId }),
     }).catch(() => {});
-  }
-
-  // A/B testing: two real button rows share ab_group_id, tagged
-  // ab_variant 'a'/'b'. The API returns both — pick one per visitor here
-  // (consistent via localStorage so the same person always sees the same
-  // variant) and drop the other from the render list. Clicks are already
-  // tracked per-variant via the button's own id; log a separate impression
-  // so CTR can be computed per variant.
-  function applyAbTesting(buttons) {
-    const seenGroups = new Set();
-    const result = [];
-    buttons.forEach(b => {
-      if (!b.ab_group_id) { result.push(b); return; }
-      if (seenGroups.has(b.ab_group_id)) return; // already resolved this group
-      seenGroups.add(b.ab_group_id);
-      const variants = buttons.filter(v => v.ab_group_id === b.ab_group_id);
-      if (variants.length < 2) { result.push(b); return; } // orphaned variant (partner ended/trashed) — just show it
-      const variantA = variants.find(v => v.ab_variant === 'a') || variants[0];
-      const key = 'bkdn_ab_' + b.ab_group_id;
-      let bucket;
-      try { bucket = localStorage.getItem(key); } catch (e) {}
-      if (bucket !== 'a' && bucket !== 'b') {
-        const splitA = Number(variantA.ab_traffic_split) || 50;
-        bucket = (Math.random() * 100) < splitA ? 'a' : 'b';
-        try { localStorage.setItem(key, bucket); } catch (e) {}
-      }
-      const chosen = variants.find(v => v.ab_variant === bucket) || variantA;
-      result.push(chosen);
-      fetch('/api/public/analytics/impression', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ button_id: chosen.id }),
-      }).catch(() => {});
-    });
-    return result;
   }
 
   async function load() {
@@ -393,14 +306,6 @@ body {
 
     document.getElementById('links-loading').style.display = 'none';
 
-    // Password-protected page: show the unlock gate instead of an error.
-    if (!networkFailure && res.status === 401) {
-      document.getElementById('links-loading').style.display = 'none';
-      document.getElementById('links-password-gate').style.display = 'block';
-      setupPasswordGate(slug, isPreview, previewToken);
-      return;
-    }
-
     // Only fall back to the offline snapshot when the network request itself
     // failed to reach a server. Any real HTTP response (even an error one)
     // must be shown as an error, never silently replaced with stale
@@ -415,18 +320,8 @@ body {
       return;
     }
 
-    const { page, buttons: rawButtons, sections, settings, notices, structuredData } = data.data;
+    const { page, buttons, sections, settings } = data.data;
     const isPreviewMode = !!data.preview;
-    // Preview mode shows both variants (with the admin-preview badges added
-    // below) rather than bucketing, so the admin can review both before publish.
-    const buttons = isPreviewMode ? rawButtons : applyAbTesting(rawButtons);
-
-    if (structuredData) {
-      const ldScript = document.createElement('script');
-      ldScript.type = 'application/ld+json';
-      ldScript.textContent = JSON.stringify(structuredData);
-      document.head.appendChild(ldScript);
-    }
 
     // The server computes the authoritative noindex decision (visibility +
     // allow_indexing combined) — fall back to the same logic client-side
@@ -438,20 +333,8 @@ body {
       document.getElementById('meta-robots').content = 'noindex, nofollow';
     }
 
-    // Update meta — SEO fields set in Admin take priority over the generic defaults
-    const pageTitle = page.seo_title || (page.headline || page.title) + ' — Bakudan Ramen';
-    const pageDescription = page.meta_description || settings.links_subheadline || '';
-    document.title = pageTitle;
-    document.getElementById('meta-title').textContent = pageTitle;
-    if (pageDescription) {
-      document.getElementById('meta-description').content = pageDescription;
-      document.getElementById('meta-og-description').content = pageDescription;
-    }
-    document.getElementById('meta-og-title').content = pageTitle;
-    if (page.og_image) document.getElementById('meta-og-image').content = page.og_image;
-    if (page.canonical_url) document.getElementById('meta-canonical').href = page.canonical_url;
-    else document.getElementById('meta-canonical').href = window.location.origin + '/links/' + slug;
-
+    // Update meta
+    document.title = (page.headline || page.title) + ' — Bakudan Ramen';
     if (page.handle) {
       document.getElementById('links-headline').textContent = page.handle;
     } else {
@@ -465,33 +348,6 @@ body {
       banner.className = 'preview-banner';
       banner.innerHTML = '&#128274; PREVIEW &mdash; Internal Use Only &mdash; Not publicly indexed';
       document.querySelector('.links-logo').insertAdjacentElement('beforebegin', banner);
-    }
-
-    // Service status / notice banners (dismissible ones remembered per-browser)
-    let dismissed = [];
-    try { dismissed = JSON.parse(localStorage.getItem('bkdn_dismissed_notices') || '[]'); } catch (e) {}
-    const activeNotices = (notices || []).filter(n => !dismissed.includes(n.id));
-    if (activeNotices.length) {
-      const container = document.createElement('div');
-      activeNotices.forEach(n => {
-        const el = document.createElement('div');
-        el.className = 'notice-banner notice-' + (n.severity || 'info');
-        el.innerHTML = `<span>${escapeHtml(n.message)}</span>`;
-        if (Number(n.dismissible) === 1) {
-          const closeBtn = document.createElement('button');
-          closeBtn.className = 'notice-dismiss';
-          closeBtn.setAttribute('aria-label', 'Dismiss');
-          closeBtn.textContent = '×';
-          closeBtn.onclick = () => {
-            dismissed.push(n.id);
-            try { localStorage.setItem('bkdn_dismissed_notices', JSON.stringify(dismissed)); } catch (e) {}
-            el.remove();
-          };
-          el.appendChild(closeBtn);
-        }
-        container.appendChild(el);
-      });
-      document.querySelector('.links-logo').insertAdjacentElement('beforebegin', container);
     }
 
     // Track view (only for published pages, not preview)
@@ -520,10 +376,6 @@ body {
         if (b.link_type === 'image') {
           return `<img class="links-content-image" src="${escapeAttr(b.url || '')}" alt="${escapeAttr(b.title || b.label || '')}" loading="lazy">`;
         }
-        if (b.link_type === 'store_hours') {
-          const hoursText = b.location_hours_text || 'Hours not available';
-          return `<div class="links-content-heading">${escapeHtml(b.title || b.label || (b.location_name ? b.location_name + ' Hours' : 'Hours'))}<div class="links-content-heading-sub">${escapeHtml(hoursText)}</div></div>`;
-        }
 
         const button = normalizeButton(b);
         const isPrimary  = button.isPrimary;
@@ -543,7 +395,6 @@ body {
           if (isHidden)    indicator = '<span class="btn-hidden-indicator">Hidden</span>';
           if (isDisabled)  indicator = '<span class="btn-hidden-indicator">Disabled</span>';
           if (isScheduled) indicator = '<span class="btn-hidden-indicator">Scheduled</span>';
-          if (b.ab_variant) indicator += `<span class="btn-hidden-indicator">Variant ${b.ab_variant.toUpperCase()}</span>`;
         }
 
         return `
@@ -599,61 +450,6 @@ body {
     }
 
     document.getElementById('links-content').style.display = 'block';
-  }
-
-  function setupPasswordGate(slug, isPreview, previewToken) {
-    const input = document.getElementById('pw-input');
-    const submitBtn = document.getElementById('pw-submit');
-    const msgEl = document.getElementById('pw-msg');
-
-    function submitPassword() {
-      const pw = input.value;
-      if (!pw) { msgEl.textContent = 'Please enter a password.'; msgEl.style.display = 'block'; return; }
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Checking...';
-      msgEl.style.display = 'none';
-
-      const route = isPreview && previewToken
-        ? `/api/public/links/preview/${encodeURIComponent(slug)}`
-        : `/api/public/links/${encodeURIComponent(slug)}`;
-      const baseParams = isPreview && previewToken ? `?token=${encodeURIComponent(previewToken)}` : '?';
-      const url = route + baseParams + '&password=' + encodeURIComponent(pw);
-
-      fetch(url, { cache: 'no-store' }).then(res => {
-        if (res.ok) {
-          // Re-run the full load flow with password baked into the URL so the
-          // page content and all sub-renders (sections, buttons, notices, SEO)
-          // are fetched in one authenticated request.
-          window.location.href = window.location.pathname + '?password=' + encodeURIComponent(pw) + (previewToken ? '&token=' + encodeURIComponent(previewToken) : '');
-        } else if (res.status === 401) {
-          msgEl.textContent = 'Incorrect password. Please try again.';
-          msgEl.style.display = 'block';
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Unlock Page';
-          input.value = '';
-          input.focus();
-        } else {
-          msgEl.textContent = 'Something went wrong. Please try again.';
-          msgEl.style.display = 'block';
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Unlock Page';
-        }
-      }).catch(() => {
-        msgEl.textContent = 'Network error. Please try again.';
-        msgEl.style.display = 'block';
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Unlock Page';
-      });
-    }
-
-    submitBtn.addEventListener('click', submitPassword);
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') submitPassword(); });
-    input.focus();
-
-    // If a password was already provided via query param (from redirect above),
-    // submit immediately.
-    const urlPw = new URLSearchParams(window.location.search).get('password');
-    if (urlPw) { input.value = urlPw; submitPassword(); }
   }
 
   function showComingSoon() {

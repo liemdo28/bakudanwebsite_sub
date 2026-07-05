@@ -58,6 +58,7 @@ FILES_TO_DEPLOY = [
     ('api/index.php',              REMOTE_WR + '/api/index.php'),
     ('links-admin/app.js',         REMOTE_WR + '/links-admin/app.js'),
     ('links-admin/index.html',     REMOTE_WR + '/links-admin/index.html'),
+    ('links-admin/guide.html',     REMOTE_WR + '/links-admin/guide.html'),
     ('links/index.html',           REMOTE_WR + '/links/index.html'),
     ('marketing-signup/index.html', REMOTE_WR + '/marketing-signup/index.html'),
     ('forms/index.html',           REMOTE_WR + '/forms/index.html'),

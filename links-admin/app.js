@@ -1437,6 +1437,9 @@ function renderShell() {
         <a class="sidebar-link" href="#/blog"     data-path="/blog">${iconBlog()} <span>Blog</span></a>
         <a class="sidebar-link" href="#/settings" data-path="/settings">${iconSettings()} <span>Settings</span></a>
         <a class="sidebar-link" href="#/users"    data-path="/users">${iconUsers()} <span>Users &amp; Roles</span></a>
+
+        <div class="sidebar-section-label">Help</div>
+        <a class="sidebar-link" href="/links-admin/guide.html" target="_blank">${iconExternal()} <span>User Guide</span></a>
       </nav>
 
       <div class="sidebar-footer">

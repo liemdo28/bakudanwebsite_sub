@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Links Hub Admin — User Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #16213a;
+    --card: #1e293b;
+    --border: #263449;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --dim: #64748b;
+    --accent: #dc2626;
+    --accent2: #ef4444;
+    --green: #22c55e;
+    --blue: #3b82f6;
+    --amber: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+  }
+  a { color: #60a5fa; }
+  .layout { display: flex; min-height: 100vh; }
+
+  /* ── Sidebar TOC ─────────────────────────────── */
+  .toc {
+    width: 260px; flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  .toc-brand { padding: 0 20px 20px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  .toc-brand .emoji { font-size: 30px; }
+  .toc-brand .title { font-weight: 700; font-size: 14px; color: #f1f5f9; margin-top: 6px; letter-spacing: .3px; }
+  .toc-brand .sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .toc-group-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #475569;
+    padding: 14px 20px 6px; font-weight: 700;
+  }
+  .toc a {
+    display: block; padding: 7px 20px; font-size: 13px; color: var(--muted);
+    border-left: 3px solid transparent; text-decoration: none;
+  }
+  .toc a:hover { color: #fff; background: rgba(255,255,255,.03); border-left-color: var(--accent); }
+
+  /* ── Main content ────────────────────────────── */
+  .content { flex: 1; max-width: 900px; padding: 48px 56px 120px; }
+  .page-header { margin-bottom: 40px; }
+  .page-header h1 { font-size: 30px; margin: 0 0 8px; color: #fff; }
+  .page-header p { color: var(--muted); font-size: 15px; margin: 0; }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .3px;
+    padding: 3px 9px; border-radius: 20px; margin-left: 8px; vertical-align: middle;
+  }
+  .badge-new { background: rgba(34,197,94,.15); color: var(--green); border: 1px solid rgba(34,197,94,.3); }
+
+  section.feature { margin-bottom: 52px; scroll-margin-top: 24px; }
+  section.feature h2 {
+    font-size: 22px; color: #fff; margin: 0 0 6px;
+    padding-bottom: 12px; border-bottom: 2px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  section.feature h2 .icon { font-size: 22px; }
+  section.feature > .tagline { color: var(--muted); font-size: 14px; margin: 10px 0 20px; }
+
+  h3 { font-size: 16px; color: #f1f5f9; margin: 24px 0 10px; }
+  p { margin: 0 0 12px; color: var(--text); }
+  ul, ol { margin: 0 0 16px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  strong { color: #fff; }
+  code {
+    background: #0b1120; border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 6px; font-size: 13px; color: #fbbf24; font-family: 'Consolas', monospace;
+  }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; margin: 16px 0;
+  }
+  .steps { counter-reset: step; list-style: none; padding-left: 0; }
+  .steps li {
+    counter-increment: step; position: relative; padding-left: 38px; margin-bottom: 14px;
+  }
+  .steps li::before {
+    content: counter(step); position: absolute; left: 0; top: 0;
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent);
+    color: #fff; font-size: 13px; font-weight: 700; display: flex;
+    align-items: center; justify-content: center;
+  }
+
+  .note { border-left: 3px solid var(--blue); background: rgba(59,130,246,.08); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .note strong { color: #93c5fd; }
+  .warn { border-left: 3px solid var(--amber); background: rgba(245,158,11,.08); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .warn strong { color: #fcd34d; }
+  .tip  { border-left: 3px solid var(--green); background: rgba(34,197,94,.08); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .tip strong { color: #86efac; }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  th { color: #f1f5f9; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--dim); }
+  td { color: var(--text); }
+
+  .top-btn {
+    position: fixed; bottom: 28px; right: 28px;
+    background: var(--accent); color: #fff; border: none; border-radius: 50%;
+    width: 44px; height: 44px; font-size: 18px; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,.4); display: none;
+  }
+  @media (max-width: 900px) {
+    .toc { display: none; }
+    .content { padding: 32px 20px 100px; max-width: 100%; }
+  }
+  @media print {
+    body { background: #fff; color: #111; }
+    .toc, .top-btn { display: none; }
+    .content { max-width: 100%; padding: 0 24px; }
+    .page-header h1, section.feature h2, h3 { color: #111; }
+    .page-header p, section.feature > .tagline { color: #444; }
+    p, li, td { color: #222; }
+    section.feature { page-break-inside: avoid; margin-bottom: 28px; }
+    .card, .note, .warn, .tip { background: #f4f4f6; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    code { background: #eee; color: #a15c00; }
+    table, th, td { border-color: #ccc; }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <nav class="toc">
+    <div class="toc-brand">
+      <div class="emoji">爆</div>
+      <div class="title">LINKS HUB</div>
+      <div class="sub">Admin User Guide</div>
+    </div>
+
+    <div class="toc-group-label">Getting Started</div>
+    <a href="#intro">Overview</a>
+    <a href="#login">Logging In</a>
+    <a href="#dashboard">Dashboard</a>
+
+    <div class="toc-group-label">Content</div>
+    <a href="#pages">Pages</a>
+    <a href="#sections-buttons">Sections &amp; Buttons</a>
+    <a href="#seo">SEO Manager</a>
+    <a href="#structured-data">Structured Data <span class="badge badge-new">New</span></a>
+    <a href="#recurring">Recurring Schedule <span class="badge badge-new">New</span></a>
+    <a href="#ab-testing">A/B Testing <span class="badge badge-new">New</span></a>
+    <a href="#templates">Templates</a>
+    <a href="#trash">Trash &amp; Restore <span class="badge badge-new">New</span></a>
+
+    <div class="toc-group-label">Marketing</div>
+    <a href="#campaigns">Campaigns</a>
+    <a href="#utm">UTM Builder &amp; QR Codes</a>
+    <a href="#forms">Forms</a>
+    <a href="#media">Media Library</a>
+
+    <div class="toc-group-label">Operations</div>
+    <a href="#customer-service">Customer Service Notices</a>
+    <a href="#automations">Automations <span class="badge badge-new">New</span></a>
+    <a href="#locations">Locations</a>
+    <a href="#users">Users &amp; Permissions</a>
+
+    <div class="toc-group-label">Reference</div>
+    <a href="#analytics">Analytics</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+  </nav>
+
+  <main class="content">
+
+    <div class="page-header">
+      <h1>Links Hub Admin — User Guide</h1>
+      <p>A complete, plain-language guide to managing your Customer Link Hub, Marketing Signup page, and Staff Training page — no code or developer required.</p>
+    </div>
+
+    <!-- ═══════════════ GETTING STARTED ═══════════════ -->
+    <section class="feature" id="intro">
+      <h2><span class="icon">📋</span> Overview</h2>
+      <p>Links Hub is the control panel behind everything at <code>bakudanramen.com/links/</code> — your "link in bio" style hub, plus the Marketing Signup page and internal Staff Training page. Everything you change here goes live immediately (or on the schedule you set) with no code, no deploys, and no developer involved.</p>
+
+      <div class="card">
+        <h3>The two halves of the system</h3>
+        <table>
+          <tr><th>Area</th><th>URL</th><th>Who sees it</th></tr>
+          <tr><td>Admin (this app)</td><td><code>/links-admin/</code></td><td>You and your staff, logged in</td></tr>
+          <tr><td>Public Customer Hub</td><td><code>/links/</code></td><td>Anyone with the link — customers, social bio links, QR codes</td></tr>
+        </table>
+      </div>
+
+      <div class="tip"><strong>Golden rule:</strong> anything you edit in the Admin and click "Save" on updates the live public page within seconds. Always double-check a change on the real public page after saving.</div>
+    </section>
+
+    <section class="feature" id="login">
+      <h2><span class="icon">🔑</span> Logging In</h2>
+      <ol class="steps">
+        <li>Go to <code>bakudanramen.com/links-admin/</code></li>
+        <li>Enter your email and password.</li>
+        <li>You'll land on the <strong>Dashboard</strong>, with a sidebar on the left for every section of the app.</li>
+      </ol>
+      <div class="note"><strong>Session timeout:</strong> if you're logged out unexpectedly mid-edit, it's your login session expiring for security — just log back in. Unsaved changes in an open form are not preserved, so save frequently.</div>
+    </section>
+
+    <section class="feature" id="dashboard">
+      <h2><span class="icon">📊</span> Dashboard</h2>
+      <p>Your at-a-glance health check when you log in. It shows:</p>
+      <ul>
+        <li><strong>Total / Live / Hidden / Scheduled / Expired / Featured</strong> button counts across all pages.</li>
+        <li><strong>Views and clicks in the last 24 hours</strong>, site-wide.</li>
+        <li><strong>Warnings</strong> — e.g. pages missing an SEO title, or content that looks misconfigured — so you can fix small issues before they become customer-facing problems.</li>
+      </ul>
+    </section>
+
+    <!-- ═══════════════ PAGES ═══════════════ -->
+    <section class="feature" id="pages">
+      <h2><span class="icon">📄</span> Pages</h2>
+      <p>A "Page" is any full link hub — your main Customer Link Hub, the Staff Training page, or any campaign-specific landing page you create. Go to <strong>Pages</strong> in the sidebar to see every page you have.</p>
+
+      <h3>Creating a new page</h3>
+      <ol class="steps">
+        <li>Click <strong>+ New Page</strong>.</li>
+        <li>Give it a title — the URL slug is generated automatically (you can edit it).</li>
+        <li>Choose a <strong>Page Type</strong> (Customer Link Hub, Staff Training, etc.) and <strong>Visibility</strong> (Public, Unlisted, Staff Only, or Password Protected).</li>
+        <li>Click <strong>Create</strong> — you're taken straight into the page editor.</li>
+      </ol>
+
+      <h3>Draft, Publish, and Rollback</h3>
+      <p>Every page has a status shown at the top: <strong>Draft</strong> or <strong>Published</strong>.</p>
+      <ul>
+        <li>While a page is <strong>Draft</strong>, only you (and anyone with a Preview link) can see it — it will not appear on the live public site.</li>
+        <li>Click <strong>Publish Now</strong> when you're ready to make it live.</li>
+        <li>Every publish creates a version snapshot. Open <strong>Version History</strong> to preview or roll back to any earlier saved version if something looks wrong after publishing.</li>
+      </ul>
+
+      <div class="warn"><strong>Location Scope:</strong> if you assign a page to a specific location (The Rim / Stone Oak / Bandera) in Page Settings, a Store Manager account for that location can edit it — but Store Managers cannot edit pages that aren't assigned to their own location. See <a href="#users">Users &amp; Permissions</a>.</div>
+    </section>
+
+    <section class="feature" id="sections-buttons">
+      <h2><span class="icon">🔘</span> Sections &amp; Buttons</h2>
+      <p>Inside a page, content is organized into <strong>Sections</strong> (optional group headers, like "Order Now" or "Follow Us") containing <strong>Buttons</strong> — the actual clickable links your customers see.</p>
+
+      <h3>Adding a button</h3>
+      <ol class="steps">
+        <li>Open a page → the <strong>Buttons</strong> tab.</li>
+        <li>Click <strong>+ Add Button</strong>.</li>
+        <li>Enter a <strong>Title</strong> and choose a <strong>Destination Type</strong> — External Website, Phone, Email, Instagram, YouTube, a location's Toast order link, or an internal page.</li>
+        <li>Fill in the destination (a URL, phone number, etc.) and click <strong>Add Button</strong>.</li>
+      </ol>
+
+      <h3>Button destination types worth knowing</h3>
+      <table>
+        <tr><th>Type</th><th>What it does</th></tr>
+        <tr><td><strong>Call Store / Directions / Store Hours / Order Support</strong></td><td>Pick a location once — the phone number, map link, or hours pull automatically from that location's own record. Update the location, and every button using it updates too.</td></tr>
+        <tr><td><strong>Heading / Text Block / Image</strong></td><td>Non-clickable content blocks for adding context between buttons — no destination needed.</td></tr>
+        <tr><td><strong>Internal Page</strong></td><td>Links to another page inside your own Links Hub (e.g. from the main hub to a campaign page).</td></tr>
+      </table>
+
+      <h3>Scheduling a button</h3>
+      <p>Use <strong>Start Date/Time</strong> and <strong>End Date/Time</strong> to have a button automatically appear and disappear — perfect for a limited-time promotion.</p>
+
+      <div class="tip"><strong>Reordering:</strong> drag buttons and sections by the handle on the left of each row to change the order customers see them in, then click <strong>Save Order</strong>.</div>
+    </section>
+
+    <section class="feature" id="seo">
+      <h2><span class="icon">🔍</span> SEO Manager</h2>
+      <p>Each page has its own SEO fields, in the <strong>Page Settings</strong> tab:</p>
+      <ul>
+        <li><strong>SEO Title</strong> — overrides the default browser tab / Google search title.</li>
+        <li><strong>Meta Description</strong> — the summary text shown under your link in Google search results.</li>
+        <li><strong>Social Preview Image</strong> — the image shown when the link is shared on Facebook, iMessage, etc.</li>
+        <li><strong>Canonical URL</strong> — advanced use only; leave blank unless you know you need it.</li>
+      </ul>
+      <p>A live preview box shows roughly how your page will appear in Google search results as you type.</p>
+    </section>
+
+    <section class="feature" id="structured-data">
+      <h2><span class="icon">⭐</span> Structured Data (Rich Search Results) <span class="badge badge-new">New</span></h2>
+      <p>This is what lets Google show extra details — like your phone number, hours, or price range — directly in search results, without needing to touch any code or JSON.</p>
+
+      <ol class="steps">
+        <li>Open a page → <strong>Page Settings</strong> → scroll to <strong>Structured Data (Rich Search Results)</strong>.</li>
+        <li>Choose a <strong>Type</strong>: <strong>Restaurant</strong> or <strong>FAQ</strong>.</li>
+        <li><strong>For Restaurant:</strong> fill in Business Name, Cuisine, Phone, Price Range, Address, Hours, and an Image URL.</li>
+        <li><strong>For FAQ:</strong> add one or more Question / Answer pairs — great for a page answering common customer questions.</li>
+        <li>Click <strong>Save Structured Data</strong>.</li>
+      </ol>
+
+      <div class="note"><strong>How it works behind the scenes:</strong> you only ever fill in plain form fields — the system builds the correct technical markup (JSON-LD) for you automatically and embeds it invisibly in the page. There's nothing to break by editing a form field.</div>
+    </section>
+
+    <section class="feature" id="recurring">
+      <h2><span class="icon">🕒</span> Recurring Schedule <span class="badge badge-new">New</span></h2>
+      <p>For a button that should only appear on certain days or certain hours — like a Happy Hour offer — every week, without you touching it again.</p>
+
+      <ol class="steps">
+        <li>Edit a button → scroll to <strong>Recurring Schedule (optional)</strong>.</li>
+        <li>Check the days of the week it should be visible (e.g. Mon–Fri).</li>
+        <li>Optionally set a <strong>From</strong> and <strong>Until</strong> time — leave both blank to show all day on the selected days.</li>
+        <li>Save the button. It will now automatically show and hide itself on that recurring schedule, forever, with no further action from you.</li>
+      </ol>
+
+      <div class="note">Times are evaluated in the restaurant's local timezone (Central Time), regardless of where you're logged in from.</div>
+      <div class="tip"><strong>Combine with dates:</strong> Recurring Schedule works alongside the absolute Start/End dates — e.g. "Happy Hour, Mon–Fri 3–6pm" that also automatically stops appearing after a specific end date.</div>
+    </section>
+
+    <section class="feature" id="ab-testing">
+      <h2><span class="icon">🧪</span> A/B Testing <span class="badge badge-new">New</span></h2>
+      <p>Test two versions of a button's title/subtitle against each other and see which one customers click more — no guessing, no spreadsheets.</p>
+
+      <h3>Starting a test</h3>
+      <ol class="steps">
+        <li>Edit the button you want to test → scroll to the <strong>A/B Testing</strong> section.</li>
+        <li>Click <strong>Start A/B Test</strong>.</li>
+        <li>Enter Variant B's title (and optional subtitle) — Variant A keeps the button's current wording.</li>
+        <li>Set the <strong>Traffic Split</strong> — what percentage of visitors see Variant A vs. B (defaults to 50/50).</li>
+        <li>Click <strong>Start Test</strong>.</li>
+      </ol>
+
+      <h3>Reading results</h3>
+      <p>Edit either variant button and click <strong>View Results / End Test</strong> to see a live table of Impressions, Clicks, and Click-Through Rate (CTR) for each variant.</p>
+
+      <h3>Ending a test</h3>
+      <ul>
+        <li><strong>Keep Variant A</strong> or <strong>Keep Variant B</strong> — manually pick the winner.</li>
+        <li><strong>Auto-pick Winner</strong> — automatically keeps whichever variant has the higher click-through rate.</li>
+      </ul>
+      <p>The variant you don't keep is moved to <a href="#trash">Trash</a> — never permanently deleted immediately, so you can always recover it if you change your mind.</p>
+
+      <div class="note"><strong>How visitors are split:</strong> each visitor is assigned to Variant A or B the first time they see the button, and consistently shown the same one on every later visit from that device — so your results reflect true visitor behavior, not random flip-flopping.</div>
+    </section>
+
+    <section class="feature" id="templates">
+      <h2><span class="icon">📑</span> Templates</h2>
+      <p>Save any page's full structure (sections + buttons) as a reusable template, so you don't have to rebuild a similar page from scratch every time.</p>
+      <ol class="steps">
+        <li>Open the page you want to save → click <strong>Save as Template</strong>.</li>
+        <li>Give the template a name.</li>
+        <li>Later, go to <strong>Templates</strong> in the sidebar → <strong>Create Page from Template</strong> to instantly generate a brand-new page with the same structure, ready to customize.</li>
+      </ol>
+    </section>
+
+    <section class="feature" id="trash">
+      <h2><span class="icon">🗑️</span> Trash &amp; Restore <span class="badge badge-new">New</span></h2>
+      <p>Deleting a page, section, or button never destroys it immediately — it moves to <strong>Trash</strong>, where you can restore it any time, or permanently delete it once you're sure.</p>
+      <ol class="steps">
+        <li>Go to <strong>Trash</strong> in the sidebar to see everything you've deleted, across every page.</li>
+        <li>Click <strong>Restore</strong> to bring an item back exactly as it was.</li>
+        <li>Click <strong>Permanently Delete</strong> only when you're certain you'll never need it again — this step cannot be undone.</li>
+      </ol>
+      <div class="tip">This makes deleting things low-risk — if you delete a button by mistake, or end an A/B test and change your mind about the loser, Trash has you covered.</div>
+    </section>
+
+    <!-- ═══════════════ MARKETING ═══════════════ -->
+    <section class="feature" id="campaigns">
+      <h2><span class="icon">📣</span> Campaigns</h2>
+      <p>Group related shortlinks together to track a specific marketing push — e.g. a seasonal promotion running across Instagram, email, and a QR code on a table tent.</p>
+      <ol class="steps">
+        <li>Go to <strong>Campaigns</strong> → <strong>New Campaign</strong>, give it a name and optional end date.</li>
+        <li>Attach shortlinks to it from the <strong>UTM Builder</strong> (see below).</li>
+        <li>The Campaigns list shows total clicks across every shortlink in the campaign, and its status (Active / Ended).</li>
+      </ol>
+    </section>
+
+    <section class="feature" id="utm">
+      <h2><span class="icon">🔗</span> UTM Builder &amp; QR Codes</h2>
+      <p>Build a trackable link without typing query-string parameters by hand.</p>
+      <ol class="steps">
+        <li>Go to <strong>UTM &amp; Shortlinks</strong>.</li>
+        <li>Enter the destination URL, then Source, Medium, and Campaign name — the tool builds the full tracked URL for you and shows a live preview.</li>
+        <li>Save it as a shortlink to get a short, clean URL, or download it as a <strong>QR code PNG</strong> ready to print.</li>
+      </ol>
+    </section>
+
+    <section class="feature" id="forms">
+      <h2><span class="icon">📝</span> Forms</h2>
+      <p>Build a custom form (feedback, catering inquiry, job application, etc.) that customers fill out on a real public page — no third-party form tool needed.</p>
+      <ol class="steps">
+        <li>Go to <strong>Forms</strong> → <strong>New Form</strong>, name it, and add fields (Text, Email, Phone, Textarea, Select, Radio, Checkbox, Date, or Number).</li>
+        <li>Save — you'll get a public URL like <code>bakudanramen.com/forms/?id=1</code> to share or link to from a button.</li>
+        <li>Every submission is saved and viewable in the Admin under <strong>View Submissions</strong> for that form.</li>
+      </ol>
+      <div class="warn">File-upload fields are not yet supported — the public form will ask the customer to email attachments instead.</div>
+    </section>
+
+    <section class="feature" id="media">
+      <h2><span class="icon">🖼️</span> Media Library</h2>
+      <p>A shared, searchable library of every image uploaded across the whole Admin — used for social preview images, button icons, and structured data images.</p>
+      <ol class="steps">
+        <li>Go to <strong>Media Library</strong> → <strong>Upload</strong> and choose a JPEG, PNG, GIF, or WEBP file (max 10 MB).</li>
+        <li>Click <strong>Copy URL</strong> next to any image to paste it wherever an image field appears elsewhere in the Admin.</li>
+      </ol>
+    </section>
+
+    <!-- ═══════════════ OPERATIONS ═══════════════ -->
+    <section class="feature" id="customer-service">
+      <h2><span class="icon">💬</span> Customer Service Notices</h2>
+      <p>Show a dismissible banner at the top of the public page — for service disruptions, holiday hours, or general announcements.</p>
+      <ol class="steps">
+        <li>Go to <strong>Customer Service</strong> → <strong>New Notice</strong>.</li>
+        <li>Write the message, choose a severity (Info / Warning / Critical), and optionally target it to one specific page and/or a date range.</li>
+        <li>Choose whether customers can dismiss it (hide it after reading) or not.</li>
+      </ol>
+    </section>
+
+    <section class="feature" id="automations">
+      <h2><span class="icon">⚙️</span> Automations <span class="badge badge-new">New rule added</span></h2>
+      <p>A small, fixed menu of safe automatic actions — <strong>not</strong> a general scripting tool. Rules only run when you explicitly click <strong>Run Automations Now</strong>; nothing runs silently in the background on a hidden timer.</p>
+
+      <table>
+        <tr><th>Rule</th><th>What it does</th></tr>
+        <tr><td><strong>Auto-end expired campaigns</strong></td><td>When a campaign's end date has passed and it's still Active, sets its status to Ended.</td></tr>
+        <tr><td><strong>Hide buttons when a location closes</strong></td><td>When a chosen location is marked Inactive, automatically hides every button pointed at it (Order, Call, Directions, etc.).</td></tr>
+        <tr><td><strong>Post a closure notice when a location closes</strong> <span class="badge badge-new">New</span></td><td>When a chosen location is marked Inactive, automatically posts a site-wide notice explaining it's temporarily closed — and automatically removes that notice once the location is reactivated.</td></tr>
+      </table>
+
+      <ol class="steps">
+        <li>Go to <strong>Automations</strong> → <strong>New Automation</strong>.</li>
+        <li>Pick a rule, fill in any required settings (e.g. which location), and save.</li>
+        <li>Whenever you want the rules evaluated — e.g. right after marking a location Inactive — click <strong>Run Automations Now</strong> and check the "Last Run" summary for what happened.</li>
+      </ol>
+    </section>
+
+    <section class="feature" id="locations">
+      <h2><span class="icon">📍</span> Locations</h2>
+      <p>Your three physical locations (The Rim, Stone Oak, Bandera) each have one record here holding their real phone number, address, map link, Toast order URL, support email, and hours. Any button using a location-derived destination type pulls from here automatically.</p>
+      <div class="warn">Marking a location <strong>Inactive</strong> is a real, live change — it can automatically hide real ordering buttons (if that Automation rule is on) and/or post a closure notice. Only toggle this for an actual closure.</div>
+    </section>
+
+    <section class="feature" id="users">
+      <h2><span class="icon">👥</span> Users &amp; Permissions</h2>
+      <p>Go to <strong>Users</strong> to add staff accounts and control what each one can do.</p>
+      <table>
+        <tr><th>Role</th><th>Can do</th></tr>
+        <tr><td><strong>Super Admin</strong></td><td>Everything, everywhere.</td></tr>
+        <tr><td><strong>Admin / Marketing</strong></td><td>Full content editing across all pages.</td></tr>
+        <tr><td><strong>Store Manager</strong></td><td>Assigned to one location — can only edit pages, sections, and buttons assigned to that same location. Cannot touch other locations' content.</td></tr>
+        <tr><td><strong>Viewer</strong></td><td>Read-only access.</td></tr>
+      </table>
+      <div class="note">To scope a page to a Store Manager, set its <strong>Location Scope</strong> field (Page Settings tab) to match the manager's assigned location.</div>
+    </section>
+
+    <!-- ═══════════════ REFERENCE ═══════════════ -->
+    <section class="feature" id="analytics">
+      <h2><span class="icon">📈</span> Analytics</h2>
+      <p>Go to <strong>Analytics</strong> for views, clicks, click-through rate, and a top-performing-buttons breakdown over a selectable date range — site-wide, or per individual page.</p>
+    </section>
+
+    <section class="feature" id="troubleshooting">
+      <h2><span class="icon">🛠️</span> Troubleshooting</h2>
+      <table>
+        <tr><th>Problem</th><th>What to try</th></tr>
+        <tr><td>A change isn't showing on the public page</td><td>Confirm the page status is <strong>Published</strong>, not Draft. Hard-refresh the public page (the public page always fetches fresh data, but your browser cache can be stale).</td></tr>
+        <tr><td>Logged out unexpectedly</td><td>Normal session expiry — just log back in. Save your work frequently to avoid losing an in-progress edit.</td></tr>
+        <tr><td>A confirmation popup seems "stuck"</td><td>Some actions (like deleting or ending an A/B test) ask you to confirm first — just click OK/Cancel in that popup to continue.</td></tr>
+        <tr><td>Store Manager can't edit a page they should be able to</td><td>Check that the page's <strong>Location Scope</strong> matches the manager's assigned location exactly.</td></tr>
+      </table>
+    </section>
+
+  </main>
+</div>
+
+<button class="top-btn" id="topBtn" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑</button>
+<script>
+  window.addEventListener('scroll', function () {
+    document.getElementById('topBtn').style.display = window.scrollY > 400 ? 'block' : 'none';
+  });
+</script>
+</body>
+</html>

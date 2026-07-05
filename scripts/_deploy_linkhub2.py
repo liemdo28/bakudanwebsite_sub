@@ -56,6 +56,7 @@ def sync_admin_cache_bust():
 
 FILES_TO_DEPLOY = [
     ('api/index.php',              REMOTE_WR + '/api/index.php'),
+    ('api/run_linkhub_automations.php', REMOTE_WR + '/api/run_linkhub_automations.php'),
     ('links-admin/app.js',         REMOTE_WR + '/links-admin/app.js'),
     ('links-admin/index.html',     REMOTE_WR + '/links-admin/index.html'),
     ('links-admin/guide.html',     REMOTE_WR + '/links-admin/guide.html'),

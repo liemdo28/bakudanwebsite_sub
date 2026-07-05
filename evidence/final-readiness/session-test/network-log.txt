@@ -1,0 +1,58 @@
+20-Save Session Reliability Test — Network Log
+Page: QA Session Reliability Test (id=7), route #/pages/7
+Endpoint under test: PUT /api/admin/pages/7 (BKDN.savePage(7))
+
+Save  1: PUT /api/admin/pages/7 -> 200 (via real UI click, headline="Save Test 01")
+Save  2: PUT /api/admin/pages/7 -> 200 (headline="Save Test 02")
+Save  3: PUT /api/admin/pages/7 -> 200 (headline="Save Test 03")
+Save  4: PUT /api/admin/pages/7 -> 200 (headline="Save Test 04")
+Save  5: PUT /api/admin/pages/7 -> 200 (headline="Save Test 05")
+Save  6: PUT /api/admin/pages/7 -> 200 (headline="Save Test 06")
+Save  7: PUT /api/admin/pages/7 -> 200 (headline="Save Test 07")
+Save  8: PUT /api/admin/pages/7 -> 200 (headline="Save Test 08")
+Save  9: PUT /api/admin/pages/7 -> 200 (headline="Save Test 09")
+Save 10: PUT /api/admin/pages/7 -> 200 (headline="Save Test 10") -- confirmed persisted after location.reload()
+Save 11: PUT /api/admin/pages/7 -> 200 (headline="Save Test 11")
+Save 12: PUT /api/admin/pages/7 -> 200 (headline="Save Test 12")
+Save 13: PUT /api/admin/pages/7 -> 200 (headline="Save Test 13")
+Save 14: PUT /api/admin/pages/7 -> 200 (headline="Save Test 14")
+Save 15: PUT /api/admin/pages/7 -> 200 (headline="Save Test 15")
+Save 16: PUT /api/admin/pages/7 -> 200 (headline="Save Test 16")
+Save 17: PUT /api/admin/pages/7 -> 200 (headline="Save Test 17")
+Save 18: PUT /api/admin/pages/7 -> 200 (headline="Save Test 18")
+Save 19: PUT /api/admin/pages/7 -> 200 (headline="Save Test 19")
+Save 20: PUT /api/admin/pages/7 -> 200 (via real UI click, headline="Save Test 20") -- confirmed persisted after location.reload()
+
+Raw capture via read_network_requests (urlPattern=/pages/7), 19 of 20 entries captured
+(save #1 occurred before network tracking was activated in the tab; its success
+was independently confirmed via the persisted field value after reload):
+
+  1-19: url=https://www.bakudanramen.com/api/admin/pages/7 method=PUT statusCode=200
+  (all 19 identical: 200, zero failures, zero 401s)
+
+Multi-tab test (Tab A = tabId 587784398, Tab B = tabId 587784401, both same
+authenticated session, same origin):
+  1. Tab B edited headline -> "Multitab Edit From Tab B", saved -> PUT 200
+  2. Tab A: location.reload() (true reload, not hash navigation) -> headline
+     field showed "Multitab Edit From Tab B" -- PASS
+  3. Tab A edited headline -> "Multitab Edit From Tab A", saved -> PUT 200
+  4. Tab B: location.reload() -> headline field showed "Multitab Edit From Tab A" -- PASS
+  No duplicate page/record created in either direction -- both tabs always
+  edited the same page id=7.
+
+Expired-token test:
+  1st attempt (before fix): unsaved headline "UNSAVED DRAFT SHOULD SURVIVE EXPIRY V2"
+    + corrupted in-memory _token -> save attempt -> 401 -> sessionExpired() ->
+    renderLogin() -> unsaved value LOST (input removed from DOM, no recovery).
+    FAIL against required behavior ("no lost draft").
+  FIX APPLIED (this session): added snapshotUnsavedDraft()/restoreDraftIfAvailable()
+  to links-admin/app.js, deployed to production.
+  2nd attempt (after fix): unsaved headline "DRAFT RECOVERY TEST VALUE" +
+    corrupted in-memory _token -> save attempt -> 401 -> sessionExpired() ->
+    snapshot written to localStorage['bkdn_draft_recovery'] (route "/pages/7",
+    all non-password form fields) -> toast "Your session expired — please
+    sign in again. Unsaved changes were saved locally and will be restored." ->
+    real re-login via /auth/login -> router() returns to #/pages/7 ->
+    restoreDraftIfAvailable() found #pe-headline in DOM (all page-editor tabs
+    are rendered simultaneously, just display:none) -> repopulated
+    "DRAFT RECOVERY TEST VALUE" -> localStorage snapshot cleared. PASS.

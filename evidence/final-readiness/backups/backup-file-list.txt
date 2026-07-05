@@ -1,0 +1,11 @@
+total 816
+drwxr-xr-x 1 liemdo 197613      0 Jul  5 16:25 .
+drwxr-xr-x 1 liemdo 197613      0 Jul  5 16:23 ..
+-rw-r--r-- 1 liemdo 197613 163062 Jul  5 16:23 api-index.php
+-rw-r--r-- 1 liemdo 197613 356352 Jul  5 16:25 bakudan.db
+-rw-r--r-- 1 liemdo 197613 255091 Jul  5 16:24 links-admin-app.js
+-rw-r--r-- 1 liemdo 197613   2552 Jul  5 16:24 links-admin-index.html
+-rw-r--r-- 1 liemdo 197613  35920 Jul  5 16:24 links-index.html
+-rw-r--r-- 1 liemdo 197613   6840 Jul  5 16:24 marketing-signup-index.html
+
+Note: bakudan.db-wal / bakudan.db-shm were not present on the server at backup time (SQLite had checkpointed the WAL into the main .db file) — this is normal WAL-mode behavior, not a backup gap.

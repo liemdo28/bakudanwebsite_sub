@@ -1,0 +1,7 @@
+20-Save Session Reliability Test — Console Log
+Tab: https://www.bakudanramen.com/links-admin/#/pages/7 (Administrator, Super Admin)
+
+read_console_messages(pattern="error|Error|fail|401", onlyErrors=false) -> "No console messages found for this tab."
+
+Result: 0 console errors across all 20 saves, the multi-tab test, and the
+expired-token test (before and after the draft-recovery fix).

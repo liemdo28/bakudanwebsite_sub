@@ -1,0 +1,4 @@
+2026-07-05T09:25:37Z (UTC)
+Backup source: production server (pdx1-shared-a3-05.dreamhost.com)
+Backup destination (local): scripts/_deploy_backups/final-readiness-20260705-162301
+Git baseline commit: 60579dd573e5c6fcc1b5ad71c0f65a0b777aee4a

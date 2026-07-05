@@ -1,0 +1,48 @@
+{
+  "test": "20-save session reliability test",
+  "page_id": 7,
+  "page_route": "#/pages/7",
+  "endpoint": "PUT /api/admin/pages/7",
+  "saves": [
+    { "cycle": 1, "value": "Save Test 01", "method": "real UI click", "http_status": 200, "persisted_after_true_reload": true },
+    { "cycle": 2, "value": "Save Test 02", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 3, "value": "Save Test 03", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 4, "value": "Save Test 04", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 5, "value": "Save Test 05", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 6, "value": "Save Test 06", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 7, "value": "Save Test 07", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 8, "value": "Save Test 08", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 9, "value": "Save Test 09", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 10, "value": "Save Test 10", "method": "BKDN.savePage(7) in real session", "http_status": 200, "persisted_after_true_reload": true },
+    { "cycle": 11, "value": "Save Test 11", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 12, "value": "Save Test 12", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 13, "value": "Save Test 13", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 14, "value": "Save Test 14", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 15, "value": "Save Test 15", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 16, "value": "Save Test 16", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 17, "value": "Save Test 17", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 18, "value": "Save Test 18", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 19, "value": "Save Test 19", "method": "BKDN.savePage(7) in real session", "http_status": 200 },
+    { "cycle": 20, "value": "Save Test 20", "method": "real UI click", "http_status": 200, "persisted_after_true_reload": true }
+  ],
+  "summary": {
+    "successful_saves": 20,
+    "failed_saves": 0,
+    "forced_logouts": 0,
+    "lost_drafts": 0,
+    "duplicate_saves": 0,
+    "partial_saves": 0,
+    "console_errors": 0,
+    "critical_failed_requests": 0
+  },
+  "multi_tab_test": {
+    "tab_a_to_tab_b": "PASS - Tab B saw Tab A's saved value after a true reload",
+    "tab_b_to_tab_a": "PASS - Tab A saw Tab B's saved value after a true reload",
+    "duplicate_content_created": false
+  },
+  "expired_token_test": {
+    "initial_result": "FAIL - unsaved draft was lost with no recovery mechanism (found and confirmed this session)",
+    "fix_applied": "snapshotUnsavedDraft()/restoreDraftIfAvailable() added to links-admin/app.js, deployed to production",
+    "retest_result": "PASS - session-expired message shown, re-login prompted, unsaved field value fully restored on the same route after re-login"
+  }
+}

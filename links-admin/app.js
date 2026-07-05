@@ -1196,11 +1196,57 @@ async function apiFetch(method, endpoint, body) {
   }
 }
 
+// Session expiry must not silently discard whatever the admin was mid-typing
+// (e.g. a page headline edit) — snapshot every visible form field so it can
+// be restored after they log back in to the same screen. Never persist
+// password fields.
+function snapshotUnsavedDraft() {
+  try {
+    const contentEl = document.querySelector('.content');
+    if (!contentEl) return;
+    const fields = {};
+    contentEl.querySelectorAll('input[id], textarea[id], select[id]').forEach(el => {
+      if (el.type === 'password') return;
+      fields[el.id] = (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value;
+    });
+    if (Object.keys(fields).length) {
+      localStorage.setItem('bkdn_draft_recovery', JSON.stringify({ route: getPath(), fields, savedAt: Date.now() }));
+    }
+  } catch (e) { console.warn('Could not snapshot unsaved draft.', e); }
+}
+
+function restoreDraftIfAvailable() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem('bkdn_draft_recovery') || 'null'); } catch { saved = null; }
+  if (!saved) return;
+  localStorage.removeItem('bkdn_draft_recovery');
+  const isStale = Date.now() - saved.savedAt > 30 * 60 * 1000; // 30 minutes
+  if (isStale || saved.route !== getPath()) return;
+  let attempts = 0;
+  const tryRestore = () => {
+    attempts++;
+    let restoredCount = 0, anyIdPresent = false;
+    Object.entries(saved.fields).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      anyIdPresent = true;
+      if (el.type === 'checkbox' || el.type === 'radio') el.checked = !!val;
+      else el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      restoredCount++;
+    });
+    if (restoredCount) toast('Restored your unsaved changes from before the session expired.', 'success', 5000);
+    else if (!anyIdPresent && attempts < 8) setTimeout(tryRestore, 300);
+  };
+  setTimeout(tryRestore, 300);
+}
+
 function sessionExpired() {
+  snapshotUnsavedDraft();
   _token = null; _user = null;
   localStorage.removeItem('bkdn_token');
   localStorage.removeItem('bkdn_user');
-  toast('Your session expired — please sign in again.', 'error', 5000);
+  toast('Your session expired — please sign in again. Unsaved changes were saved locally and will be restored.', 'error', 6000);
   renderLogin();
 }
 
@@ -1534,6 +1580,7 @@ async function doLogin() {
       }
       renderShell();
       router();
+      restoreDraftIfAvailable();
     } else {
       if (errEl) { errEl.textContent = res?.error || res?.message || 'Login failed.'; errEl.style.display = 'block'; }
       if (btn) btn.textContent = 'Sign In to Dashboard';

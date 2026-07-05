@@ -753,6 +753,21 @@ function page_store_slug(int $pageId): ?string {
     $p = q1("SELECT store_slug FROM pages WHERE id=?", [$pageId]);
     return $p['store_slug'] ?? null;
 }
+// Campaigns don't have their own store_slug column — a campaign's location
+// is derived from the page it's linked to (nullable page_id). A campaign
+// with no linked page has no location, so a Store Manager can never manage
+// it (there's no "their own location" to match).
+function campaign_store_slug(?int $campaignPageId): ?string {
+    return $campaignPageId ? page_store_slug($campaignPageId) : null;
+}
+function assert_campaign_scope(array $user, ?int $campaignPageId): void {
+    $scope = store_manager_scope($user);
+    if ($scope === null) return;
+    $campaignStoreSlug = campaign_store_slug($campaignPageId);
+    if ($campaignStoreSlug === null || $campaignStoreSlug !== $scope) {
+        err('Store Managers can only manage campaigns assigned to their own location.', 403);
+    }
+}
 // 'marketing_manager'/'admin' and 'marketing' are treated as equivalent —
 // legacy accounts created before role naming was aligned to the spec's
 // Super Admin / Admin / Marketing / Store Manager / Viewer model still work.
@@ -1210,6 +1225,7 @@ if (preg_match('#^/admin/pages/(\d+)/rollback/(\d+)$#', $path, $m) && $METHOD ==
     $user = auth(); role_check($user, $EDIT); $pid = (int)$m[1]; $version = (int)$m[2];
     $page = q1("SELECT * FROM pages WHERE id=?", [$pid]);
     if (!$page) err('Page not found.', 404);
+    assert_location_scope($user, $page['store_slug']);
     $snap = q1("SELECT * FROM page_versions WHERE page_id=? AND version_number=?", [$pid, $version]);
     if (!$snap) err('That published version was not found.', 404);
     $data = json_decode($snap['snapshot_json'], true);
@@ -1314,8 +1330,10 @@ if (preg_match('#^/admin/sections/(\d+)/move$#', $path, $m) && $METHOD === 'POST
     $user = auth(); role_check($user, $EDIT); $sid = (int)$m[1];
     $section = q1("SELECT * FROM link_sections WHERE id=?", [$sid]);
     if (!$section) err('Section not found.', 404);
+    assert_location_scope($user, page_store_slug((int)$section['page_id']));
     $targetPageId = (int)($BODY['target_page_id'] ?? 0);
     if (!q1("SELECT id FROM pages WHERE id=?", [$targetPageId])) err('Target page not found.', 404);
+    assert_location_scope($user, page_store_slug($targetPageId));
     db()->exec('BEGIN');
     try {
         run("UPDATE link_sections SET page_id=?,updated_at=datetime('now') WHERE id=?", [$targetPageId, $sid]);
@@ -1453,8 +1471,10 @@ if (preg_match('#^/admin/buttons/(\d+)/move$#', $path, $m) && $METHOD === 'POST'
     $user = auth(); role_check($user, $EDIT); $bid = (int)$m[1];
     $btn = q1("SELECT * FROM buttons WHERE id=?", [$bid]);
     if (!$btn) err('Button not found.', 404);
+    assert_location_scope($user, page_store_slug((int)$btn['page_id']));
     $targetPageId = (int)($BODY['target_page_id'] ?? 0);
     if (!q1("SELECT id FROM pages WHERE id=?", [$targetPageId])) err('Target page not found.', 404);
+    assert_location_scope($user, page_store_slug($targetPageId));
     $targetSectionId = (array_key_exists('target_section_id', $BODY) && $BODY['target_section_id'] !== '') ? (int)$BODY['target_section_id'] : null;
     run("UPDATE buttons SET page_id=?,section_id=?,updated_at=datetime('now') WHERE id=?", [$targetPageId, $targetSectionId, $bid]);
     audit_log($user, 'button_moved', 'button', $bid, ['page_id'=>$btn['page_id']], ['page_id'=>$targetPageId], $targetPageId);
@@ -1464,8 +1484,10 @@ if (preg_match('#^/admin/buttons/(\d+)/copy-to-page$#', $path, $m) && $METHOD ==
     $user = auth(); role_check($user, $EDIT); $bid = (int)$m[1];
     $btn = q1("SELECT * FROM buttons WHERE id=?", [$bid]);
     if (!$btn) err('Button not found.', 404);
+    assert_location_scope($user, page_store_slug((int)$btn['page_id']));
     $targetPageId = (int)($BODY['target_page_id'] ?? 0);
     if (!q1("SELECT id FROM pages WHERE id=?", [$targetPageId])) err('Target page not found.', 404);
+    assert_location_scope($user, page_store_slug($targetPageId));
     $targetSectionId = (array_key_exists('target_section_id', $BODY) && $BODY['target_section_id'] !== '') ? (int)$BODY['target_section_id'] : null;
     $id = run("INSERT INTO buttons (page_id,section_id,label,url,link_type,internal_page_id,location_id,icon,subtitle,style_variant,custom_icon_svg,opens_in_new_tab,sort_order,is_active,is_featured,enabled,start_at,end_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [$targetPageId,$targetSectionId,$btn['label'],$btn['url'],$btn['link_type']??'external',$btn['internal_page_id']??null,$btn['location_id']??null,$btn['icon'],$btn['subtitle']??null,$btn['style_variant']??null,$btn['custom_icon_svg']??null,$btn['opens_in_new_tab']??1,$btn['sort_order'],$btn['is_active'],$btn['is_featured'],$btn['enabled'],$btn['start_at'],$btn['end_at']]);
@@ -1588,21 +1610,29 @@ function shortlink_qr_url(string $code): string {
     return 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . rawurlencode($dest);
 }
 // ── CAMPAIGNS ─────────────────────────────────────────────────────────
+// Campaigns have no store_slug of their own — scope is derived from the
+// linked page (nullable page_id). Store Managers: read scoping hides
+// campaigns tied to another location (or with no location) from the list;
+// write scoping requires the campaign's page_id to belong to their own
+// location, both for the existing campaign and for any page_id they submit.
 if ($path === '/admin/campaigns' && $METHOD === 'GET') {
-    auth();
-    $rows = q("SELECT c.*, p.title AS page_title, p.slug AS page_slug,
+    $user = auth();
+    $scope = store_manager_scope($user);
+    $rows = q("SELECT c.*, p.title AS page_title, p.slug AS page_slug, p.store_slug AS page_store_slug,
         (SELECT COUNT(*) FROM shortlinks s WHERE s.campaign_id=c.id) AS shortlink_count,
         (SELECT COALESCE(SUM(s.clicks),0) FROM shortlinks s WHERE s.campaign_id=c.id) AS total_clicks
         FROM campaigns c LEFT JOIN pages p ON p.id=c.page_id ORDER BY c.created_at DESC");
+    if ($scope !== null) $rows = array_values(array_filter($rows, fn($r) => ($r['page_store_slug'] ?? null) === $scope));
     ok(['campaigns' => $rows]);
 }
 if ($path === '/admin/campaigns' && $METHOD === 'POST') {
-    $user = auth(); role_check($user, $MGR);
+    $user = auth(); role_check($user, $EDIT);
     $name = trim((string)($BODY['name'] ?? ''));
     if (!$name) err('Campaign name is required.');
     $status = in_array($BODY['status'] ?? '', VALID_CAMPAIGN_STATUS, true) ? $BODY['status'] : 'draft';
     $pageId = ($BODY['page_id'] ?? '') !== '' ? (int)$BODY['page_id'] : null;
     if ($pageId && !q1("SELECT id FROM pages WHERE id=?", [$pageId])) err('Selected page does not exist.');
+    assert_campaign_scope($user, $pageId);
     $id = run("INSERT INTO campaigns (name,description,status,page_id,start_at,end_at) VALUES (?,?,?,?,?,?)",
         [$name, $BODY['description'] ?? null, $status, $pageId, $BODY['start_at'] ?? null, $BODY['end_at'] ?? null]);
     $campaign = q1("SELECT * FROM campaigns WHERE id=?", [$id]);
@@ -1614,15 +1644,18 @@ if (preg_match('#^/admin/campaigns/(\d+)$#', $path, $m)) {
     $campaign = q1("SELECT * FROM campaigns WHERE id=?", [$cid]);
     if (!$campaign) err('Campaign not found.', 404);
     if ($METHOD === 'GET') {
+        assert_campaign_scope($user, $campaign['page_id'] ? (int)$campaign['page_id'] : null);
         $shortlinks = q("SELECT id, code AS slug, destination, label, clicks, is_active FROM shortlinks WHERE campaign_id=? ORDER BY created_at DESC", [$cid]);
         foreach ($shortlinks as &$s) { $s['qr_url'] = shortlink_qr_url($s['slug']); $s['short_url'] = SITE_URL . '/go/' . $s['slug']; }
         ok(['campaign' => $campaign, 'shortlinks' => $shortlinks]);
     }
     if ($METHOD === 'PUT') {
-        role_check($user, $MGR);
+        role_check($user, $EDIT);
+        assert_campaign_scope($user, $campaign['page_id'] ? (int)$campaign['page_id'] : null);
         $status = in_array($BODY['status'] ?? '', VALID_CAMPAIGN_STATUS, true) ? $BODY['status'] : $campaign['status'];
         $pageId = array_key_exists('page_id', $BODY) ? (($BODY['page_id'] !== '' ) ? (int)$BODY['page_id'] : null) : $campaign['page_id'];
         if ($pageId && !q1("SELECT id FROM pages WHERE id=?", [$pageId])) err('Selected page does not exist.');
+        assert_campaign_scope($user, $pageId); // re-check in case they're reassigning it to another location
         run("UPDATE campaigns SET name=?,description=?,status=?,page_id=?,start_at=?,end_at=?,updated_at=datetime('now') WHERE id=?",
             [$BODY['name']??$campaign['name'], $BODY['description']??$campaign['description'], $status, $pageId,
              $BODY['start_at']??$campaign['start_at'], $BODY['end_at']??$campaign['end_at'], $cid]);
@@ -1631,18 +1664,28 @@ if (preg_match('#^/admin/campaigns/(\d+)$#', $path, $m)) {
         ok(['campaign' => $updated]);
     }
     if ($METHOD === 'DELETE') {
-        role_check($user, $MGR);
+        role_check($user, $EDIT);
+        assert_campaign_scope($user, $campaign['page_id'] ? (int)$campaign['page_id'] : null);
         run("DELETE FROM campaigns WHERE id=?", [$cid]);
         audit_log($user, 'campaign_deleted', 'campaign', $cid, $campaign, null);
         ok(['success' => true]);
     }
 }
 
+// Shortlinks have no store_slug of their own either — scope is derived
+// through the linked campaign's linked page, same reasoning as campaigns.
+function shortlink_store_slug(?int $campaignId): ?string {
+    if (!$campaignId) return null;
+    $c = q1("SELECT page_id FROM campaigns WHERE id=?", [$campaignId]);
+    return $c && $c['page_id'] ? page_store_slug((int)$c['page_id']) : null;
+}
 if ($path === '/admin/shortlinks') {
-    $user = auth(); role_check($user, $MGR);
+    $user = auth(); role_check($user, $EDIT);
+    $scope = store_manager_scope($user);
     if ($METHOD === 'GET') {
         // Alias code→slug so SPA can use /go/{slug}
         $rows = q("SELECT id, code AS slug, destination, label, utm_source, utm_medium, utm_campaign, campaign_id, clicks, is_active, created_at, updated_at FROM shortlinks ORDER BY created_at DESC");
+        if ($scope !== null) $rows = array_values(array_filter($rows, fn($r) => shortlink_store_slug($r['campaign_id'] ? (int)$r['campaign_id'] : null) === $scope));
         foreach ($rows as &$r) { $r['qr_url'] = shortlink_qr_url($r['slug']); $r['short_url'] = SITE_URL . '/go/' . $r['slug']; }
         ok(['shortlinks' => $rows]);
     }
@@ -1653,6 +1696,9 @@ if ($path === '/admin/shortlinks') {
         if (!preg_match('#^https://#i', $dst)) err('Shortlink destination must be a valid https:// URL.');
         $campaignId = ($BODY['campaign_id'] ?? '') !== '' ? (int)$BODY['campaign_id'] : null;
         if ($campaignId && !q1("SELECT id FROM campaigns WHERE id=?", [$campaignId])) err('Selected campaign does not exist.');
+        if ($scope !== null && shortlink_store_slug($campaignId) !== $scope) {
+            err('Store Managers can only create shortlinks for a campaign assigned to their own location.', 403);
+        }
         try {
             $id = run("INSERT INTO shortlinks (code,destination,label,utm_source,utm_medium,utm_campaign,campaign_id) VALUES (?,?,?,?,?,?,?)",
                 [$code,$dst,$BODY['label']??null,$BODY['utm_source']??null,$BODY['utm_medium']??null,$BODY['utm_campaign']??null,$campaignId]);
@@ -1668,15 +1714,22 @@ if ($path === '/admin/shortlinks') {
     }
 }
 if (preg_match('#^/admin/shortlinks/(\d+)$#', $path, $m)) {
-    $user = auth(); role_check($user, $MGR);
+    $user = auth(); role_check($user, $EDIT);
     $sid = (int)$m[1];
     $old = q1("SELECT * FROM shortlinks WHERE id=?", [$sid]);
     if (!$old) err('Shortlink not found.', 404);
+    $scope = store_manager_scope($user);
+    if ($scope !== null && shortlink_store_slug($old['campaign_id'] ? (int)$old['campaign_id'] : null) !== $scope) {
+        err('Store Managers can only manage shortlinks assigned to their own location.', 403);
+    }
     if ($METHOD === 'PUT') {
         $dst = array_key_exists('destination', $BODY) ? trim($BODY['destination'] ?? '') : $old['destination'];
         if ($dst && !preg_match('#^https://#i', $dst)) err('Shortlink destination must be a valid https:// URL.');
         $campaignId = array_key_exists('campaign_id', $BODY) ? (($BODY['campaign_id'] !== '') ? (int)$BODY['campaign_id'] : null) : $old['campaign_id'];
         if ($campaignId && !q1("SELECT id FROM campaigns WHERE id=?", [$campaignId])) err('Selected campaign does not exist.');
+        if ($scope !== null && shortlink_store_slug($campaignId) !== $scope) {
+            err('Store Managers can only reassign shortlinks to a campaign assigned to their own location.', 403);
+        }
         run("UPDATE shortlinks SET destination=?,label=?,utm_source=?,utm_medium=?,utm_campaign=?,campaign_id=?,is_active=?,updated_at=datetime('now') WHERE id=?",
             [$dst,$BODY['label']??$old['label'],$BODY['utm_source']??$old['utm_source'],$BODY['utm_medium']??$old['utm_medium'],$BODY['utm_campaign']??$old['utm_campaign'],$campaignId,$BODY['is_active']??$old['is_active'],$sid]);
         $row = q1("SELECT id, code AS slug, destination, label, utm_source, utm_medium, utm_campaign, campaign_id, clicks, is_active, created_at, updated_at FROM shortlinks WHERE id=?", [$sid]) ?? [];
@@ -1721,7 +1774,11 @@ if (preg_match('#^/admin/locations/(\d+)$#', $path, $m)) {
     $loc = q1("SELECT * FROM locations WHERE id=?", [$lid]);
     if (!$loc) err('Location not found.', 404);
     if ($METHOD === 'PUT') {
-        role_check($user, $MGR);
+        // A Store Manager may update their own location's own details (phone,
+        // hours, etc.) — but not another location's, and not create/delete
+        // locations at all (still $MGR-only below).
+        role_check($user, $EDIT);
+        assert_location_scope($user, $loc['slug']);
         run("UPDATE locations SET name=?,address=?,phone=?,toast_order_url=?,toast_signup_url=?,maps_url=?,support_email=?,hours_text=?,is_active=?,sort_order=?,updated_at=datetime('now') WHERE id=?",
             [$BODY['name']??$loc['name'],$BODY['address']??$loc['address'],$BODY['phone']??$loc['phone'],
              $BODY['toast_order_url']??$loc['toast_order_url'],$BODY['toast_signup_url']??$loc['toast_signup_url'],
@@ -1741,10 +1798,21 @@ if (preg_match('#^/admin/locations/(\d+)$#', $path, $m)) {
 
 // ── NOTICES (Service Status banners) ───────────────────────────────────
 const VALID_NOTICE_SEVERITY = ['info','warning','critical'];
+// A notice's location scope is its own location_slug field if set, else
+// derived from its linked page's store_slug, else null (sitewide/global —
+// a Store Manager can never manage a global notice, same reasoning as an
+// unlinked campaign).
+function notice_store_slug(array $notice): ?string {
+    if (!empty($notice['location_slug'])) return $notice['location_slug'];
+    return $notice['page_id'] ? page_store_slug((int)$notice['page_id']) : null;
+}
 if ($path === '/admin/notices') {
     $user = auth();
+    $scope = store_manager_scope($user);
     if ($METHOD === 'GET') {
-        ok(['notices' => q("SELECT n.*, p.title AS page_title FROM notices n LEFT JOIN pages p ON p.id=n.page_id ORDER BY n.created_at DESC")]);
+        $rows = q("SELECT n.*, p.title AS page_title FROM notices n LEFT JOIN pages p ON p.id=n.page_id ORDER BY n.created_at DESC");
+        if ($scope !== null) $rows = array_values(array_filter($rows, fn($r) => notice_store_slug($r) === $scope));
+        ok(['notices' => $rows]);
     }
     if ($METHOD === 'POST') {
         role_check($user, $EDIT);
@@ -1752,8 +1820,17 @@ if ($path === '/admin/notices') {
         if (!$message) err('Notice message is required.');
         $severity = in_array($BODY['severity'] ?? '', VALID_NOTICE_SEVERITY, true) ? $BODY['severity'] : 'info';
         $pageId = !empty($BODY['page_id']) ? (int)$BODY['page_id'] : null;
+        $locationSlug = $BODY['location_slug'] ?? null;
+        if ($scope !== null) {
+            // Store Managers may only post to their own location — force it,
+            // don't trust a client-submitted location_slug/page_id.
+            $locationSlug = $scope;
+            if ($pageId && page_store_slug($pageId) !== $scope) {
+                err('Store Managers can only attach notices to a page assigned to their own location.', 403);
+            }
+        }
         $id = run("INSERT INTO notices (message,severity,page_id,location_slug,dismissible,is_active,start_at,end_at) VALUES (?,?,?,?,?,?,?,?)",
-            [$message, $severity, $pageId, $BODY['location_slug']??null, $BODY['dismissible']??1, $BODY['is_active']??1, $BODY['start_at']??null, $BODY['end_at']??null]);
+            [$message, $severity, $pageId, $locationSlug, $BODY['dismissible']??1, $BODY['is_active']??1, $BODY['start_at']??null, $BODY['end_at']??null]);
         $notice = q1("SELECT * FROM notices WHERE id=?", [$id]);
         audit_log($user, 'notice_created', 'notice', $id, null, $notice, $pageId);
         ok(['notice' => $notice]);
@@ -1765,10 +1842,19 @@ if (preg_match('#^/admin/notices/(\d+)$#', $path, $m)) {
     if (!$notice) err('Notice not found.', 404);
     if ($METHOD === 'PUT') {
         role_check($user, $EDIT);
+        assert_location_scope($user, notice_store_slug($notice));
         $severity = in_array($BODY['severity'] ?? '', VALID_NOTICE_SEVERITY, true) ? $BODY['severity'] : $notice['severity'];
         $pageId = array_key_exists('page_id', $BODY) ? (!empty($BODY['page_id']) ? (int)$BODY['page_id'] : null) : $notice['page_id'];
+        $locationSlug = $BODY['location_slug'] ?? $notice['location_slug'];
+        if (store_manager_scope($user) !== null) {
+            $scope2 = store_manager_scope($user);
+            $locationSlug = $scope2; // can't move it to another location
+            if ($pageId && page_store_slug($pageId) !== $scope2) {
+                err('Store Managers can only attach notices to a page assigned to their own location.', 403);
+            }
+        }
         run("UPDATE notices SET message=?,severity=?,page_id=?,location_slug=?,dismissible=?,is_active=?,start_at=?,end_at=?,updated_at=datetime('now') WHERE id=?",
-            [$BODY['message']??$notice['message'], $severity, $pageId, $BODY['location_slug']??$notice['location_slug'],
+            [$BODY['message']??$notice['message'], $severity, $pageId, $locationSlug,
              $BODY['dismissible']??$notice['dismissible'], $BODY['is_active']??$notice['is_active'],
              $BODY['start_at']??$notice['start_at'], $BODY['end_at']??$notice['end_at'], $nid]);
         $updated = q1("SELECT * FROM notices WHERE id=?", [$nid]);
@@ -1777,6 +1863,7 @@ if (preg_match('#^/admin/notices/(\d+)$#', $path, $m)) {
     }
     if ($METHOD === 'DELETE') {
         role_check($user, $EDIT);
+        assert_location_scope($user, notice_store_slug($notice));
         run("DELETE FROM notices WHERE id=?", [$nid]);
         audit_log($user, 'notice_deleted', 'notice', $nid, $notice, null, $notice['page_id']);
         ok(['success' => true]);
@@ -1842,13 +1929,21 @@ if ($path === '/admin/link-health' && $METHOD === 'GET') {
 // ── ANALYTICS ─────────────────────────────────────────────────────────
 // SPA (viewAnalytics) reads: d.views, d.clicks, d.ctr, d.top_buttons[{title,clicks}]
 if ($path === '/admin/analytics' && $METHOD === 'GET') {
-    $user = auth(); role_check($user, $MGR);
+    $user = auth(); role_check($user, $EDIT);
+    $scope = store_manager_scope($user);
+    // Store Managers get the same dashboard, scoped down to their own
+    // location's pages — not blocked entirely, and not shown other
+    // locations' numbers either. SQLite3 has no PDO-style quote(); build the
+    // literal manually via escapeString().
+    $scopeLiteral = $scope !== null ? "'" . db()->escapeString($scope) . "'" : null;
+    $pageScopeSql = $scopeLiteral !== null ? "AND a.page_id IN (SELECT id FROM pages WHERE store_slug=$scopeLiteral)" : "";
+    $btnScopeSql  = $scopeLiteral !== null ? "AND b.page_id IN (SELECT id FROM pages WHERE store_slug=$scopeLiteral)" : "";
     $days = min(max((int)($QUERY['period'] ?? 7), 1), 365);
-    $clicks = (int)db()->querySingle("SELECT COUNT(*) FROM analytics WHERE event_type='click' AND created_at>=datetime('now','-{$days} days')");
-    $views  = (int)db()->querySingle("SELECT COUNT(*) FROM analytics WHERE event_type='pageview' AND created_at>=datetime('now','-{$days} days')");
-    $topButtons = q("SELECT b.label AS title, COUNT(*) AS clicks FROM analytics a JOIN buttons b ON a.button_id=b.id WHERE a.event_type='click' AND a.created_at>=datetime('now','-{$days} days') GROUP BY a.button_id ORDER BY clicks DESC LIMIT 10");
-    $topPages = q("SELECT p.title, p.slug, COUNT(*) AS views FROM analytics a JOIN pages p ON a.page_id=p.id WHERE a.event_type='pageview' AND a.created_at>=datetime('now','-{$days} days') GROUP BY a.page_id ORDER BY views DESC LIMIT 10");
-    $viewsByDay = q("SELECT DATE(created_at) AS date, COUNT(*) AS count FROM analytics WHERE event_type='pageview' AND created_at>=datetime('now','-{$days} days') GROUP BY DATE(created_at) ORDER BY date ASC");
+    $clicks = (int)db()->querySingle("SELECT COUNT(*) FROM analytics a WHERE event_type='click' AND created_at>=datetime('now','-{$days} days') $pageScopeSql");
+    $views  = (int)db()->querySingle("SELECT COUNT(*) FROM analytics a WHERE event_type='pageview' AND created_at>=datetime('now','-{$days} days') $pageScopeSql");
+    $topButtons = q("SELECT b.label AS title, COUNT(*) AS clicks FROM analytics a JOIN buttons b ON a.button_id=b.id WHERE a.event_type='click' AND a.created_at>=datetime('now','-{$days} days') $btnScopeSql GROUP BY a.button_id ORDER BY clicks DESC LIMIT 10");
+    $topPages = q("SELECT p.title, p.slug, COUNT(*) AS views FROM analytics a JOIN pages p ON a.page_id=p.id WHERE a.event_type='pageview' AND a.created_at>=datetime('now','-{$days} days') " . ($scopeLiteral !== null ? "AND p.store_slug=$scopeLiteral" : "") . " GROUP BY a.page_id ORDER BY views DESC LIMIT 10");
+    $viewsByDay = q("SELECT DATE(created_at) AS date, COUNT(*) AS count FROM analytics a WHERE event_type='pageview' AND created_at>=datetime('now','-{$days} days') $pageScopeSql GROUP BY DATE(created_at) ORDER BY date ASC");
     ok([
         'views' => $views,
         'clicks' => $clicks,
@@ -1861,6 +1956,7 @@ if ($path === '/admin/analytics' && $METHOD === 'GET') {
 }
 if (preg_match('#^/admin/pages/(\d+)/analytics$#', $path, $m) && $METHOD === 'GET') {
     $user = auth(); $pid = (int)$m[1];
+    assert_location_scope($user, page_store_slug($pid));
     $days = min(max((int)($QUERY['period'] ?? 7), 1), 365);
     $clicks  = (int)db()->querySingle("SELECT COUNT(*) FROM analytics WHERE page_id=$pid AND event_type='click' AND created_at>=datetime('now','-{$days} days')");
     $views   = (int)db()->querySingle("SELECT COUNT(*) FROM analytics WHERE page_id=$pid AND event_type='pageview' AND created_at>=datetime('now','-{$days} days')");
@@ -2048,16 +2144,26 @@ if ($path === '/upload' && $METHOD === 'POST') {
 
 // ── TRASH ─────────────────────────────────────────────────────────────
 const TRASH_TYPES = ['page' => 'pages', 'section' => 'link_sections', 'button' => 'buttons'];
+// Trash item -> owning page's store_slug (for scope checks). Pages carry
+// their own store_slug directly; sections/buttons derive it from page_id.
+function trash_item_store_slug(string $type, array $row): ?string {
+    if ($type === 'page') return $row['store_slug'] ?? null;
+    return isset($row['page_id']) ? page_store_slug((int)$row['page_id']) : null;
+}
 if ($path === '/admin/trash' && $METHOD === 'GET') {
     $user = auth();
-    $pages = q("SELECT id, title AS name, slug, deleted_at FROM pages WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC");
-    foreach ($pages as &$r) { $r['type'] = 'page'; } unset($r);
-    $sections = q("SELECT s.id, s.title AS name, p.title AS page_title, s.deleted_at FROM link_sections s
+    $scope = store_manager_scope($user);
+    $pages = q("SELECT id, title AS name, slug, store_slug, deleted_at FROM pages WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC");
+    if ($scope !== null) $pages = array_values(array_filter($pages, fn($r) => ($r['store_slug'] ?? null) === $scope));
+    foreach ($pages as &$r) { $r['type'] = 'page'; unset($r['store_slug']); } unset($r);
+    $sections = q("SELECT s.id, s.title AS name, s.page_id, p.title AS page_title, p.store_slug, s.deleted_at FROM link_sections s
         LEFT JOIN pages p ON p.id = s.page_id WHERE s.deleted_at IS NOT NULL ORDER BY s.deleted_at DESC");
-    foreach ($sections as &$r) { $r['type'] = 'section'; } unset($r);
-    $buttons = q("SELECT b.id, b.label AS name, p.title AS page_title, b.deleted_at FROM buttons b
+    if ($scope !== null) $sections = array_values(array_filter($sections, fn($r) => ($r['store_slug'] ?? null) === $scope));
+    foreach ($sections as &$r) { $r['type'] = 'section'; unset($r['store_slug'], $r['page_id']); } unset($r);
+    $buttons = q("SELECT b.id, b.label AS name, b.page_id, p.title AS page_title, p.store_slug, b.deleted_at FROM buttons b
         LEFT JOIN pages p ON p.id = b.page_id WHERE b.deleted_at IS NOT NULL ORDER BY b.deleted_at DESC");
-    foreach ($buttons as &$r) { $r['type'] = 'button'; } unset($r);
+    if ($scope !== null) $buttons = array_values(array_filter($buttons, fn($r) => ($r['store_slug'] ?? null) === $scope));
+    foreach ($buttons as &$r) { $r['type'] = 'button'; unset($r['store_slug'], $r['page_id']); } unset($r);
     ok(['trash' => array_merge($pages, $sections, $buttons)]);
 }
 if (preg_match('#^/admin/trash/(page|section|button)/(\d+)/restore$#', $path, $m) && $METHOD === 'POST') {
@@ -2065,6 +2171,7 @@ if (preg_match('#^/admin/trash/(page|section|button)/(\d+)/restore$#', $path, $m
     $table = TRASH_TYPES[$m[1]]; $id = (int)$m[2];
     $row = q1("SELECT * FROM $table WHERE id=? AND deleted_at IS NOT NULL", [$id]);
     if (!$row) err(ucfirst($m[1]) . ' not found in trash.', 404);
+    assert_location_scope($user, trash_item_store_slug($m[1], $row));
     run("UPDATE $table SET deleted_at=NULL WHERE id=?", [$id]);
     audit_log($user, $m[1] . '_restored', $m[1], $id, null, $row);
     ok(['success' => true]);
@@ -2214,7 +2321,7 @@ if ($path === '/admin/forms' && $METHOD === 'GET') {
     ok(['forms' => $rows]);
 }
 if ($path === '/admin/forms' && $METHOD === 'POST') {
-    $user = auth(); role_check($user, $EDIT);
+    $user = auth(); role_check($user, $MGR); // Forms have no per-location field — global resource, Store Managers are read-only
     $name = trim((string)($BODY['name'] ?? ''));
     if (!$name) err('Form name is required.');
     $id = run("INSERT INTO forms (name,description,form_type,fields_json) VALUES (?,?,?,?)",
@@ -2229,7 +2336,7 @@ if (preg_match('#^/admin/forms/(\d+)$#', $path, $m)) {
     $form = q1("SELECT * FROM forms WHERE id=?", [$fid]);
     if (!$form) err('Form not found.', 404);
     if ($METHOD === 'PUT') {
-        role_check($user, $EDIT);
+        role_check($user, $MGR); // Forms are a global resource — Store Managers are read-only
         $fieldsJson = array_key_exists('fields', $BODY) ? json_encode($BODY['fields']) : $form['fields_json'];
         run("UPDATE forms SET name=?,description=?,form_type=?,fields_json=?,is_active=?,updated_at=datetime('now') WHERE id=?",
             [$BODY['name']??$form['name'], $BODY['description']??$form['description'], $BODY['form_type']??$form['form_type'],
@@ -2240,7 +2347,7 @@ if (preg_match('#^/admin/forms/(\d+)$#', $path, $m)) {
         ok(['form' => $updated]);
     }
     if ($METHOD === 'DELETE') {
-        role_check($user, $EDIT);
+        role_check($user, $MGR); // Forms are a global resource — Store Managers are read-only
         run("DELETE FROM forms WHERE id=?", [$fid]);
         audit_log($user, 'form_deleted', 'form', $fid, $form, null);
         ok(['success' => true]);

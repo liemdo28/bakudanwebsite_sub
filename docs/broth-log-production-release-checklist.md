@@ -2,7 +2,7 @@
 
 Generated: 2026-07-21
 
-Current release decision: **GO after production workflow succeeds and `/broth-log` browser verification passes**.
+Current release decision: **NO-GO for production until the controlled release unblocks `/broth-log`, deploys from a tag/release, and browser verification passes**.
 
 ## CI/CD Gate
 
@@ -26,7 +26,8 @@ Ordinary branch pushes do not deploy.
 | Configure `PRODUCTION_*` secrets | Complete | Required by the production workflow. |
 | Remove or rotate legacy generic deployment secrets | Not complete | Old generic secrets should not be used by deployment. |
 | Confirm production HTTPS | Required before release | Verify `https://www.bakudanramen.com`. |
-| Confirm production clean route | Required before release | `/broth-log` is the single manager-facing route. |
+| Confirm production route block remains before release | Complete | `.htaccess` blocks `/broth-log` until a controlled release. |
+| Confirm production clean route after unblocking | Required before release | `/broth-log` is the single manager-facing route. |
 | Confirm removed branch routes are unavailable | Required before release | Branch-specific Broth Log URLs are no longer deployed or routed. |
 | Confirm clean-route refresh avoids 404 | Required before release | Hard-refresh each clean URL after deployment. |
 | Confirm Google Sheets row counts | Required before release | Expected counts: B1=6, B2=2, B3=15. |
@@ -38,39 +39,40 @@ Ordinary branch pushes do not deploy.
 
 1. Confirm all dashboard changes are committed.
 2. Confirm `.github/workflows/deploy-production.yml` is the only deployment workflow.
-3. Confirm production-only secrets exist:
+3. For the controlled release commit only, remove the temporary `.htaccess` Broth Log block and enable `/broth-log`.
+4. Confirm production-only secrets exist:
    - `PRODUCTION_HOST`
    - `PRODUCTION_USERNAME`
    - `PRODUCTION_PASSWORD`
    - `PRODUCTION_PORT`
    - `PRODUCTION_TARGET_DIR`
-4. Confirm `PRODUCTION_TARGET_DIR` points to the production document root; on DreamHost this path must contain `bakudanramen.com`.
-5. Create a version tag such as `v2026.07.21-broth-log`.
-6. Publish a GitHub Release or push the version tag.
-7. Approve the GitHub `production` environment deployment.
-8. Verify the public route in a browser:
+5. Confirm `PRODUCTION_TARGET_DIR` points to the production document root; on DreamHost this path must contain `bakudanramen.com`.
+6. Create a version tag such as `v2026.07.21-broth-log`.
+7. Publish a GitHub Release or push the version tag.
+8. Approve the GitHub `production` environment deployment.
+9. Verify the public route in a browser:
    - `https://www.bakudanramen.com/broth-log`
-9. Confirm the top store selector switches:
+10. Confirm the top store selector switches:
    - B1 Bandera
    - B2 Stone Oak
    - B3 La Cantera
-10. Hard-refresh each route and confirm no 404.
-11. Confirm live row counts:
+11. Hard-refresh each route and confirm no 404.
+12. Confirm live row counts:
    - B1: 6
    - B2: 2
    - B3: 15
-12. Test filters:
+13. Test filters:
    - Reset filters
    - Min F / Max F
    - Date range
    - Employee
    - Issue
    - Shift
-13. Test exports:
+14. Test exports:
    - CSV
    - Excel-compatible `.xls`
    - Print/PDF
-14. Verify console/network:
+15. Verify console/network:
    - No JavaScript errors
    - No failed Google Sheet requests
    - No mixed-content warnings

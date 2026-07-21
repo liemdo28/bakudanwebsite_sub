@@ -19,13 +19,30 @@ The workflow runs only when:
 
 Ordinary branch pushes do not deploy.
 
-## Broth Log Route
+## Broth Log Single-Page Route Gate
 
-The Broth Log dashboard has one manager-facing address:
+The Broth Log dashboard is a single-page, path-driven dashboard. The only tracked HTML file is:
+
+- `broth-log.html`
+
+Do not recreate separate branch files such as `broth-log-b1.html`, `broth-log-b2.html`, or `broth-log-b3.html`.
+
+The clean branch routes are prepared as internal rewrites to the shared page:
+
+- `/broth-log-b1` -> `/broth-log.html`
+- `/broth-log-b2` -> `/broth-log.html`
+- `/broth-log-b3` -> `/broth-log.html`
+- `/broth-log` -> `/broth-log.html`
+
+JavaScript reads the current path and selects the matching store and workbook. `/broth-log` remains a selector-friendly entry point; `/broth-log-b1`, `/broth-log-b2`, and `/broth-log-b3` deep-link directly to their branch.
+
+Before controlled production release, `.htaccess` keeps Broth Log routes blocked:
 
 - `/broth-log`
+- `/broth-log.html`
+- branch-specific clean routes such as `/broth-log-b1`, `/broth-log-b2`, and `/broth-log-b3`
 
-Managers choose B1, B2, or B3 from the store selector at the top of the dashboard. The removed branch-specific routes are not deployed; `/broth-log.html` redirects to `/broth-log` so there is only one visible address to remember.
+The internal rewrite rules are intentionally kept underneath the temporary block. Removing only the temporary block during a controlled release exposes all clean Broth Log routes without requiring new HTML files.
 
 ## Required GitHub Configuration
 
@@ -48,11 +65,16 @@ Do not use generic deployment secrets for production deployment.
 After deployment, verify these public routes:
 
 - `https://www.bakudanramen.com/broth-log`
+- `https://www.bakudanramen.com/broth-log-b1`
+- `https://www.bakudanramen.com/broth-log-b2`
+- `https://www.bakudanramen.com/broth-log-b3`
 
 Required checks:
 
-- Clean route refresh returns 200.
-- Store selector switches B1, B2, and B3 without needing separate links.
+- Remove the temporary Broth Log route block only as part of the controlled release.
+- Clean route refresh returns 200 for each Broth Log route.
+- `/broth-log-b1`, `/broth-log-b2`, and `/broth-log-b3` all serve the shared `broth-log.html` page.
+- Store selector switches B1, B2, and B3 without requiring separate HTML files.
 - Google Sheets data loads.
 - Expected row counts are B1=6, B2=2, B3=15.
 - No browser console errors.

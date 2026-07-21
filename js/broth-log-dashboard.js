@@ -7,6 +7,12 @@
         B3: { id: '1odx4Xq94kz50aJBuE2Q-WcZbvXdfeVFOksOeAxn4Kxw', tab: 'Form Responses 1', name: 'B3 La Cantera' }
     };
 
+    const PATH_BRANCHES = {
+        '/broth-log-b1': 'B1',
+        '/broth-log-b2': 'B2',
+        '/broth-log-b3': 'B3'
+    };
+
     const SYNC_CONFIG = {
         defaultIntervalSeconds: 60,
         intervals: [
@@ -236,8 +242,10 @@
         pastaBoilerRight: 'Cooking Equipment'
     };
 
+    const routeBranch = getRouteBranch();
+
     const state = {
-        activeBranch: getInitialBranch(),
+        activeBranch: routeBranch.branch || getInitialBranch(),
         activeView: 'home',
         records: [],
         recordsByBranch: {},
@@ -250,6 +258,7 @@
         consecutiveFailures: 0,
         lastChanges: { new: 0, updated: 0, deleted: 0, duplicates: 0, unchanged: 0 },
         loading: false,
+        selectedRecordId: '',
         filters: {
             query: '',
             dateRange: 'all',
@@ -265,14 +274,23 @@
         theme: localStorage.getItem('brothTheme') || 'dark',
         timer: null,
         syncInFlight: null,
-        showStoreSelector: false
+        showStoreSelector: false,
+        routeUnsupported: routeBranch.unsupported
     };
 
     const root = document.getElementById('broth-dashboard');
     if (!root) return;
     state.showStoreSelector = root.dataset.storeSelector === 'true';
-    state.activeBranch = state.showStoreSelector ? getInitialBranch() : root.dataset.branch || getInitialBranch();
+    state.activeBranch = routeBranch.branch || (state.showStoreSelector ? getInitialBranch() : root.dataset.branch || getInitialBranch());
     document.documentElement.dataset.theme = state.theme;
+
+    function getRouteBranch() {
+        const path = window.location.pathname.replace(/\/+$/, '').replace(/\.html$/i, '').toLowerCase() || '/';
+        if (PATH_BRANCHES[path]) return { branch: PATH_BRANCHES[path], unsupported: false };
+        if (path === '/broth-log') return { branch: '', unsupported: false };
+        if (path.includes('broth-log')) return { branch: '', unsupported: true };
+        return { branch: '', unsupported: false };
+    }
 
     function getInitialBranch() {
         const params = new URLSearchParams(window.location.search);
@@ -673,6 +691,13 @@
     }
 
     async function syncSheets(options = {}) {
+        if (state.routeUnsupported) {
+            state.loading = false;
+            state.syncStatus = 'error';
+            state.syncMessage = 'Unsupported Broth Log route';
+            render();
+            return;
+        }
         if (state.syncInFlight) return state.syncInFlight;
         state.syncInFlight = runSync(options).finally(() => {
             state.syncInFlight = null;
@@ -750,6 +775,14 @@
             }
             return true;
         });
+    }
+
+    function selectedRecord(records) {
+        if (!records.length) return null;
+        const current = records.find(row => row.id === state.selectedRecordId);
+        if (current) return current;
+        state.selectedRecordId = records[0].id;
+        return records[0];
     }
 
     function aggregate(records) {
@@ -881,53 +914,41 @@
 
     function journal(records) {
         if (!records.length) return `<div class="bd-empty">No matching logs yet.</div>`;
+        const selected = selectedRecord(records);
         return `
-            <div class="bd-card bd-section">
+            <div class="bd-card bd-section bd-journal-section">
                 <h2>Daily Log Journal</h2>
-                <div class="bd-table-wrap">
-                    <table class="bd-table">
-                        <thead><tr><th>Date</th><th>Time</th><th>Branch</th><th>Employee</th><th>Shift</th><th>Avg</th><th>Low</th><th>High</th><th>Status</th><th>Notes</th><th></th></tr></thead>
-                        <tbody>${records.map(row => `
-                            <tr>
-                                <td>${esc(row.businessDate)}</td>
-                                <td>${esc(row.businessTime || fmtDate(row.submittedAt))}</td>
-                                <td>${esc(row.branch)}</td>
-                                <td>${esc(row.employeeName)}</td>
-                                <td>${esc(row.shift)}</td>
-                                <td>${fmtTemp(row.metrics.averageTemperature)}</td>
-                                <td>${fmtTemp(row.metrics.lowestTemperature)}</td>
-                                <td>${fmtTemp(row.metrics.highestTemperature)}</td>
-                                <td>${statusPill(row)}</td>
-                                <td>${esc(row.notes || row.correctiveAction || '')}</td>
-                                <td><button class="bd-row-btn" data-detail="${esc(row.id)}">Quick view</button></td>
-                            </tr>`).join('')}</tbody>
-                    </table>
+                <div class="bd-journal-list" role="listbox" aria-label="Daily log journal">
+                    ${records.map(row => journalItem(row, selected && row.id === selected.id)).join('')}
                 </div>
             </div>
         `;
     }
 
+    function journalItem(row, selected) {
+        return `<button class="bd-journal-item ${selected ? 'selected' : ''}" data-select-record="${esc(row.id)}" role="option" aria-selected="${selected ? 'true' : 'false'}">
+            <span class="bd-journal-date">${esc(row.businessDate)} <b>${esc(row.businessTime || fmtDate(row.submittedAt))}</b></span>
+            <strong>${esc(row.employeeName)}</strong>
+            <span>${esc(row.shift || 'No shift')} · Avg ${fmtTemp(row.metrics.averageTemperature)}</span>
+            <span>${statusPill(row)} <small>${row.issues.length} issue${row.issues.length === 1 ? '' : 's'}</small></span>
+        </button>`;
+    }
+
     function home(records, summary) {
         return `
             ${kpis(summary)}
-            <div class="bd-grid bd-two" style="margin-top:14px">
-                <div class="bd-card bd-section">
-                    <h2>Today's Temperature Trend</h2>
-                    ${lineChart(records.slice().reverse(), 'averageTemperature')}
-                </div>
-                <div class="bd-card bd-section">
-                    <h2>Latest Issues</h2>
-                    ${issueList(summary.issues.slice(0, 6))}
-                </div>
-            </div>
-            <div class="bd-grid bd-two" style="margin-top:14px">
-                <div>${journal(records.slice(0, 12))}</div>
-                <div class="bd-card bd-section">
-                    <h2>Employee Leaderboard</h2>
-                    ${employeeBars(records)}
-                </div>
-            </div>
+            ${masterDetail(records, summary)}
         `;
+    }
+
+    function masterDetail(records, summary) {
+        const selected = selectedRecord(records);
+        return `<div class="bd-master-detail">
+            <section class="bd-master-panel">${journal(records)}</section>
+            <section class="bd-detail-panel" aria-live="polite">
+                ${selected ? selectedLogDetail(selected, summary, records) : `<div class="bd-empty">Select a log to review station details.</div>`}
+            </section>
+        </div>`;
     }
 
     function lineChart(records, metric) {
@@ -1058,7 +1079,7 @@
 
     function renderView(records, summary) {
         if (state.activeView === 'home') return home(records, summary);
-        if (state.activeView === 'journal') return journal(records);
+        if (state.activeView === 'journal') return masterDetail(records, summary);
         if (state.activeView === 'timeline') return timeline(records);
         if (state.activeView === 'issues') return `<div class="bd-card bd-section"><h2>Issue Management</h2>${issueList(summary.issues)}</div>`;
         if (state.activeView === 'employees') return `<div class="bd-card bd-section"><h2>Employee Performance</h2>${employeeBars(records)}</div>`;
@@ -1072,6 +1093,21 @@
     }
 
     function render() {
+        if (state.routeUnsupported) {
+            root.innerHTML = `
+            <div class="bd-shell">
+                <aside class="bd-sidebar">
+                    <a class="bd-brand" href="index.html"><span class="bd-brand-mark">B</span><span class="bd-brand-text"><strong>Bakudan</strong><span>Broth Log Ops</span></span></a>
+                </aside>
+                <main class="bd-main">
+                    <div class="bd-card bd-empty">
+                        <h1>Unsupported Broth Log route</h1>
+                        <p>This dashboard supports /broth-log, /broth-log-b1, /broth-log-b2, and /broth-log-b3.</p>
+                    </div>
+                </main>
+            </div>`;
+            return;
+        }
         const records = filteredRecords();
         const summary = aggregate(records);
         root.innerHTML = `
@@ -1097,7 +1133,7 @@
                             <button class="bd-btn" data-action="excel">Excel</button>
                             <button class="bd-btn" data-action="print">Print/PDF</button>
                             <button class="bd-icon-btn" data-action="theme" title="Toggle dark/light mode">${state.theme === 'dark' ? 'L' : 'D'}</button>
-                            <button class="bd-btn pla canteraary" data-action="sync">Sync</button>
+                            <button class="bd-btn primary" data-action="sync">Sync</button>
                         </div>
                     </div>
                     <div class="bd-sync">
@@ -1118,19 +1154,43 @@
         bindEvents();
     }
 
+    function selectedLogDetail(row, summary, records) {
+        return `<div class="bd-selected-detail" data-selected-log="${esc(row.id)}">
+            ${detailBody(row, summary, records)}
+        </div>`;
+    }
+
     function detail(row) {
+        return `<div class="bd-drawer-backdrop" data-close></div><div class="bd-drawer-panel">${detailBody(row, aggregate([row]), [row])}</div>`;
+    }
+
+    function detailBody(row) {
         const summary = temperatureSummary(row.readings);
         const grouped = groupBy(row.readings, reading => reading.group);
-        return `<div class="bd-drawer-backdrop" data-close></div><div class="bd-drawer-panel">
-            <div class="bd-detail-head"><div><h2>${esc(row.branch)} · ${esc(row.businessDate)} ${esc(row.businessTime)}</h2><div class="bd-muted">${esc(row.employeeName)} · ${esc(row.shift)} · ${statusPill(row)}</div></div><button class="bd-icon-btn" data-close>X</button></div>
-            <div class="bd-detail-grid">
-                ${field('Branch', row.branch)}${field('Kitchen/Station', 'All logged stations')}${field('Batch ID', row.responseId || row.id.slice(0, 42))}${field('Broth Name', 'Food safety temperature log')}${field('Supervisor', row.managerComment || 'Not recorded')}${field('Submitted', fmtDate(row.submittedAt))}
+        const actionReadings = row.readings.filter(reading => reading.severityKey !== 'safe');
+        return `
+            <div class="bd-detail-head">
+                <div>
+                    <h2>${esc(row.branch)} · ${esc(row.businessDate)} ${esc(row.businessTime)}</h2>
+                    <div class="bd-muted">${esc(row.employeeName)} · ${esc(row.shift)} · ${statusPill(row)}</div>
+                </div>
+                <button class="bd-icon-btn bd-drawer-close" data-close>X</button>
             </div>
-            <div class="bd-card bd-section" style="margin-top:14px"><h2>Temperature History</h2>
+            <section class="bd-card bd-section bd-overview-section">
+                <h2>Overview</h2>
+                <div class="bd-detail-grid">
+                    ${field('Branch', row.branch)}${field('Kitchen/Station', 'All logged stations')}${field('Batch ID', row.responseId || row.id.slice(0, 42))}${field('Broth Name', 'Food safety temperature log')}${field('Supervisor', row.managerComment || 'Not recorded')}${field('Submitted', fmtDate(row.submittedAt))}
+                </div>
+            </section>
+            <section class="bd-card bd-section"><h2>Temperature History</h2>
                 <div class="bd-temp-summary" aria-label="Temperature status summary">
-                    ${['safe', 'warning', 'high', 'critical', 'missing'].map(key => `<span class="${key}">${summary[key]} ${severityLabel(key)}</span>`).join('')}
+                    ${['safe', 'warning', 'high', 'critical', 'missing'].map(key => tempKpi(key, summary[key])).join('')}
                 </div>
                 ${summary.mostSevere ? `<div class="bd-temp-alert ${summary.mostSevere.severityKey}">Most severe: ${esc(summary.mostSevere.label)} · ${esc(severityLabel(summary.mostSevere.severityKey))} · ${esc(deviationText(summary.mostSevere))}</div>` : ''}
+                ${actionReadings.length ? `<div class="bd-action-strip" aria-label="Stations requiring attention">
+                    <strong>Action Required</strong>
+                    <div>${actionReadings.map(reading => `<span class="${esc(reading.severityKey)}">${esc(reading.label)} · ${esc(severityLabel(reading.severityKey))} · ${esc(deviationText(reading))}</span>`).join('')}</div>
+                </div>` : ''}
                 <div class="bd-muted">Each row compares the original reading directly against that station's SOP threshold. SOP and Current markers use a per-station deviation scale.</div>
                 <div class="bd-temp-groups">${Object.entries(grouped).map(([group, readings]) => `
                     <section class="bd-temp-group">
@@ -1138,12 +1198,17 @@
                         <div class="bd-temp-list">${readings.map(reading => tempReadingCard(row, reading)).join('')}</div>
                     </section>`).join('')}
                 </div>
-            </div>
-            <div class="bd-grid bd-two" style="margin-top:14px">
-                <div class="bd-card bd-section"><h2>Issues</h2>${issueList(row.issues)}</div>
-                <div class="bd-card bd-section"><h2>Notes & Actions</h2><p>${esc(row.notes || 'No notes')}</p><p>${esc(row.correctiveAction || 'No corrective action')}</p><p class="bd-muted">${esc(row.managerComment || 'No manager comment')}</p></div>
-            </div>
-        </div>`;
+            </section>
+            <section class="bd-card bd-section"><h2>Issues</h2>${issueList(row.issues)}</section>
+            <section class="bd-card bd-section"><h2>Timeline</h2>${selectedTimeline(row)}</section>
+            <section class="bd-card bd-section"><h2>Compliance</h2>${selectedCompliance(row)}</section>
+            <section class="bd-card bd-section"><h2>Employee / Metadata</h2><div class="bd-detail-grid">${field('Employee', row.employeeName)}${field('Shift', row.shift)}${field('Record ID', row.responseId || row.id.slice(0, 42))}${field('Source', row.sourceTab)}</div></section>
+            <section class="bd-card bd-section"><h2>Notes</h2><p>${esc(row.notes || 'No notes')}</p><p>${esc(row.correctiveAction || 'No corrective action')}</p><p class="bd-muted">${esc(row.managerComment || 'No manager comment')}</p></section>
+        `;
+    }
+
+    function tempKpi(key, value) {
+        return `<span class="bd-temp-kpi ${key} ${value ? '' : 'zero'}"><small>${esc(severityLabel(key))}</small><strong>${value}</strong></span>`;
     }
 
     function temperatureSummary(readings) {
@@ -1159,14 +1224,17 @@
 
     function tempReadingCard(row, reading) {
         return `<article class="bd-temp-card ${esc(reading.severityKey)}" aria-label="${esc(reading.label)} ${esc(severityLabel(reading.severityKey))}">
-            <div class="bd-temp-main">
-                <strong>${esc(reading.label)}</strong>
-                <span>${esc(reading.sopItem)} · ${esc(reading.sopCategory || reading.group)}</span>
+            <div class="bd-temp-card-head">
+                <div class="bd-temp-main">
+                    <strong>${esc(reading.label)}</strong>
+                    <span>${esc(reading.sopItem)} · ${esc(reading.sopCategory || reading.group)}</span>
+                </div>
+                <span class="bd-pill ${esc(reading.severityKey)}">${esc(severityLabel(reading.severityKey))}</span>
             </div>
+            <div class="bd-current-temp"><span>Current</span><strong>${fmtTemp(reading.temperature)}</strong></div>
             <div class="bd-temp-values">
-                ${tempMetric('Current', fmtTemp(reading.temperature))}
-                ${tempMetric('Target', reading.targetLabel)}
                 ${tempMetric('Deviation', deviationText(reading))}
+                ${tempMetric('Target', reading.targetLabel)}
                 ${tempMetric('Trend', trendFor(row, reading))}
                 ${tempMetric('Recorded', fmtDate(row.submittedAt))}
                 ${tempMetric('By', row.employeeName || 'Unassigned')}
@@ -1178,12 +1246,34 @@
                     <span class="bd-current-marker ${esc(reading.severityKey)}" style="left:${currentMarker(reading)}%"><b>Current</b></span>
                 </div>
             </div>
-            <div class="bd-temp-status"><span class="bd-pill ${esc(reading.severityKey)}">${esc(severityLabel(reading.severityKey))}</span><span>${esc(reading.status)}</span></div>
+            <div class="bd-temp-status"><span>${esc(reading.status)}</span></div>
         </article>`;
     }
 
     function tempMetric(label, value) {
         return `<div><span>${esc(label)}</span><strong>${esc(value || '-')}</strong></div>`;
+    }
+
+    function selectedTimeline(row) {
+        const measured = row.readings.filter(reading => reading.temperature !== null);
+        if (!measured.length) return `<div class="bd-empty">No numeric readings in this log.</div>`;
+        return `<div class="bd-selected-timeline">${measured.map(reading => `
+            <div>
+                <strong>${esc(reading.label)}</strong>
+                <span>${fmtTemp(reading.temperature)} · ${esc(severityLabel(reading.severityKey))}</span>
+            </div>`).join('')}</div>`;
+    }
+
+    function selectedCompliance(row) {
+        const summary = temperatureSummary(row.readings);
+        const total = row.readings.length || 1;
+        const safeRate = Math.round((summary.safe / total) * 100);
+        return `<div class="bd-compliance-detail">
+            ${field('Compliance', `${safeRate}%`)}
+            ${field('Safe Stations', summary.safe)}
+            ${field('Action Needed', summary.warning + summary.high + summary.critical + summary.missing)}
+            ${field('Critical', summary.critical)}
+        </div>`;
     }
 
     function field(label, value) {
@@ -1201,6 +1291,10 @@
             else render();
         }));
         root.querySelectorAll('[data-action]').forEach(btn => btn.addEventListener('click', () => actions(btn.dataset.action)));
+        root.querySelectorAll('[data-select-record]').forEach(btn => btn.addEventListener('click', () => {
+            state.selectedRecordId = btn.dataset.selectRecord;
+            render();
+        }));
         const refresh = root.querySelector('#refreshSeconds');
         if (refresh) refresh.addEventListener('change', () => {
             state.refreshSeconds = Number(refresh.value);
@@ -1213,6 +1307,7 @@
         if (storeSelect) storeSelect.addEventListener('change', () => {
             state.activeBranch = storeSelect.value;
             state.filters.branch = 'current';
+            state.selectedRecordId = '';
             localStorage.setItem('brothSelectedStore', state.activeBranch);
             const url = new URL(window.location.href);
             url.searchParams.set('store', state.activeBranch);

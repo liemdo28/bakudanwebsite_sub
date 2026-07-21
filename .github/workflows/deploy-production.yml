@@ -1,12 +1,13 @@
 name: Deploy production
 
 on:
-  push:
-    tags:
-      - 'v*'
   release:
     types:
       - published
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
 
 env:
   DEPLOY_SOURCE: >-
@@ -16,11 +17,39 @@ jobs:
   deploy-production:
     runs-on: ubuntu-latest
     environment: production
-    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'release' && github.event.action == 'published'
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify production release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          CHECKED_OUT_SHA="$(git rev-parse HEAD)"
+          TAG_SHA="$(git rev-list -n 1 "${RELEASE_TAG}")"
+          MAIN_SHA="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+
+          echo "Trigger event: ${GITHUB_EVENT_NAME}"
+          echo "Release tag: ${RELEASE_TAG}"
+          echo "Checked-out commit SHA: ${CHECKED_OUT_SHA}"
+          echo "Tag commit SHA: ${TAG_SHA}"
+          echo "Main branch SHA: ${MAIN_SHA}"
+          echo "Production environment: production"
+
+          if [ "${CHECKED_OUT_SHA}" != "${TAG_SHA}" ]; then
+            echo "Checked-out SHA does not match release tag SHA."
+            exit 1
+          fi
+
+          if [ "${TAG_SHA}" != "${MAIN_SHA}" ]; then
+            echo "Release tag does not point at current origin/main."
+            exit 1
+          fi
 
       - name: Validate production release target
         shell: bash

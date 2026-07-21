@@ -1094,7 +1094,7 @@
                             <button class="bd-btn" data-action="excel">Excel</button>
                             <button class="bd-btn" data-action="print">Print/PDF</button>
                             <button class="bd-icon-btn" data-action="theme" title="Toggle dark/light mode">${state.theme === 'dark' ? 'L' : 'D'}</button>
-                            <button class="bd-btn pla canteraary" data-action="sync">Sync</button>
+                            <button class="bd-btn primary" data-action="sync">Sync</button>
                         </div>
                     </div>
                     <div class="bd-sync">

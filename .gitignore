@@ -42,3 +42,6 @@ data.py
 # Local-only deploy safety net (timestamped pre-deploy backups, DB snapshots)
 scripts/_deploy_backups/
 scripts/_backup_*.html
+
+# Local verification artifacts
+work/

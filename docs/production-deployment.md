@@ -19,13 +19,21 @@ The workflow runs only when:
 
 Ordinary branch pushes do not deploy.
 
-## Broth Log Route
+## Broth Log Route Gate
 
-The Broth Log dashboard has one manager-facing address:
+The Broth Log dashboard is prepared with one manager-facing address:
 
 - `/broth-log`
 
-Managers choose B1, B2, or B3 from the store selector at the top of the dashboard. The removed branch-specific routes are not deployed; `/broth-log.html` redirects to `/broth-log` so there is only one visible address to remember.
+Managers choose B1, B2, or B3 from the store selector at the top of the dashboard.
+
+Before controlled production release, `.htaccess` keeps Broth Log routes blocked:
+
+- `/broth-log`
+- `/broth-log.html`
+- removed branch-specific variants such as `/broth-log-b1`
+
+The route should be unblocked only in the release commit/tag that is intentionally deployed to production.
 
 ## Required GitHub Configuration
 
@@ -51,6 +59,7 @@ After deployment, verify these public routes:
 
 Required checks:
 
+- Remove the temporary Broth Log route block only as part of the controlled release.
 - Clean route refresh returns 200.
 - Store selector switches B1, B2, and B3 without needing separate links.
 - Google Sheets data loads.

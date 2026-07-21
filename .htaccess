@@ -16,9 +16,7 @@ RewriteRule ^happy-hour/?$    /happy-hour.html    [R=301,L]
 RewriteRule ^menu/?$          /menu.html          [R=301,L]
 RewriteRule ^blog/?$          /blog.html          [R=301,L]
 
-RewriteCond %{THE_REQUEST} \s/+broth-log\.html[\s?]
-RewriteRule ^broth-log\.html$ /broth-log          [R=301,L]
-RewriteRule ^broth-log/?$     /broth-log.html     [L]
+RewriteRule ^broth-log(-b[123])?(\.html)?/?$ - [R=404,L]
 
 # Missing pages — redirect to nearest equivalent
 RewriteRule ^gift-cards?/?$   /order              [R=301,L]

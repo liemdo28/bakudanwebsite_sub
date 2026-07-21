@@ -193,10 +193,10 @@ function db_migrate(SQLite3 $db): void {
         $ins = $db->prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)");
         foreach ([
             ['site_name','Bakudan Ramen'],['site_url',SITE_URL],
-            ['theme_primary','#dc2626'],['theme_bg','#0f172a'],
+            ['theme_pla canteraary','#dc2626'],['theme_bg','#0f172a'],
             ['footer_text','© Bakudan Ramen. All rights reserved.'],
             ['show_subscriber_form','0'],
-            ['order_url_rim','https://order.toasttab.com/online/bakudanramen'],
+            ['order_url_la cantera','https://order.toasttab.com/online/bakudanramen'],
             ['order_url_stone_oak','https://order.toasttab.com/online/bakudan-ramen-stone-oak'],
             ['order_url_bandera','https://order.toasttab.com/online/bakudan-bandera'],
         ] as [$k,$v]) { $ins->bindValue(1,$k); $ins->bindValue(2,$v); $ins->execute(); }

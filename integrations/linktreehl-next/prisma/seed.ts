@@ -17,7 +17,7 @@ async function main() {
 
   const storeData = [
     { name: 'Bakudan Ramen – Bandera', slug: 'bandera', location_name: '11309 Bandera Rd Ste 111, San Antonio TX 78254' },
-    { name: 'Bakudan Ramen – The Rim', slug: 'rim', location_name: '17619 La Cantera Pkwy UNIT 208, San Antonio TX 78256' },
+    { name: 'Bakudan Ramen – La Cantera', slug: 'La Cantera', location_name: '17619 La Cantera Pkwy UNIT 208, San Antonio TX 78256' },
     { name: 'Bakudan Ramen – Stone Oak', slug: 'stone-oak', location_name: '22506 U.S. Hwy 281 N Ste 106, San Antonio TX 78258' },
     { name: 'Bakudan Ramen – Downtown', slug: 'downtown', location_name: 'San Antonio, TX' },
   ];
@@ -58,13 +58,13 @@ async function main() {
   await prisma.linkButton.createMany({
     data: [
       // Location direction chips
-      { link_page_id: mainPage.id, title: 'THE RIM', url: 'https://maps.google.com/?q=Bakudan+Ramen+The+Rim+San+Antonio', button_style: 'chip', sort_order: 0, icon_name: 'map', is_featured: false, opens_in_new_tab: true },
+      { link_page_id: mainPage.id, title: 'La Cantera', url: 'https://maps.google.com/?q=Bakudan+Ramen+The+La Cantera+San+Antonio', button_style: 'chip', sort_order: 0, icon_name: 'map', is_featured: false, opens_in_new_tab: true },
       { link_page_id: mainPage.id, title: 'STONE OAK', url: 'https://maps.google.com/?q=Bakudan+Ramen+Stone+Oak+San+Antonio', button_style: 'chip', sort_order: 1, icon_name: 'map', is_featured: false, opens_in_new_tab: true },
       { link_page_id: mainPage.id, title: 'BANDERA', url: 'https://maps.google.com/?q=Bakudan+Ramen+Bandera+San+Antonio', button_style: 'chip', sort_order: 2, icon_name: 'map', is_featured: false, opens_in_new_tab: true },
       // Order Online CTA (expandable)
       { link_page_id: mainPage.id, title: 'Order Online', url: '#', button_style: 'primary', sort_order: 3, icon_name: 'order', is_featured: true, opens_in_new_tab: false },
       // Order sub-buttons (shown when Order Online is expanded)
-      { link_page_id: mainPage.id, title: 'THE RIM', url: 'https://www.toasttab.com/REPLACE-WITH-RIM-ORDER-URL', button_style: 'order_sub', sort_order: 4, opens_in_new_tab: true },
+      { link_page_id: mainPage.id, title: 'La Cantera', url: 'https://www.toasttab.com/REPLACE-WITH-La Cantera-ORDER-URL', button_style: 'order_sub', sort_order: 4, opens_in_new_tab: true },
       { link_page_id: mainPage.id, title: 'STONE OAK', url: 'https://www.toasttab.com/REPLACE-WITH-STONEOAK-ORDER-URL', button_style: 'order_sub', sort_order: 5, opens_in_new_tab: true },
       { link_page_id: mainPage.id, title: 'BANDERA', url: 'https://www.toasttab.com/REPLACE-WITH-BANDERA-ORDER-URL', button_style: 'order_sub', sort_order: 6, opens_in_new_tab: true },
       // Link rows
@@ -81,11 +81,11 @@ async function main() {
   // ── Per-store pages ───────────────────────────────────────────────────────
   const storePages = [
     {
-      slug: 'rim',
-      store: 'rim',
-      headline: 'BAKUDAN — THE RIM',
+      slug: 'La Cantera',
+      store: 'La Cantera',
+      headline: 'BAKUDAN — La Cantera',
       subheadline: '17619 La Cantera Pkwy UNIT 208 · (210) 257-8080',
-      orderUrl: 'https://www.toasttab.com/REPLACE-WITH-RIM-ORDER-URL',
+      orderUrl: 'https://www.toasttab.com/REPLACE-WITH-La Cantera-ORDER-URL',
     },
     {
       slug: 'stone-oak',
@@ -151,7 +151,7 @@ async function main() {
 
   console.log('✓ Seed complete');
   console.log('  Login: admin@bakudanramen.com / admin123');
-  console.log('  Pages: /links/bakudan · /links/rim · /links/stone-oak · /links/bandera');
+  console.log('  Pages: /links/bakudan · /links/La Cantera · /links/stone-oak · /links/bandera');
 }
 
 main()

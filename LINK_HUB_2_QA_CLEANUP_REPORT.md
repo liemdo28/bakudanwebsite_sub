@@ -14,14 +14,14 @@ Every deletion in this pass followed the same pattern: fetch the item fresh, ass
 
 | Item | Type | Verified value before delete |
 |---|---|---|
-| Test Template Page (id 6) + its 3 sections + 16 buttons (incl. "Call The Rim", "QA scope button test") | Page | Soft-deleted then permanently purged from Trash |
+| Test Template Page (id 6) + its 3 sections + 16 buttons (incl. "Call La Cantera", "QA scope button test") | Page | Soft-deleted then permanently purged from Trash |
 | QA Session Reliability Test (id 7) + its 3 auto-seeded empty sections | Page | Soft-deleted then permanently purged from Trash |
 | QA Permission Test - Stone Oak (id 8) + its 3 auto-seeded empty sections | Page | Soft-deleted then permanently purged from Trash |
 | Standard Location Hub Test | Template | Name matched exactly |
 | QA Test Campaign | Campaign | Name matched exactly |
-| QA Perm Rim Campaign ×2 | Campaign | Name matched exactly (this pass's own permission-test duplicates, created while re-running the test script) |
-| `qa-storemanager-therim@bakudanramen.com` | User | Email + role matched exactly |
-| `qa-manager-rim@bakudanramen.com` | User | Email + role matched exactly (this pass's own permission-test account) |
+| QA Perm La Cantera Campaign ×2 | Campaign | Name matched exactly (this pass's own permission-test duplicates, created while re-running the test script) |
+| `qa-storemanager-thela cantera@bakudanramen.com` | User | Email + role matched exactly |
+| `qa-manager-la cantera@bakudanramen.com` | User | Email + role matched exactly (this pass's own permission-test account) |
 | `qa-manager-stone-oak@bakudanramen.com` | User | Email + role matched exactly (this pass's own permission-test account) |
 | `qa-manager-bandera@bakudanramen.com` | User | Email + role matched exactly (this pass's own permission-test account) |
 | "QA test notice — Tier 3 verification" | Notice | Message matched exactly |
@@ -47,7 +47,7 @@ Two deletion attempts were correctly blocked mid-pass by the environment's safet
 | QA users | **0** (1 total user: `admin@bakudanramen.com`) |
 | QA pages | **0** (2 total pages: Customer Link Hub, Staff Training) |
 | QA campaigns | **0** (0 total campaigns) |
-| QA locations | **0** (3 total locations: The Rim, Stone Oak, Bandera — all real) |
+| QA locations | **0** (3 total locations: La Cantera, Stone Oak, Bandera — all real) |
 | QA notices | **0** (0 total notices) |
 | QA forms | **0** (0 total forms) |
 | QA buttons on live customer pages | **0** — confirmed via live `GET /api/public/links/bakudan-links-main` |

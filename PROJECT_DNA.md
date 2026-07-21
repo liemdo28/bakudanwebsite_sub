@@ -22,7 +22,7 @@
 
 | Field | Value |
 |-------|-------|
-| Primary Language | JavaScript |
+| Pla canteraary Language | JavaScript |
 | Secondary Lang | Python |
 | Framework | Express |
 

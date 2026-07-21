@@ -4,7 +4,7 @@
     const SHEETS = {
         B1: { id: '1-T9WLdHI1MWp0kX7U2SNPOnc7nDBnrrc0njFxBUKnqo', tab: 'Form Responses 1', name: 'B1 Bandera' },
         B2: { id: '1qk78Spg8GmyP4RCjQYwU8Nm0bXdoyl240iUDcSkK3MQ', tab: 'Form Responses 1', name: 'B2 Stone Oak' },
-        B3: { id: '1odx4Xq94kz50aJBuE2Q-WcZbvXdfeVFOksOeAxn4Kxw', tab: 'Form Responses 1', name: 'B3 The Rim' }
+        B3: { id: '1odx4Xq94kz50aJBuE2Q-WcZbvXdfeVFOksOeAxn4Kxw', tab: 'Form Responses 1', name: 'B3 La Cantera' }
     };
 
     const SYNC_CONFIG = {
@@ -798,7 +798,7 @@
                             <button class="bd-btn" data-action="excel">Excel</button>
                             <button class="bd-btn" data-action="print">Print/PDF</button>
                             <button class="bd-icon-btn" data-action="theme" title="Toggle dark/light mode">${state.theme === 'dark' ? 'L' : 'D'}</button>
-                            <button class="bd-btn primary" data-action="sync">Sync</button>
+                            <button class="bd-btn pla canteraary" data-action="sync">Sync</button>
                         </div>
                     </div>
                     <div class="bd-sync">

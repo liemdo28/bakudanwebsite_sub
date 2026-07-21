@@ -78,7 +78,7 @@ RewriteRule ^links/(.*)$ https://links.bakudanramen.com/links/$1 [R=301,L]
 |-----|------|
 | `bakudanramen.com/links` | → redirects to main hub |
 | `links.bakudanramen.com/links/bakudan` | Main Bakudan hub |
-| `links.bakudanramen.com/links/rim` | The Rim |
+| `links.bakudanramen.com/links/la cantera` | La Cantera |
 | `links.bakudanramen.com/links/stone-oak` | Stone Oak |
 | `links.bakudanramen.com/links/bandera` | Bandera |
 | `links.bakudanramen.com/admin` | Admin panel |
@@ -92,8 +92,8 @@ After deployment, update the real Toast order URLs in the admin panel:
 1. Go to `links.bakudanramen.com/admin`
 2. Login: `admin@bakudanramen.com` / `admin123` **(change this password first!)**
 3. Go to **Link Pages** → `bakudan` → **Buttons** tab
-4. Edit the THE RIM, STONE OAK, BANDERA order_sub buttons → paste real Toast URLs
-5. Do the same for `/links/rim`, `/links/stone-oak`, `/links/bandera` pages
+4. Edit the La Cantera, STONE OAK, BANDERA order_sub buttons → paste real Toast URLs
+5. Do the same for `/links/la cantera`, `/links/stone-oak`, `/links/bandera` pages
 
 ---
 

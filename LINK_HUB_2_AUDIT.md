@@ -58,7 +58,7 @@ Only trace in the entire repo: the placeholder text `staff-training-videos` in t
 
 ## 7. Toast — hardcoded URLs only, confirmed no API/automation exists
 
-Real Toast references (`order.toasttab.com/...`, `.../rewardsSignup`) are hardcoded per-location in `locations.html`, `locations/*.html`, `order-smart/index.html`, `server/db.js` seed rows, and `api/index.php` settings keys `order_url_rim` / `order_url_stone_oak` / `order_url_bandera`. No Toast API keys, OAuth, or webhook code exists anywhere (`integrations/` only contains an unrelated Linktree/Prisma migration source). This matches the spec's Rule 2 constraints already — there's nothing to rip out, only a proper Admin-configurable URL table to build (`locations.toast_signup_url`, per spec §13).
+Real Toast references (`order.toasttab.com/...`, `.../rewardsSignup`) are hardcoded per-location in `locations.html`, `locations/*.html`, `order-smart/index.html`, `server/db.js` seed rows, and `api/index.php` settings keys `order_url_la cantera` / `order_url_stone_oak` / `order_url_bandera`. No Toast API keys, OAuth, or webhook code exists anywhere (`integrations/` only contains an unrelated Linktree/Prisma migration source). This matches the spec's Rule 2 constraints already — there's nothing to rip out, only a proper Admin-configurable URL table to build (`locations.toast_signup_url`, per spec §13).
 
 Note: unrelated `showToast()` / `toastMsg` hits in `links-admin/app.js` and `links-temp/index.html` are generic UI toast-notification popups, not the Toast POS platform — don't confuse the two while grepping.
 

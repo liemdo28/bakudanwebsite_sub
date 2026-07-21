@@ -80,7 +80,7 @@ function viewModulePlaceholder(title, message = 'This module is planned for the 
       <div class="empty-state">
         <div class="empty-title">${esc(title)} is not active yet</div>
         <div class="empty-text">Core Link Hub, Staff Training, Marketing Signup, QR, Link Health, and Analytics remain available from the sidebar.</div>
-        <a href="#/pages" class="btn btn-primary btn-sm">${iconPages()} Go to Pages</a>
+        <a href="#/pages" class="btn btn-pla canteraary btn-sm">${iconPages()} Go to Pages</a>
       </div>
     </div>
   `);
@@ -95,7 +95,7 @@ async function viewCampaigns() {
   setContent(`
     ${pageTitle('Campaigns', `${campaigns.length} campaign${campaigns.length !== 1 ? 's' : ''}`)}
     <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="BKDN.openCampaignModal()">${iconPlus()} Create Campaign</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.openCampaignModal()">${iconPlus()} Create Campaign</button>
     </div>
     <div class="card">
       ${!campaigns.length ? `<div class="empty-state"><div class="empty-state-title">No campaigns yet</div></div>` : `
@@ -155,7 +155,7 @@ async function openCampaignModal(id = null) {
       <div class="form-group"><label class="form-label">Start Date</label><input id="camp-start" type="date" class="form-control" value="${esc((item?.start_at||'').slice(0,10))}"></div>
       <div class="form-group"><label class="form-label">End Date</label><input id="camp-end" type="date" class="form-control" value="${esc((item?.end_at||'').slice(0,10))}"></div>
     </div>
-  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveCampaign(${id||'null'})">${item ? 'Save' : 'Create'}</button>`);
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-pla canteraary" onclick="BKDN.saveCampaign(${id||'null'})">${item ? 'Save' : 'Create'}</button>`);
 }
 
 async function saveCampaign(id = null) {
@@ -230,11 +230,11 @@ async function viewCampaignEditor(id) {
           <textarea id="ce-desc" class="form-control" rows="2" placeholder="Brief description of this campaign">${esc(campaign?.description||'')}</textarea>
         </div>
         <div class="form-group">
-          <label class="form-label">Primary CTA Label</label>
+          <label class="form-label">Pla canteraary CTA Label</label>
           <input id="ce-cta-label" class="form-control" value="${esc(campaign?.cta_label||'')}" placeholder="Order Now">
         </div>
         <div class="form-group">
-          <label class="form-label">Primary CTA URL</label>
+          <label class="form-label">Pla canteraary CTA URL</label>
           <input id="ce-cta-url" class="form-control" value="${esc(campaign?.cta_url||'')}" placeholder="https://">
         </div>
         <div class="form-group" style="grid-column:1/-1">
@@ -256,7 +256,7 @@ async function viewCampaignEditor(id) {
       </div>
       <div style="margin-top:16px;display:flex;gap:10px">
         <a href="#/campaigns" class="btn btn-secondary">Cancel</a>
-        <button class="btn btn-primary" onclick="BKDN.saveCampaignEditor(${id?'\''+id+'\'':'null'})">${campaign ? iconSave()+' Save Changes' : iconPlus()+' Create Campaign'}</button>
+        <button class="btn btn-pla canteraary" onclick="BKDN.saveCampaignEditor(${id?'\''+id+'\'':'null'})">${campaign ? iconSave()+' Save Changes' : iconPlus()+' Create Campaign'}</button>
       </div>
     </div>
   `);
@@ -353,7 +353,7 @@ async function viewForms() {
   setContent(`
     ${pageTitle('Forms', `Build and manage custom forms. ${forms.length} form${forms.length!==1?'s':''}.`)}
     <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
-      <button class="btn btn-primary" onclick="BKDN.openFormModal()">${iconPlus()} Create Form</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.openFormModal()">${iconPlus()} Create Form</button>
     </div>
     <div class="card">
       ${!forms.length ? `
@@ -424,7 +424,7 @@ function openFormModal() {
       </select>
     </div>
     <div class="form-group"><label class="form-label">Description</label><textarea id="fm-desc" class="form-control" rows="2" placeholder="Brief description shown above the form"></textarea></div>
-  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveForm()">${iconSave()} Create Form</button>`);
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-pla canteraary" onclick="BKDN.saveForm()">${iconSave()} Create Form</button>`);
 }
 
 async function saveForm() {
@@ -469,7 +469,7 @@ async function openFormBuilderModal(formId) {
       <div id="fb-fields-container">${fieldRows}</div>
       <button class="btn btn-secondary btn-sm" onclick="BKDN.addFieldRow()" style="margin-top:8px">${iconPlus()} Add Field</button>
     </div>
-  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveFormBuilder(${formId})">${iconSave()} Save Form</button>`);
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-pla canteraary" onclick="BKDN.saveFormBuilder(${formId})">${iconSave()} Save Form</button>`);
 };
 
 function addFieldRow() {
@@ -515,7 +515,7 @@ async function viewTemplates() {
             <td>${esc(t.page_type)}</td>
             <td style="color:#94a3b8">${esc((t.created_at||'').slice(0,10))}</td>
             <td style="display:flex;gap:6px">
-              <button class="btn btn-primary btn-sm" onclick="BKDN.openCreatePageFromTemplateModal(${t.id})">${iconPlus()} Create Page</button>
+              <button class="btn btn-pla canteraary btn-sm" onclick="BKDN.openCreatePageFromTemplateModal(${t.id})">${iconPlus()} Create Page</button>
               <button class="btn btn-ghost btn-sm" onclick="BKDN.deleteTemplate(${t.id})" title="Delete" style="color:#ef4444">${iconTrash()}</button>
             </td>
           </tr>`).join('')}
@@ -537,7 +537,7 @@ function openSaveAsTemplateModal(pageId) {
     </div>
   `,
   `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
-   <button class="btn btn-primary" onclick="BKDN.saveAsTemplate(${pageId})">${iconSave()} Save Template</button>`);
+   <button class="btn btn-pla canteraary" onclick="BKDN.saveAsTemplate(${pageId})">${iconSave()} Save Template</button>`);
 }
 
 async function saveAsTemplate(pageId) {
@@ -561,7 +561,7 @@ function openCreatePageFromTemplateModal(templateId) {
     </div>
   `,
   `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
-   <button class="btn btn-primary" onclick="BKDN.createPageFromTemplate(${templateId})">${iconSave()} Create Page</button>`);
+   <button class="btn btn-pla canteraary" onclick="BKDN.createPageFromTemplate(${templateId})">${iconSave()} Create Page</button>`);
 }
 
 async function createPageFromTemplate(templateId) {
@@ -601,7 +601,7 @@ async function viewAutomations() {
     ${pageTitle('Automations', 'A small, fixed set of safe rules — not a general scripting engine.')}
     <div style="display:flex;justify-content:space-between;margin-bottom:16px;gap:10px;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="BKDN.runAutomationsNow()">${iconSync()} Run Automations Now</button>
-      <button class="btn btn-primary" onclick="BKDN.openAutomationModal()">${iconPlus()} New Automation</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.openAutomationModal()">${iconPlus()} New Automation</button>
     </div>
     <div class="card">
       ${!rules.length ? `
@@ -662,7 +662,7 @@ async function openAutomationModal(id) {
       <label class="toggle"><input id="auto-active" type="checkbox" ${item ? (Number(item.is_active)?'checked':'') : 'checked'}><span class="toggle-slider"></span></label>
       <span class="form-label" style="margin:0">Active</span>
     </div>
-  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveAutomation(${id||'null'})">${iconSave()} Save</button>`);
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-pla canteraary" onclick="BKDN.saveAutomation(${id||'null'})">${iconSave()} Save</button>`);
   onAutomationTypeChange();
 }
 
@@ -750,7 +750,7 @@ async function viewUTMBuilder() {
         <textarea id="utm-preview" class="form-control" rows="3" readonly style="font-family:monospace;font-size:12px"></textarea>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="BKDN.copyUtmUrl()">Copy URL</button>
+        <button class="btn btn-pla canteraary btn-sm" onclick="BKDN.copyUtmUrl()">Copy URL</button>
         <button class="btn btn-secondary btn-sm" onclick="BKDN.createShortlinkFromUtm()">Create Shortlink + QR</button>
       </div>
     </div>
@@ -914,7 +914,7 @@ async function viewCustomerService() {
   setContent(`
     ${pageTitle('Customer Service', `${active.length} active notice${active.length !== 1 ? 's' : ''}`)}
     <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="BKDN.openCSModal()">${iconPlus()} New Notice</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.openCSModal()">${iconPlus()} New Notice</button>
     </div>
     <div class="card">
       <div class="card-title">Active Notices</div>
@@ -1009,7 +1009,7 @@ async function openCSModal(id) {
         <span class="form-label" style="margin:0">Customer can dismiss</span>
       </div>
     </div>
-  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveCSNotice(${id||'null'})">${iconSave()} ${item?'Save Changes':'Create Notice'}</button>`);
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-pla canteraary" onclick="BKDN.saveCSNotice(${id||'null'})">${iconSave()} ${item?'Save Changes':'Create Notice'}</button>`);
 }
 
 async function saveCSNotice(id) {
@@ -1046,7 +1046,7 @@ async function viewStaffTraining() {
     <div class="card">
       <div class="empty-state">
         <div class="empty-title">Create your first Staff Training page</div>
-        <button class="btn btn-primary btn-sm" onclick="BKDN.openPageModal()">${iconPlus()} Add Page</button>
+        <button class="btn btn-pla canteraary btn-sm" onclick="BKDN.openPageModal()">${iconPlus()} Add Page</button>
       </div>
     </div>
   `);
@@ -1773,7 +1773,7 @@ async function viewPages() {
         ? `<a href="${esc(previewUrl)}" target="_blank" class="btn btn-ghost btn-sm" title="Preview">&#128274;</a>`
         : '';
     return `
-      <a href="#/pages/${p.id}" class="btn btn-primary btn-sm">${iconEdit()} Edit</a>
+      <a href="#/pages/${p.id}" class="btn btn-pla canteraary btn-sm">${iconEdit()} Edit</a>
       ${liveLink}
       <button class="btn btn-ghost btn-sm" onclick="BKDN.duplicatePage(${p.id})" title="Duplicate">${iconDuplicate()}</button>
       <button class="btn btn-ghost btn-sm" onclick="BKDN.deletePage(${p.id})" title="Delete" style="color:#ef4444">${iconTrash()}</button>`;
@@ -1813,7 +1813,7 @@ async function viewPages() {
     </div>
 
     <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
-      <button class="btn btn-primary btn-sm" onclick="BKDN.openPageModal()">${iconPlus()} Add Page</button>
+      <button class="btn btn-pla canteraary btn-sm" onclick="BKDN.openPageModal()">${iconPlus()} Add Page</button>
     </div>
 
     <!-- Multi-page table -->
@@ -1939,11 +1939,11 @@ function openPageModal() {
     </div>
     <div class="form-group">
       <label class="form-label">Store</label>
-      <input id="pf-store" class="form-control" placeholder="e.g. the-rim, stone-oak, bandera — leave blank for a general page">
+      <input id="pf-store" class="form-control" placeholder="e.g. la-cantera, stone-oak, bandera — leave blank for a general page">
     </div>
   `,
   `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
-   <button class="btn btn-primary" onclick="BKDN.savePageModal()">${iconSave()} Create Page</button>`);
+   <button class="btn btn-pla canteraary" onclick="BKDN.savePageModal()">${iconSave()} Create Page</button>`);
 }
 
 // Staff Training pages default to Unlisted + hidden from the customer hub +
@@ -2067,7 +2067,7 @@ async function viewPageEditor(pageId) {
       <button class="btn btn-secondary btn-sm" onclick="BKDN.savePage(${pageId})">${iconSave()} Save</button>
       ${pageStatus === 'published'
         ? `<button class="btn btn-danger btn-sm" id="btn-publish-page" onclick="BKDN.unpublishPage(${pageId})">${iconPublish()} Unpublish</button>`
-        : `<button class="btn btn-primary btn-sm" id="btn-publish-page" onclick="BKDN.publishPage(${pageId})">${iconPublish()} Publish Now</button>`
+        : `<button class="btn btn-pla canteraary btn-sm" id="btn-publish-page" onclick="BKDN.publishPage(${pageId})">${iconPublish()} Publish Now</button>`
       }
       <button class="btn btn-ghost btn-sm" onclick="BKDN.verifySync('${esc(p.slug)}')">${iconSync()} Verify</button>
       <button class="btn btn-ghost btn-sm" onclick="BKDN.openSaveAsTemplateModal(${pageId})">${iconTemplate()} Save as Template</button>
@@ -2087,7 +2087,7 @@ async function viewPageEditor(pageId) {
     <div id="tab-buttons">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <span style="font-size:13px;color:#64748b">${buttons.length} button${buttons.length !== 1 ? 's' : ''}</span>
-        <button class="btn btn-primary btn-sm" onclick="BKDN.openAddButton(${pageId})">${iconPlus()} Add to ${esc(ptMeta.label)}</button>
+        <button class="btn btn-pla canteraary btn-sm" onclick="BKDN.openAddButton(${pageId})">${iconPlus()} Add to ${esc(ptMeta.label)}</button>
       </div>
       ${renderButtonList(buttons, pageId, ptMeta)}
     </div>
@@ -2096,7 +2096,7 @@ async function viewPageEditor(pageId) {
     <div id="tab-sections" style="display:none">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <span style="font-size:13px;color:#64748b">${sections.length} section${sections.length !== 1 ? 's' : ''}</span>
-        <button class="btn btn-primary btn-sm" onclick="BKDN.openSectionModal(null,${pageId})">${iconPlus()} Add Section</button>
+        <button class="btn btn-pla canteraary btn-sm" onclick="BKDN.openSectionModal(null,${pageId})">${iconPlus()} Add Section</button>
       </div>
       ${renderSectionList(sections, pageId)}
     </div>
@@ -2120,7 +2120,7 @@ async function viewPageEditor(pageId) {
           <label class="form-label">Tagline / Subheadline</label>
           <input id="pe-subheadline" class="form-control" value="${esc(p.subheadline||'')}">
         </div>
-        <button class="btn btn-primary" onclick="BKDN.savePage(${pageId})">${iconSave()} Save Settings</button>
+        <button class="btn btn-pla canteraary" onclick="BKDN.savePage(${pageId})">${iconSave()} Save Settings</button>
       </div>
 
       <div class="card">
@@ -2172,7 +2172,7 @@ async function viewPageEditor(pageId) {
           <span class="form-label" style="margin:0">Search Engine Indexing</span>
         </div>
         <div style="font-size:11px;color:#64748b;margin-bottom:12px">Staff Training pages should normally be Unlisted, hidden from the Customer Link Hub, and excluded from search indexing — the page stays reachable at its direct URL but is never linked or listed publicly.</div>
-        <button class="btn btn-primary" onclick="BKDN.savePageVisibility(${pageId})">${iconSave()} Save Type &amp; Visibility</button>
+        <button class="btn btn-pla canteraary" onclick="BKDN.savePageVisibility(${pageId})">${iconSave()} Save Type &amp; Visibility</button>
         <script>document.getElementById('pe-visibility').addEventListener('change', function(){document.getElementById('pe-pw-row').style.display=this.value==='password_protected'?'block':'none';});</script>
       </div>
 
@@ -2200,7 +2200,7 @@ async function viewPageEditor(pageId) {
           <div style="color:#4ade80;font-size:12px;margin:2px 0">${esc(CFG?.siteUrl||'bakudanramen.com')}/links/${esc(p.slug)}</div>
           <div style="color:#bdc1c6;font-size:12px">${esc(p.meta_description || 'No meta description set yet.')}</div>
         </div>
-        <button class="btn btn-primary" onclick="BKDN.saveSeo(${pageId})">${iconSave()} Save SEO</button>
+        <button class="btn btn-pla canteraary" onclick="BKDN.saveSeo(${pageId})">${iconSave()} Save SEO</button>
       </div>
 
       <div class="card">
@@ -2237,7 +2237,7 @@ async function viewPageEditor(pageId) {
           <div id="sd-faq-container">${(sdFields.questions||[]).map((qa, i) => structuredFaqRow(qa, i)).join('') || structuredFaqRow({}, 0)}</div>
           <button type="button" class="btn btn-secondary btn-sm" onclick="BKDN.addStructuredFaqRow()" style="margin-top:8px">${iconPlus()} Add Question</button>
         </div>
-        <button class="btn btn-primary" onclick="BKDN.saveStructuredData(${pageId})" style="margin-top:14px">${iconSave()} Save Structured Data</button>
+        <button class="btn btn-pla canteraary" onclick="BKDN.saveStructuredData(${pageId})" style="margin-top:14px">${iconSave()} Save Structured Data</button>
         `; })()}
       </div>
     </div>
@@ -2264,7 +2264,7 @@ async function viewPageEditor(pageId) {
         </div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-          <button class="btn btn-primary" onclick="BKDN.applyPageStatus(${pageId})">${iconSave()} Apply Status</button>
+          <button class="btn btn-pla canteraary" onclick="BKDN.applyPageStatus(${pageId})">${iconSave()} Apply Status</button>
           ${pageStatus !== 'published'
             ? `<button class="btn btn-secondary" onclick="BKDN.publishPage(${pageId})">${iconPublish()} Publish ${ptMeta.label}</button>`
             : `<button class="btn btn-danger btn-sm" onclick="BKDN.unpublishPage(${pageId})">Unpublish ${ptMeta.label}</button>`
@@ -2310,13 +2310,13 @@ async function viewPageEditor(pageId) {
 
 function renderButtonList(buttons, pageId, ptMeta) {
   const ptLabel = ptMeta ? ptMeta.label : 'Link Hub';
-  if (!buttons.length) return `<div class="empty-state"><div class="empty-state-icon">&#128279;</div><div class="empty-state-title">No buttons yet</div><p>Add your first button to start building this page.</p><button class="btn btn-primary" onclick="BKDN.openAddButton(${pageId})">${iconPlus()} Add to ${esc(ptLabel)}</button></div>`;
+  if (!buttons.length) return `<div class="empty-state"><div class="empty-state-icon">&#128279;</div><div class="empty-state-title">No buttons yet</div><p>Add your first button to start building this page.</p><button class="btn btn-pla canteraary" onclick="BKDN.openAddButton(${pageId})">${iconPlus()} Add to ${esc(ptLabel)}</button></div>`;
 
   const now = new Date().toISOString();
   return `
   <div class="reorder-active-bar" style="display:none" id="reorder-bar">
     <span>&#8597; Drag rows to reorder</span>
-    <button class="btn btn-sm btn-primary" onclick="BKDN.saveOrder(${pageId})">Save Order</button>
+    <button class="btn btn-sm btn-pla canteraary" onclick="BKDN.saveOrder(${pageId})">Save Order</button>
     <button class="btn btn-sm btn-ghost" onclick="BKDN.cancelReorder()">Cancel</button>
   </div>
   <div class="btn-list" id="btn-list-${pageId}">
@@ -2378,7 +2378,7 @@ function renderBtnRow(b, pageId, i) {
 }
 
 function renderSectionList(sections, pageId) {
-  if (!sections.length) return `<div class="empty-state"><div class="empty-state-icon">&#9776;</div><div class="empty-state-title">No sections yet</div><p>Add sections like Order Online, Rewards, or Merchandise.</p><button class="btn btn-primary" onclick="BKDN.openSectionModal(null,${pageId})">${iconPlus()} Add Section</button></div>`;
+  if (!sections.length) return `<div class="empty-state"><div class="empty-state-icon">&#9776;</div><div class="empty-state-title">No sections yet</div><p>Add sections like Order Online, Rewards, or Merchandise.</p><button class="btn btn-pla canteraary" onclick="BKDN.openSectionModal(null,${pageId})">${iconPlus()} Add Section</button></div>`;
   return `<div class="btn-list">
     ${sections.map(s => `
       <div class="btn-row">
@@ -2426,7 +2426,7 @@ async function openMoveModal(kind, itemId, currentPageId) {
     </div>
   `,
   `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
-   <button class="btn btn-primary" onclick="BKDN.confirmMove('${kind}',${itemId},${currentPageId})">Continue</button>`);
+   <button class="btn btn-pla canteraary" onclick="BKDN.confirmMove('${kind}',${itemId},${currentPageId})">Continue</button>`);
 }
 
 async function confirmMove(kind, itemId, currentPageId) {
@@ -2551,7 +2551,7 @@ async function openBtnModal(btn, pageId) {
   const isNew = !btn;
   const ICONS = ['order','website','email','events','instagram','facebook','directions','phone','menu','gift','ticket','shopping','youtube','external','blog','social'];
   const iconOpts = ICONS.map(k => `<option value="${k}" ${(btn?.icon_key||btn?.icon)===k?'selected':''}>${k}</option>`).join('');
-  const styleOpts = ['primary','secondary','ghost','outline'].map(s => `<option value="${s}" ${(btn?.style_variant||'secondary')===s?'selected':''}>${s}</option>`).join('');
+  const styleOpts = ['pla canteraary','secondary','ghost','outline'].map(s => `<option value="${s}" ${(btn?.style_variant||'secondary')===s?'selected':''}>${s}</option>`).join('');
   const sections = window._pageSections || [];
   const sectionOpts = sections.map(s => `<option value="${s.id}" ${Number(btn?.section_id)===Number(s.id)?'selected':''}>${esc(s.title)}</option>`).join('');
 
@@ -2672,7 +2672,7 @@ async function openBtnModal(btn, pageId) {
     </div>
   `,
   `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
-   <button class="btn btn-primary" onclick="BKDN.saveBtnModal(${btn?.id||'null'},${pageId})">${iconSave()} ${isNew?'Add Button':'Save Changes'}</button>`
+   <button class="btn btn-pla canteraary" onclick="BKDN.saveBtnModal(${btn?.id||'null'},${pageId})">${iconSave()} ${isNew?'Add Button':'Save Changes'}</button>`
   );
   onLinkTypeChange();
 }
@@ -2784,7 +2784,7 @@ function openAbTestStartModal(btnId, pageId) {
     </div>
   `,
   `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
-   <button class="btn btn-primary" onclick="BKDN.startAbTest(${btnId},${pageId})">Start Test</button>`
+   <button class="btn btn-pla canteraary" onclick="BKDN.startAbTest(${btnId},${pageId})">Start Test</button>`
   );
 }
 
@@ -2825,7 +2825,7 @@ async function openAbTestResultsModal(btnId, pageId) {
   `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Close</button>
    <button class="btn btn-secondary" onclick="BKDN.endAbTest(${btnId},${pageId},'a')">Keep Variant A</button>
    <button class="btn btn-secondary" onclick="BKDN.endAbTest(${btnId},${pageId},'b')">Keep Variant B</button>
-   <button class="btn btn-primary" onclick="BKDN.endAbTest(${btnId},${pageId},null)">Auto-pick Winner</button>`
+   <button class="btn btn-pla canteraary" onclick="BKDN.endAbTest(${btnId},${pageId},null)">Auto-pick Winner</button>`
   );
 }
 
@@ -2886,7 +2886,7 @@ function openSectionModal(sectionId, pageId) {
     </div>
   `,
   `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
-   <button class="btn btn-primary" onclick="BKDN.saveSectionModal(${section?.id||'null'},${pageId})">${iconSave()} ${isNew?'Add Section':'Save Changes'}</button>`);
+   <button class="btn btn-pla canteraary" onclick="BKDN.saveSectionModal(${section?.id||'null'},${pageId})">${iconSave()} ${isNew?'Add Section':'Save Changes'}</button>`);
 }
 
 async function saveSectionModal(sectionId, pageId) {
@@ -3218,7 +3218,7 @@ async function viewScheduling() {
       <div style="font-size:36px;margin-bottom:12px">&#128197;</div>
       <div style="font-weight:700;color:#e2e8f0;margin-bottom:8px">No scheduled buttons yet</div>
       <p style="color:#64748b;font-size:13px;margin-bottom:16px">Set start/end dates on any button from the Pages &amp; Buttons editor to control when it appears on the public page.</p>
-      <a href="#/pages" class="btn btn-primary btn-sm">${iconPages()} Go to Pages</a>
+      <a href="#/pages" class="btn btn-pla canteraary btn-sm">${iconPages()} Go to Pages</a>
     </div>` : `
       ${renderGroup('Upcoming / Scheduled', byState.scheduled, 'sched-badge-scheduled')}
       ${renderGroup('Currently Live (with schedule)', byState.live, 'sched-badge-live')}
@@ -3250,7 +3250,7 @@ async function viewBlog() {
     ${pageTitle('Blog', `${posts.length} post${posts.length!==1?'s':''}`)}
 
     <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
-      <a href="#/blog/new" class="btn btn-primary">${iconPlus()} Create Post</a>
+      <a href="#/blog/new" class="btn btn-pla canteraary">${iconPlus()} Create Post</a>
       <a href="${esc(CFG?.siteUrl||'')}/blog-cms" target="_blank" class="btn btn-ghost btn-sm">${iconExternal()} Public Blog</a>
     </div>
 
@@ -3277,7 +3277,7 @@ async function viewBlog() {
 
     <div class="card">
       <div class="card-title">All Posts</div>
-      ${!posts.length ? `<div class="empty-state"><div class="empty-state-icon">&#9997;&#65039;</div><div class="empty-state-title">No posts yet</div><p>Create your first blog post to get started.</p><a href="#/blog/new" class="btn btn-primary">${iconPlus()} Create Post</a></div>` : `
+      ${!posts.length ? `<div class="empty-state"><div class="empty-state-icon">&#9997;&#65039;</div><div class="empty-state-title">No posts yet</div><p>Create your first blog post to get started.</p><a href="#/blog/new" class="btn btn-pla canteraary">${iconPlus()} Create Post</a></div>` : `
       <div class="blog-list">
         ${posts.map(p => `
         <div class="blog-item">
@@ -3336,7 +3336,7 @@ async function viewBlogEditor(postId) {
     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn btn-secondary btn-sm" onclick="BKDN.viewBlog()">${iconBack()} Back to Blog</button>
       <button class="btn btn-secondary btn-sm" id="btn-save-draft" onclick="BKDN.saveBlogPost(${postId||'null'},false)">${iconSave()} Save Draft</button>
-      <button class="btn btn-primary btn-sm" id="btn-publish-post" onclick="BKDN.saveBlogPost(${postId||'null'},true)">${iconPublish()} ${isNew?'Save &amp; Publish':'Update &amp; Publish'}</button>
+      <button class="btn btn-pla canteraary btn-sm" id="btn-publish-post" onclick="BKDN.saveBlogPost(${postId||'null'},true)">${iconPublish()} ${isNew?'Save &amp; Publish':'Update &amp; Publish'}</button>
       ${post?.status==='published' ? `<a href="${esc(CFG?.siteUrl||'')}/blog-cms/post/${esc(post.slug||post.id)}" target="_blank" class="btn btn-ghost btn-sm">${iconExternal()} View Live</a>` : ''}
     </div>
 
@@ -3435,9 +3435,9 @@ async function viewBlogEditor(postId) {
             <label class="form-label">Slug (URL)</label>
             <input id="blog-slug" class="form-control" placeholder="auto-generated" value="${esc(post?.slug||'')}">
           </div>
-          <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="BKDN.saveBlogPost(${postId||'null'},false)">${iconSave()} Save Draft</button>
+          <button class="btn btn-pla canteraary" style="width:100%;margin-bottom:8px" onclick="BKDN.saveBlogPost(${postId||'null'},false)">${iconSave()} Save Draft</button>
           ${scheduledVal ? `<button class="btn btn-success" style="width:100%;margin-bottom:8px" onclick="BKDN.schedulePost(${postId||'null'})">${iconCalendar()} Schedule Post</button>` : ''}
-          <button class="btn btn-primary" style="width:100%" onclick="BKDN.saveBlogPost(${postId||'null'},true)">${iconPublish()} Publish Now</button>
+          <button class="btn btn-pla canteraary" style="width:100%" onclick="BKDN.saveBlogPost(${postId||'null'},true)">${iconPublish()} Publish Now</button>
         </div>
 
         <div class="card">
@@ -3532,7 +3532,7 @@ function applyTemplate() {
   const TEMPLATES = {
     'promo':    { title:'🎉 [TITLE HERE]', excerpt:'Limited time offer...', body:'<h2>🎉 Special Offer!</h2><p>We\'re excited to announce a special promotion at Bakudan Ramen. <strong>[Add details here]</strong></p><p>Available at all locations. Don\'t miss out!</p>', cta_label:'Order Now', hashtags:'#bakudanramen #ramen #sanantonio #specialoffer' },
     'new-item': { title:'🍜 Introducing [Item Name]', excerpt:'A new dish has arrived...', body:'<h2>🍜 New to Our Menu!</h2><p>We\'re thrilled to introduce <strong>[Item Name]</strong> — [brief description].</p><p>Available starting [date] at all locations.</p>', cta_label:'View Menu', hashtags:'#bakudanramen #newdish #ramen #sanantonio' },
-    'holiday':  { title:'🎊 Holiday Hours — [Holiday]', excerpt:'Updated hours for the holiday...', body:'<h2>Holiday Hours</h2><p>Please note our updated hours for <strong>[Holiday]</strong>:</p><ul><li>Bandera: [hours]</li><li>Stone Oak: [hours]</li><li>The Rim: [hours]</li></ul><p>We look forward to seeing you!</p>', cta_label:'Find Locations', hashtags:'#bakudanramen #holidayhours #sanantonio' },
+    'holiday':  { title:'🎊 Holiday Hours — [Holiday]', excerpt:'Updated hours for the holiday...', body:'<h2>Holiday Hours</h2><p>Please note our updated hours for <strong>[Holiday]</strong>:</p><ul><li>Bandera: [hours]</li><li>Stone Oak: [hours]</li><li>La Cantera: [hours]</li></ul><p>We look forward to seeing you!</p>', cta_label:'Find Locations', hashtags:'#bakudanramen #holidayhours #sanantonio' },
     'event':    { title:'🎉 Join Us — [Event Name]', excerpt:'Special event at Bakudan Ramen...', body:'<h2>🎉 Special Event</h2><p>We\'re hosting <strong>[Event Name]</strong> at Bakudan Ramen!</p><p><strong>Date:</strong> [date]<br><strong>Time:</strong> [time]<br><strong>Location:</strong> [location]</p><p>Come join us for [description]. Reservations recommended.</p>', cta_label:'Learn More', hashtags:'#bakudanramen #event #sanantonio' },
     'hiring':   { title:'📌 Now Hiring — Join the Bakudan Family', excerpt:'We\'re looking for talented team members...', body:'<h2>We\'re Hiring!</h2><p>Bakudan Ramen is growing and we\'re looking for passionate people to join our team.</p><h3>Open Positions</h3><ul><li>[Position 1]</li><li>[Position 2]</li></ul><p>Apply in person at any location or email us at [email].</p>', cta_label:'Apply Now', hashtags:'#bakudanramen #hiring #jobsanantonio #restaurant' },
     'update':   { title:'📍 Update from Bakudan Ramen', excerpt:'Important update from us...', body:'<h2>Important Update</h2><p>We have an update to share with our valued guests.</p><p>[Add your update details here]</p><p>Thank you for your continued support!</p>', cta_label:'Learn More', hashtags:'#bakudanramen #update #sanantonio' },
@@ -3747,7 +3747,7 @@ async function viewShortlinks() {
   setContent(`
     ${pageTitle('QR & Shortlinks', `${links.length} active code${links.length !== 1 ? 's' : ''}`)}
     <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="BKDN.openShortlinkModal()">${iconPlus()} Create Shortlink</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.openShortlinkModal()">${iconPlus()} Create Shortlink</button>
     </div>
     <div class="card">
       <div class="card-title">Shortlinks</div>
@@ -3807,7 +3807,7 @@ async function openShortlinkModal(id = null) {
       <div class="form-group"><label class="form-label">UTM Medium</label><input id="short-utm-medium" class="form-control" value="${esc(item?.utm_medium || '')}"></div>
       <div class="form-group"><label class="form-label">UTM Campaign</label><input id="short-utm-campaign" class="form-control" value="${esc(item?.utm_campaign || '')}"></div>
     </div>
-  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveShortlink(${id || 'null'})">${item ? 'Save' : 'Create'}</button>`);
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-pla canteraary" onclick="BKDN.saveShortlink(${id || 'null'})">${item ? 'Save' : 'Create'}</button>`);
 }
 
 async function saveShortlink(id = null) {
@@ -3861,7 +3861,7 @@ async function viewLinkHealth() {
   setContent(`
     ${pageTitle('Link Health', 'Checked on demand — click below to re-check all active links.')}
     <div class="card">
-      <button class="btn btn-primary" onclick="BKDN.runLinkHealthCheck()">${iconSync()} Check links now</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.runLinkHealthCheck()">${iconSync()} Check links now</button>
       <table class="data-table" style="margin-top:16px">
         <thead><tr><th>Button</th><th>URL</th><th>Status</th><th>HTTP</th><th>Checked</th></tr></thead>
         <tbody>${results.map(r => `
@@ -4017,7 +4017,7 @@ async function viewSettings() {
         </div>
       </div>
 
-      <button class="btn btn-primary" onclick="BKDN.saveSettings()">${iconSave()} Save Settings</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.saveSettings()">${iconSave()} Save Settings</button>
     </div>
 
     <div class="card">
@@ -4034,7 +4034,7 @@ async function viewSettings() {
         <label class="form-label">Default Links Subheadline</label>
         <input id="s-subheadline" class="form-control" value="${esc(s.links_subheadline||'')}">
       </div>
-      <button class="btn btn-primary" onclick="BKDN.saveSettings()">${iconSave()} Save Settings</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.saveSettings()">${iconSave()} Save Settings</button>
     </div>
 
     <div class="card">
@@ -4052,7 +4052,7 @@ async function viewSettings() {
         <label class="form-label">Continue Button Label</label>
         <input id="s-mkt-btn" class="form-control" value="${esc(s.marketing_signup_button_label||'')}">
       </div>
-      <button class="btn btn-primary" onclick="BKDN.saveSettings()">${iconSave()} Save Settings</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.saveSettings()">${iconSave()} Save Settings</button>
     </div>
   `);
 }
@@ -4089,7 +4089,7 @@ async function viewLocations() {
   setContent(`
     ${pageTitle('Locations', 'Central address, phone, and Toast URLs — update once, used everywhere.')}
     <div class="card">
-      <button class="btn btn-primary" onclick="BKDN.openLocationModal()">${iconPlus()} Add Location</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.openLocationModal()">${iconPlus()} Add Location</button>
       <table class="data-table" style="margin-top:16px">
         <thead><tr><th>Name</th><th>Address</th><th>Toast Order URL</th><th>Toast Signup URL</th><th>Active</th><th></th></tr></thead>
         <tbody>${locations.map(l => `
@@ -4116,7 +4116,7 @@ async function openLocationModal(locationId) {
   const isNew = !loc;
   openModal(isNew ? 'Add Location' : 'Edit Location', `
     <div class="form-group"><label class="form-label">Name *</label><input id="lf-name" class="form-control" value="${esc(loc?.name||'')}"></div>
-    <div class="form-group"><label class="form-label">Slug *</label><input id="lf-slug" class="form-control" value="${esc(loc?.slug||'')}" placeholder="the-rim" ${loc?'disabled':''}></div>
+    <div class="form-group"><label class="form-label">Slug *</label><input id="lf-slug" class="form-control" value="${esc(loc?.slug||'')}" placeholder="la-cantera" ${loc?'disabled':''}></div>
     <div class="form-group"><label class="form-label">Address</label><input id="lf-address" class="form-control" value="${esc(loc?.address||'')}"></div>
     <div class="form-group"><label class="form-label">Phone</label><input id="lf-phone" class="form-control" value="${esc(loc?.phone||'')}"></div>
     <div class="form-group"><label class="form-label">Toast Order URL</label><input id="lf-order" class="form-control" value="${esc(loc?.toast_order_url||'')}" placeholder="https://order.toasttab.com/online/..."></div>
@@ -4130,7 +4130,7 @@ async function openLocationModal(locationId) {
     </div>
   `,
   `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button>
-   <button class="btn btn-primary" onclick="BKDN.saveLocationModal(${locationId||'null'})">${iconSave()} Save</button>`);
+   <button class="btn btn-pla canteraary" onclick="BKDN.saveLocationModal(${locationId||'null'})">${iconSave()} Save</button>`);
 }
 
 async function saveLocationModal(locationId) {
@@ -4174,7 +4174,7 @@ async function viewUsers() {
   setContent(`
     ${pageTitle('Users', `${users.length} account${users.length!==1?'s':''}`)}
     <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
-      ${isSuperAdmin ? `<button class="btn btn-primary" onclick="BKDN.openUserModal()">${iconPlus()} Add User</button>` : ''}
+      ${isSuperAdmin ? `<button class="btn btn-pla canteraary" onclick="BKDN.openUserModal()">${iconPlus()} Add User</button>` : ''}
     </div>
     <div class="card">
       <table class="data-table">
@@ -4251,7 +4251,7 @@ async function openUserModal(id = null) {
       <label class="toggle"><input id="uf-active" type="checkbox" ${item.is_active!==0?'checked':''}><span class="toggle-slider"></span></label>
       <span class="form-label" style="margin:0">Active</span>
     </div>` : ''}
-  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-primary" onclick="BKDN.saveUser(${id||'null'})">${item ? 'Save' : 'Create'}</button>`);
+  `, `<button class="btn btn-secondary" onclick="BKDN.closeModal()">Cancel</button><button class="btn btn-pla canteraary" onclick="BKDN.saveUser(${id||'null'})">${item ? 'Save' : 'Create'}</button>`);
   onUserRoleChange();
 }
 
@@ -4330,7 +4330,7 @@ function viewProfile() {
         </div>
       </div>
       <div id="pw-msg" style="display:none;font-size:12px;margin-bottom:12px"></div>
-      <button class="btn btn-primary" onclick="BKDN.changePassword()">${iconSave()} Update Password</button>
+      <button class="btn btn-pla canteraary" onclick="BKDN.changePassword()">${iconSave()} Update Password</button>
       <div style="font-size:12px;color:#475569;margin-top:10px">Changing your password signs out any other active session for this account the next time it makes a request.</div>
     </div>
   `);

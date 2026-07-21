@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Bakudan Ramen — PHP API Backend v3
  * Response format: FLAT JSON — no {"ok":true,"data":{}} wrapper.
@@ -253,10 +253,10 @@ function db_migrate(SQLite3 $db): void {
         $ins = $db->prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)");
         foreach ([
             ['site_name','Bakudan Ramen'],['site_url',SITE_URL],
-            ['theme_primary','#dc2626'],['theme_bg','#0f172a'],
+            ['theme_pla canteraary','#dc2626'],['theme_bg','#0f172a'],
             ['footer_text','© Bakudan Ramen. All rights reserved.'],
             ['show_subscriber_form','0'],
-            ['order_url_rim','https://order.toasttab.com/online/bakudanramen'],
+            ['order_url_la cantera','https://order.toasttab.com/online/bakudanramen'],
             ['order_url_stone_oak','https://order.toasttab.com/online/bakudan-ramen-stone-oak'],
             ['order_url_bandera','https://order.toasttab.com/online/bakudan-bandera'],
             ['marketing_signup_heading','Join the Bakudan Ramen Email & SMS Club'],
@@ -268,7 +268,7 @@ function db_migrate(SQLite3 $db): void {
     if ($db->querySingle("SELECT COUNT(*) FROM locations") == 0) {
         $ins = $db->prepare("INSERT INTO locations (name,slug,address,toast_order_url,toast_signup_url,sort_order) VALUES (?,?,?,?,?,?)");
         foreach ([
-            ['The Rim','the-rim','17619 La Cantera Pkwy','https://order.toasttab.com/online/bakudanramen/','https://www.toasttab.com/bakudanramen/rewardsSignup',10],
+            ['La Cantera','la-cantera','17619 La Cantera Pkwy','https://order.toasttab.com/online/bakudanramen/','https://www.toasttab.com/bakudanramen/rewardsSignup',10],
             ['Stone Oak','stone-oak','22506 US-281 N','https://order.toasttab.com/online/bakudan-ramen-stone-oak','https://www.toasttab.com/bakudan-ramen-stone-oak/rewardsSignup',20],
             ['Bandera','bandera','11309 Bandera Rd','https://order.toasttab.com/online/bakudan-bandera','https://www.toasttab.com/bakudan-bandera/rewardsSignup',30],
         ] as [$name,$slug,$addr,$orderUrl,$signupUrl,$sort]) {

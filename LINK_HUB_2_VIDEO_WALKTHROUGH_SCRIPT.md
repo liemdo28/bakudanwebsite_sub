@@ -234,7 +234,7 @@
 **Hiển thị:** bấm **Locations** trên thanh bên.
 
 **Nói:**
-"Đây là nguồn thông tin duy nhất cho The Rim, Stone Oak, và Bandera — địa chỉ, điện thoại, link Toast order và signup, map link, support email, và giờ mở cửa."
+"Đây là nguồn thông tin duy nhất cho La Cantera, Stone Oak, và Bandera — địa chỉ, điện thoại, link Toast order và signup, map link, support email, và giờ mở cửa."
 
 **Chỉ ra:**
 - Bấm **Add Location** hoặc **Edit** trên một location — hiện đầy đủ các trường.

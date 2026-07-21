@@ -45,34 +45,34 @@ The first attempt at scoping `/admin/analytics` used `db()->quote($scope)` to sa
 ## Test accounts and matrix
 
 Created three real Store Manager accounts (removed after testing — see `LINK_HUB_2_QA_CLEANUP_REPORT.md`):
-- `qa-manager-rim@bakudanramen.com` → `the-rim`
+- `qa-manager-la cantera@bakudanramen.com` → `la-cantera`
 - `qa-manager-stone-oak@bakudanramen.com` → `stone-oak`
 - `qa-manager-bandera@bakudanramen.com` → `bandera`
 
-Two real test pages: page 6 (`Test Template Page`, `store_slug=the-rim`) and a new page 8 (`QA Permission Test - Stone Oak`, `store_slug=stone-oak`, Unlisted/Draft).
+Two real test pages: page 6 (`Test Template Page`, `store_slug=la-cantera`) and a new page 8 (`QA Permission Test - Stone Oak`, `store_slug=stone-oak`, Unlisted/Draft).
 
-| Action | The Rim Manager | Result |
+| Action | La Cantera Manager | Result |
 |---|---|---|
-| Edit The Rim page | Allowed | **PASS** (200) |
+| Edit La Cantera page | Allowed | **PASS** (200) |
 | Edit Stone Oak page | 403 | **PASS** (403) |
-| Rollback The Rim page | Allowed | **PASS** (200) |
+| Rollback La Cantera page | Allowed | **PASS** (200) |
 | Rollback Stone Oak page | 403 | **PASS** (403) |
-| Create The Rim campaign | Allowed | **PASS** (200) |
+| Create La Cantera campaign | Allowed | **PASS** (200) |
 | Create Stone Oak campaign | 403 | **PASS** (403) |
 | Edit global settings | 403 | **PASS** (403) |
 | Manage users | 403 | **PASS** (403) |
-| Edit own location (The Rim) | Allowed | **PASS** (200) |
+| Edit own location (La Cantera) | Allowed | **PASS** (200) |
 | Edit Stone Oak location | 403 | **PASS** (403) |
-| Create The Rim notice | Allowed | **PASS** (200) |
+| Create La Cantera notice | Allowed | **PASS** (200) |
 | Create Stone Oak notice | 403 | **PASS** (403) |
 | Stone Oak manager edits Stone Oak page | Allowed | **PASS** (200) |
-| Stone Oak manager edits The Rim page | 403 | **PASS** (403) |
+| Stone Oak manager edits La Cantera page | 403 | **PASS** (403) |
 
 **14 / 14 passed.** Full raw results: `evidence/final-readiness/permissions/api-test-matrix.json`.
 
 **Read-scoping checks:**
-- `GET /admin/campaigns` as Rim manager → only `QA Perm Rim Campaign` visible (not any Stone Oak campaign).
-- `GET /admin/analytics` as Rim manager → 7 views / 0 clicks (scoped to Rim's own pages), vs. 261 views / 54 clicks sitewide.
-- `GET /admin/trash` as Rim manager → 0 items (correctly empty; no Rim-scoped trash existed at test time).
+- `GET /admin/campaigns` as La Cantera manager → only `QA Perm La Cantera Campaign` visible (not any Stone Oak campaign).
+- `GET /admin/analytics` as La Cantera manager → 7 views / 0 clicks (scoped to La Cantera's own pages), vs. 261 views / 54 clicks sitewide.
+- `GET /admin/trash` as La Cantera manager → 0 items (correctly empty; no La Cantera-scoped trash existed at test time).
 
 All 403 responses returned the documented message: *"Store Managers can only manage \[content/campaigns/shortlinks/notices\] assigned to their own location."*

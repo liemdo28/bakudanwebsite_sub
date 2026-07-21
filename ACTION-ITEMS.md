@@ -12,7 +12,7 @@
 - **File:** `menu.html` line ~205
 
 ### 2. Bandera (B1) Menu Differences
-- **Status:** Current website menu reflects B2 (Stone Oak/Rim) pricing and items
+- **Status:** Current website menu reflects B2 (Stone Oak/La Cantera) pricing and items
 - **Action:** Maria to provide the B1 Bandera-specific menu so we can note any differences in pricing, items, or availability
 - **Priority:** HIGH — Bandera has a different drink program (saké bar vs. cocktails) and may have food price differences
 - **Files affected:** `menu.html`, `happy-hour.html`
@@ -35,7 +35,7 @@
 - **Status:** Placeholder system built into all page heroes (CSS classes ready)
 - **Action:** Staff to photograph the geisha mural artwork at each location for use as decorative header elements
 - **Photos received so far:**
-  - `geisha-rim-right.jpg` — Rim location geisha (right side)
+  - `geisha-la-cantera-right.jpg` — La Cantera location geisha (right side)
   - `geisha-bandera.jpg` / `geisha-bandera-alt.jpg` — Bandera location geisha
   - `mural-logo.png` — Mural with Bakudan logo
   - `mural-stone-oak.jpg` — Stone Oak additional mural
@@ -74,7 +74,7 @@
 ### 10. Google Maps Embeds
 - **Status:** Placeholder text ("Map Placeholder") on all 3 location pages
 - **Action:** Generate Google Maps embed URLs for each location and replace placeholders
-- **Files affected:** `locations/bandera.html`, `locations/stone-oak.html`, `locations/the-rim.html`
+- **Files affected:** `locations/bandera.html`, `locations/stone-oak.html`, `locations/la-cantera.html`
 
 ### 11. Open Graph / Social Media Meta Tags
 - **Status:** Not yet implemented
@@ -118,6 +118,6 @@
 - [x] All Maria photos organized in images/ directory
 - [x] JSON-LD schema updated with all menu data
 - [x] Allergen notice and gratuity policy updated
-- [x] Location-specific drink badges (Stone Oak & Rim vs. Bandera)
+- [x] Location-specific drink badges (Stone Oak & La Cantera vs. Bandera)
 - [x] Ramune listed as "multiple flavors at Bandera" per Hoang's request
 - [x] Happy Hour CTA time corrected to "Daily 3 PM – 6 PM"

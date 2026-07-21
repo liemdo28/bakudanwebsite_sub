@@ -2,87 +2,85 @@
 
 Generated: 2026-07-21
 
-Current release decision: **NO-GO**.
+Current release decision: **NO-GO until production environment approval and secrets are configured**.
 
 ## CI/CD Gate
 
-The previous generic workflow has been replaced in source by:
+Only one deployment workflow exists in source:
 
-- `.github/workflows/deploy-staging.yml`
 - `.github/workflows/deploy-production.yml`
 
-Production deployment is now release-only in source, but repository admins must still configure the GitHub `production` environment with required reviewers before approval gating is actually enforced.
+Production deployment is allowed only from:
+
+- version tags matching `v*`
+- published GitHub Releases
+
+Ordinary branch pushes do not deploy.
 
 ## Required Before Production
 
 | Item | Status | Notes |
 |---|---|---|
-| Confirm real staging URL | Not complete | `rim.bakudanramen.com` does not resolve publicly. |
-| Confirm staging-only deploy target | Not complete | Existing workflow named for staging exposed files on `www.bakudanramen.com`. |
-| Configure `STAGING_*` secrets | Not complete | Required for the new staging workflow. |
-| Configure `PRODUCTION_*` secrets | Not complete | Required for the new production workflow. |
-| Configure GitHub `production` environment approval | Not complete | GitHub API showed no environments yet. |
-| Confirm staging HTTPS | Not complete | Forced-host HTTPS check failed certificate trust. |
-| Confirm staging clean routes | Not complete | `/broth-log-b1`, `/broth-log-b2`, `/broth-log-b3` were not reachable on staging. |
-| Confirm clean-route refresh avoids 404 | Not complete | Must be verified on real staging domain. |
-| Confirm Google Sheets row counts on staging | Not complete | Required counts: B1=6, B2=2, B3=15. |
-| Confirm no console/network errors on staging | Not complete | Must be verified in browser on real staging domain. |
-| Confirm mobile/tablet layout on staging | Not complete | Must be verified on real staging domain. |
-| Confirm exports on staging | Not complete | CSV, Excel-compatible export, and Print/PDF must be retested after staging works. |
-| Confirm production routes blocked until GO | Complete | Production Broth Log clean and `.html` routes return 404 after safety block. |
+| Configure GitHub `production` environment | Not complete | GitHub API previously showed no environments. |
+| Configure required reviewers for `production` | Not complete | Approval must be enforced in repository settings. |
+| Configure `PRODUCTION_*` secrets | Not complete | Required by the production workflow. |
+| Remove or rotate legacy generic deployment secrets | Not complete | Old generic secrets should not be used by deployment. |
+| Confirm production HTTPS | Required before release | Verify `https://www.bakudanramen.com`. |
+| Confirm production clean routes | Required before release | `/broth-log-b1`, `/broth-log-b2`, `/broth-log-b3`. |
+| Confirm clean-route refresh avoids 404 | Required before release | Hard-refresh each clean URL after deployment. |
+| Confirm Google Sheets row counts | Required before release | Expected counts: B1=6, B2=2, B3=15. |
+| Confirm no console/network errors | Required before release | Browser verification on the public domain. |
+| Confirm mobile/tablet layout | Required before release | Verify usable layouts on real devices or browser emulation. |
+| Confirm exports | Required before release | CSV, Excel-compatible export, and Print/PDF. |
 
-## Production Release Steps After Staging Is Fixed
+## Release Steps
 
-1. Fix DNS so `rim.bakudanramen.com` resolves publicly.
-2. Install/verify a trusted TLS certificate for `https://rim.bakudanramen.com`.
-3. Confirm the GitHub Actions `STAGING_TARGET_DIR` secret points to the staging document root, not production.
-4. Deploy the dashboard to staging again.
-5. Verify these staging routes in a browser:
-   - `/broth-log-b1`
-   - `/broth-log-b2`
-   - `/broth-log-b3`
-6. Hard-refresh each staging route and confirm no stale HTML/CSS/JS.
-7. Confirm live row counts:
+1. Confirm all dashboard changes are committed.
+2. Confirm `.github/workflows/deploy-production.yml` is the only deployment workflow.
+3. Confirm production-only secrets exist:
+   - `PRODUCTION_HOST`
+   - `PRODUCTION_USERNAME`
+   - `PRODUCTION_PASSWORD`
+   - `PRODUCTION_PORT`
+   - `PRODUCTION_TARGET_DIR`
+4. Confirm `PRODUCTION_TARGET_DIR` points to the `www.bakudanramen.com` document root; the workflow rejects any other final directory name.
+5. Create a version tag such as `v2026.07.21-broth-log`.
+6. Publish a GitHub Release or push the version tag.
+7. Approve the GitHub `production` environment deployment.
+8. Verify the public routes in a browser:
+   - `https://www.bakudanramen.com/broth-log-b1`
+   - `https://www.bakudanramen.com/broth-log-b2`
+   - `https://www.bakudanramen.com/broth-log-b3`
+9. Hard-refresh each route and confirm no 404.
+10. Confirm live row counts:
    - B1: 6
    - B2: 2
    - B3: 15
-8. Test filters:
+11. Test filters:
    - Reset filters
    - Min F / Max F
    - Date range
    - Employee
    - Issue
    - Shift
-9. Test exports:
+12. Test exports:
    - CSV
    - Excel-compatible `.xls`
    - Print/PDF
-10. Verify console/network:
+13. Verify console/network:
    - No JavaScript errors
    - No failed Google Sheet requests
    - No mixed-content warnings
    - No CORS/CSP errors
    - No missing assets
-11. Verify responsive layouts:
-   - Desktop
-   - Tablet
-   - Mobile
-12. Only after every staging item is verified, remove the production `.htaccess` block and restore clean Broth Log rewrites:
-   - `^broth-log-b1/?$  /broth-log-b1.html`
-   - `^broth-log-b2/?$  /broth-log-b2.html`
-   - `^broth-log-b3/?$  /broth-log-b3.html`
-13. Deploy to production.
-14. Immediately verify production clean-route refresh for all three routes.
 
-## Go/No-Go Gate
+## Go Gate
 
 Production can be marked **GO** only when:
 
-- Staging route refresh returns 200 for all three clean URLs.
-- Staging row counts match B1=6, B2=2, B3=15.
+- Public clean-route refresh returns 200 for all three Broth Log URLs.
+- Public row counts match B1=6, B2=2, B3=15.
 - HTTPS works without certificate warnings.
 - Browser console/network checks are clean.
-- Static dashboard controls and exports pass on staging.
-- No production-facing file contains localhost, development ports, Windows paths, secrets, or private config.
-
-As of this report, the release remains **NO-GO**.
+- Static dashboard controls and exports pass on the public domain.
+- No production-facing file contains localhost, development ports, Windows paths, secrets, private config, or removed deployment references.

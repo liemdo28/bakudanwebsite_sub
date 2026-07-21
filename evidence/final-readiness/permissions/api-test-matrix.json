@@ -1,72 +1,72 @@
 [
   {
-    "test": "Rim manager edits Rim page (headline)",
+    "test": "La Cantera manager edits La Cantera page (headline)",
     "status": 200,
     "expected": 200,
     "pass": true
   },
   {
-    "test": "Rim manager edits Stone Oak page",
+    "test": "La Cantera manager edits Stone Oak page",
     "status": 403,
     "expected": 403,
     "pass": true
   },
   {
-    "test": "Rim manager rolls back Rim page (v1, harmless no-op target)",
+    "test": "La Cantera manager rolls back La Cantera page (v1, harmless no-op target)",
     "status": 200,
     "expected": 200,
     "pass": true
   },
   {
-    "test": "Rim manager rolls back Stone Oak page",
+    "test": "La Cantera manager rolls back Stone Oak page",
     "status": 403,
     "expected": 403,
     "pass": true
   },
   {
-    "test": "Rim manager creates Rim-scoped campaign",
+    "test": "La Cantera manager creates La Cantera-scoped campaign",
     "status": 200,
     "expected": 200,
     "pass": true
   },
   {
-    "test": "Rim manager creates Stone-Oak-scoped campaign",
+    "test": "La Cantera manager creates Stone-Oak-scoped campaign",
     "status": 403,
     "expected": 403,
     "pass": true
   },
   {
-    "test": "Rim manager edits global settings",
+    "test": "La Cantera manager edits global settings",
     "status": 403,
     "expected": 403,
     "pass": true
   },
   {
-    "test": "Rim manager manages users",
+    "test": "La Cantera manager manages users",
     "status": 403,
     "expected": 403,
     "pass": true
   },
   {
-    "test": "Rim manager edits own location (The Rim)",
+    "test": "La Cantera manager edits own location (La Cantera)",
     "status": 200,
     "expected": 200,
     "pass": true
   },
   {
-    "test": "Rim manager edits Stone Oak location",
+    "test": "La Cantera manager edits Stone Oak location",
     "status": 403,
     "expected": 403,
     "pass": true
   },
   {
-    "test": "Rim manager creates Rim-scoped notice",
+    "test": "La Cantera manager creates La Cantera-scoped notice",
     "status": 200,
     "expected": 200,
     "pass": true
   },
   {
-    "test": "Rim manager creates Stone-Oak-scoped notice",
+    "test": "La Cantera manager creates Stone-Oak-scoped notice",
     "status": 403,
     "expected": 403,
     "pass": true
@@ -78,7 +78,7 @@
     "pass": true
   },
   {
-    "test": "Stone Oak manager edits Rim page",
+    "test": "Stone Oak manager edits La Cantera page",
     "status": 403,
     "expected": 403,
     "pass": true

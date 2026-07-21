@@ -180,8 +180,8 @@
   "location_records": [
     {
       "id": 1,
-      "name": "The Rim",
-      "slug": "the-rim",
+      "name": "La Cantera",
+      "slug": "la-cantera",
       "toast_order_url": "https://order.toasttab.com/online/bakudanramen/",
       "toast_signup_url": "https://www.toasttab.com/bakudanramen/rewardsSignup",
       "is_active": 1,

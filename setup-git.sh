@@ -37,7 +37,7 @@ Complete multi-page restaurant website with:
 - Cookie consent banner with accept/essential-only options
 - WCAG 2.1 AA accessibility (skip links, ARIA, focus management)
 - Mobile responsive with hamburger navigation
-- Warm dark theme with refined crimson/gold accents
+- Warm dark theme with refined cla canterason/gold accents
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 

@@ -1,6 +1,6 @@
 AuthType Basic
 AuthName "Bakudan Private"
-AuthUserFile /home/dh_d5ng5e/rim.bakudanramen.com/.htpasswd
+AuthUserFile /home/dh_d5ng5e/www.bakudanramen.com/.htpasswd
 Require valid-user
 
 # ── SEO 404 Fix — Phase 23E (2026-06-24) ─────────────────────────────────────

@@ -27,7 +27,7 @@
 | Customer design unchanged | Confirmed via screenshot comparison to session baseline — pixel-identical layout |
 | Staff content not on Customer page | Confirmed — 10 buttons on Customer Hub, none match Staff Training's 2 training videos |
 | Staff page noindex | Confirmed — `noindex: true`, `visibility: unlisted`, excluded from `sitemap.xml` |
-| Toast redirects correct per location | Confirmed — Order/Rewards URLs for The Rim, Stone Oak, and Bandera are each distinct and location-correct |
+| Toast redirects correct per location | Confirmed — Order/Rewards URLs for La Cantera, Stone Oak, and Bandera are each distinct and location-correct |
 | Marketing Signup location data | Confirmed — all 3 locations present with distinct `toast_signup_url`, all `is_active: 1` |
 | Admin saves work | Confirmed in Phase 3 (20/20 real saves via the live Admin, zero forced logouts) |
 | Rollback works | Confirmed in Phase 4-5 (Customer + Staff Training, real publish/rollback cycles) |

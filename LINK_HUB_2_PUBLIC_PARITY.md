@@ -78,5 +78,5 @@ Expected Result: Hidden, expired, and future buttons do not render publicly.
 Actual Result: Admin page has 15 buttons; public response has 12. SQL found 0 expired active and 0 future visible buttons.
 Evidence: `evidence/api/live-api-smoke.json`, `evidence/database/db-integrity.json`
 Root Cause: N/A
-Required Fix: Add explicit automated fixtures for future/expired buttons in staging.
+Required Fix: Add explicit automated fixtures for future/expired buttons in production.
 Retest Result: PASS.

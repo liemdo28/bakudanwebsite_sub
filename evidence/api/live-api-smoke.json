@@ -78,7 +78,7 @@
         {
           "id": 5,
           "page_id": 2,
-          "label": "Order The Rim",
+          "label": "Order La Cantera",
           "url": "https://order.toasttab.com/online/bakudanramen/",
           "icon": null,
           "sort_order": 4,
@@ -96,7 +96,7 @@
           "opens_in_new_tab": 1,
           "link_type": "external",
           "internal_page_id": null,
-          "title": "Order The Rim",
+          "title": "Order La Cantera",
           "icon_key": null,
           "visible": 1,
           "section_title": "Order Online",
@@ -160,8 +160,8 @@
       "locations_count": 3,
       "locations_sample": [
         {
-          "name": "The Rim",
-          "slug": "the-rim",
+          "name": "La Cantera",
+          "slug": "la-cantera",
           "toast_signup_url": "https://www.toasttab.com/bakudanramen/rewardsSignup",
           "is_active": 1
         },
@@ -191,8 +191,8 @@
       "locations_count": 3,
       "locations_sample": [
         {
-          "name": "The Rim",
-          "slug": "the-rim",
+          "name": "La Cantera",
+          "slug": "la-cantera",
           "toast_order_url": "https://order.toasttab.com/online/bakudanramen/",
           "toast_signup_url": "https://www.toasttab.com/bakudanramen/rewardsSignup",
           "maps_url": null,
@@ -443,7 +443,7 @@
         {
           "id": 5,
           "page_id": 2,
-          "label": "Order The Rim",
+          "label": "Order La Cantera",
           "url": "https://order.toasttab.com/online/bakudanramen/",
           "icon": null,
           "sort_order": 4,
@@ -461,7 +461,7 @@
           "opens_in_new_tab": 1,
           "link_type": "external",
           "internal_page_id": null,
-          "title": "Order The Rim",
+          "title": "Order La Cantera",
           "icon_key": null,
           "visible": 1,
           "section_title": "Order Online",
@@ -535,7 +535,7 @@
           "clicks": 6
         },
         {
-          "title": "The Rim Rewards",
+          "title": "La Cantera Rewards",
           "clicks": 4
         },
         {
@@ -555,7 +555,7 @@
           "clicks": 2
         },
         {
-          "title": "Order The Rim",
+          "title": "Order La Cantera",
           "clicks": 2
         },
         {
@@ -581,8 +581,8 @@
       "locations_sample": [
         {
           "id": 1,
-          "name": "The Rim",
-          "slug": "the-rim",
+          "name": "La Cantera",
+          "slug": "la-cantera",
           "address": "17619 La Cantera Pkwy",
           "phone": null,
           "toast_order_url": "https://order.toasttab.com/online/bakudanramen/",

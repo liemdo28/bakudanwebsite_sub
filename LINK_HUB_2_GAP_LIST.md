@@ -24,7 +24,7 @@ None remaining.
 | --- | --- | --- | --- |
 | Admin version history UI is not a full screen | PARTIAL | Versions API screenshot generated | Add UI history table later |
 | Some button labels remain generic | PARTIAL | Admin screenshots | Add context-specific copy in Admin polish pass |
-| Missing-location warning not tested with live inactive data | PARTIAL | Marketing audit | Test with a temporary inactive/staging location |
+| Missing-location warning not tested with live inactive data | PARTIAL | Marketing audit | Test with a temporary inactive/production location |
 
 ## Closed Gaps
 

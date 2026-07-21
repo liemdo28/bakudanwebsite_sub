@@ -11,9 +11,9 @@ Result:   HTTP 200, ok:true
 Buttons returned (title | link_type | url):
   Order Bandera | external | https://order.toasttab.com/online/bakudan-bandera
   Order Stone Oak | external | https://order.toasttab.com/online/bakudan-ramen-stone-oak
-  Order The Rim | external | https://order.toasttab.com/online/bakudanramen/
+  Order La Cantera | external | https://order.toasttab.com/online/bakudanramen/
   Stone Oak Rewards | external | https://www.toasttab.com/bakudan-ramen-stone-oak/rewardsSignup
-  The Rim Rewards | external | https://www.toasttab.com/bakudanramen/rewardsSignup
+  La Cantera Rewards | external | https://www.toasttab.com/bakudanramen/rewardsSignup
   Bandera Rewards | external | https://www.toasttab.com/bakudan-bandera/rewardsSignup
   Follow on Instagram | external | https://www.instagram.com/bakudanramen/
   Email Club & Offers | website | https://www.bakudanramen.com/marketing-signup/

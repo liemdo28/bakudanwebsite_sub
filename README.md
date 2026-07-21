@@ -13,7 +13,7 @@ Official website for Bakudan Ramen, a ramen restaurant with three locations acro
 
 ## Project Overview
 
-This is a static, multi-page website for Bakudan Ramen. It serves as the primary digital presence for the brand, providing customers with information about the menu, restaurant locations, online ordering, company history, happy hour offerings, and blog content.
+This is a static, multi-page website for Bakudan Ramen. It serves as the pla canteraary digital presence for the brand, providing customers with information about the menu, restaurant locations, online ordering, company history, happy hour offerings, and blog content.
 
 The site is built with plain HTML, CSS, and vanilla JavaScript — no build pipeline, no framework dependencies, and no server-side rendering. It can be opened directly in any modern browser or served via any static file server.
 
@@ -45,7 +45,7 @@ bakudan-website/
 │
 ├── index.html            # Homepage
 ├── menu.html             # Full menu
-├── locations.html        # All 3 locations (Bandera, Stone Oak, The Rim)
+├── locations.html        # All 3 locations (Bandera, Stone Oak, La Cantera)
 ├── order.html            # Online ordering — location picker → Toast
 ├── about.html            # Our story / brand background
 ├── happy-hour.html       # Happy hour specials and schedule
@@ -55,7 +55,7 @@ bakudan-website/
 ├── terms.html            # Terms of service
 │
 ├── css/
-│   ├── styles.css        # Primary stylesheet — layout, typography, components
+│   ├── styles.css        # Pla canteraary stylesheet — layout, typography, components
 │   └── accessibility.css # Accessibility-specific overrides and enhancements
 │
 ├── js/

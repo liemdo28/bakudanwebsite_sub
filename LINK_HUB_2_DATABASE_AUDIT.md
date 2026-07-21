@@ -87,8 +87,8 @@ API Endpoint: N/A
 Database Table: SQLite database
 Test Method: Backup copy and E2E writes.
 Expected Result: Backup and restore command tested without touching production.
-Actual Result: Backup copy was restored to a local staging DB copy and passed `PRAGMA integrity_check=ok`; pages/buttons counts were readable.
+Actual Result: Backup copy was restored to a local production DB copy and passed `PRAGMA integrity_check=ok`; pages/buttons counts were readable.
 Evidence: `evidence/deployment/production-backup.json`, `evidence/database/restore-test.json`
 Root Cause: N/A
-Required Fix: Optional: repeat the same restore procedure on a hosted staging environment.
+Required Fix: Optional: repeat the same restore procedure on a hosted release environment.
 Retest Result: PASS.

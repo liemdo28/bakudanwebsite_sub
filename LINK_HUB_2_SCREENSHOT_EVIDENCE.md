@@ -28,7 +28,7 @@ Manifest: `evidence/link-hub-2/screenshots/OFFICIAL_22_SCREENSHOTS_MANIFEST.json
 | 14 | `14-staff-mobile.png` | Staff mobile viewport | PASS |
 | 15 | `15-publish-history.png` | Independent publish history | PASS |
 | 16 | `16-marketing-signup-location-selector.png` | Marketing location selector | PASS |
-| 17 | `17-toast-redirect-the-rim.png` | The Rim Toast redirect proof | PASS |
+| 17 | `17-toast-redirect-la-cantera.png` | La Cantera Toast redirect proof | PASS |
 | 18 | `18-toast-redirect-stone-oak.png` | Stone Oak Toast redirect proof | PASS |
 | 19 | `19-toast-redirect-bandera.png` | Bandera Toast redirect proof | PASS |
 | 20 | `20-admin-link-health.png` | Admin Link Health | PASS |

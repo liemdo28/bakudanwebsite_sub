@@ -1,4 +1,4 @@
-﻿const fs=require("fs");
+const fs=require("fs");
 const c=fs.readFileSync("api/index.php","utf8");
 const lines=c.split(String.fromCharCode(10));
 const out=[];

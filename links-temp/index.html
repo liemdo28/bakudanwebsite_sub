@@ -47,11 +47,11 @@ body {
   transition: all .18s; border: none; font-family: inherit;
   position: relative; background: none;
 }
-.links-btn.primary {
+.links-btn.pla canteraary {
   background: #EC4A5E;
   box-shadow: 0 4px 16px rgba(236,74,94,.35);
 }
-.links-btn.primary:hover, .links-btn.primary:focus-visible { background: #c73a4c; transform: translateY(-1px); }
+.links-btn.pla canteraary:hover, .links-btn.pla canteraary:focus-visible { background: #c73a4c; transform: translateY(-1px); }
 .links-btn.secondary { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); }
 .links-btn.secondary:hover, .links-btn.secondary:focus-visible { background: rgba(255,255,255,.1); transform: translateY(-1px); }
 .links-btn-icon {
@@ -60,10 +60,10 @@ body {
   background: rgba(255,255,255,.1);
 }
 .links-btn-icon svg { width: 20px; height: 20px; }
-.links-btn.primary .links-btn-icon { background: rgba(0,0,0,.15); }
+.links-btn.pla canteraary .links-btn-icon { background: rgba(0,0,0,.15); }
 .links-btn-text { flex: 1; text-align: left; }
 .links-btn-title { font-size: 14px; font-weight: 700; line-height: 1.3; }
-.links-btn.primary .links-btn-title { font-size: 15px; }
+.links-btn.pla canteraary .links-btn-title { font-size: 15px; }
 .links-btn-subtitle { font-size: 11px; opacity: .7; margin-top: 1px; }
 .links-btn-featured::after {
   content: '\2605'; position: absolute; right: 14px; top: 50%;
@@ -111,7 +111,7 @@ var ICONS = {
 /**
  * Link data — all fields match future /links-admin DB schema.
  *
- * openInNewTab: true  = external URLs (rim.bakudanramen.com, toasttab, instagram)
+ * openInNewTab: true  = external URLs (www.bakudanramen.com, toasttab, instagram)
  * openInNewTab: false = internal pages (/store-locations, /order-smart, /reservations)
  *
  * enabled: false + toastMsg = placeholder, does not navigate
@@ -122,28 +122,28 @@ var links = [
     title:           'MIDWEEK RAMEN NIGHT \u2014 $22 Mon/Tue/Wed',
     subtitle:        'Limited-time weekly special',
     iconKey:         'ramen',
-    url:             'https://rim.bakudanramen.com/',
+    url:             'https://www.bakudanramen.com/',
     openInNewTab:    true,
     toastMsg:        null,
     featured:        true,
-    primary:         true,
+    pla canteraary:         true,
     visible:         true,
     enabled:         true,
     sortOrder:       1,
     start_at:        null,
     end_at:          null,
     destinationType: 'campaign_landing_or_instagram_highlight',
-    destinationNote: 'Landing page — currently pointing to rim.bakudanramen.com'
+    destinationNote: 'Landing page — currently pointing to www.bakudanramen.com'
   },
   {
     title:           'Find Your Bakudan',
-    subtitle:        'RIM \u00B7 Stone Oak \u00B7 Bandera',
+    subtitle:        'La Cantera \u00B7 Stone Oak \u00B7 Bandera',
     iconKey:         'location',
     url:             '/store-locations',
     openInNewTab:    false,
     toastMsg:        null,
     featured:        false,
-    primary:         false,
+    pla canteraary:         false,
     visible:         true,
     enabled:         true,
     sortOrder:       2,
@@ -160,7 +160,7 @@ var links = [
     openInNewTab:    true,
     toastMsg:        null,
     featured:        false,
-    primary:         false,
+    pla canteraary:         false,
     visible:         true,
     enabled:         true,
     sortOrder:       3,
@@ -177,7 +177,7 @@ var links = [
     openInNewTab:    false,
     toastMsg:        null,
     featured:        false,
-    primary:         false,
+    pla canteraary:         false,
     visible:         true,
     enabled:         true,
     sortOrder:       4,
@@ -194,7 +194,7 @@ var links = [
     openInNewTab:    false,
     toastMsg:        null,
     featured:        false,
-    primary:         false,
+    pla canteraary:         false,
     visible:         true,
     enabled:         true,
     sortOrder:       5,
@@ -211,7 +211,7 @@ var links = [
     openInNewTab:    false,
     toastMsg:        'Link coming soon: Gift Cards',
     featured:        false,
-    primary:         false,
+    pla canteraary:         false,
     visible:         true,
     enabled:         false,
     sortOrder:       6,
@@ -228,7 +228,7 @@ var links = [
     openInNewTab:    true,
     toastMsg:        null,
     featured:        false,
-    primary:         false,
+    pla canteraary:         false,
     visible:         true,
     enabled:         true,
     sortOrder:       7,
@@ -256,7 +256,7 @@ function showToast(msg) {
 function render() {
   var list = document.getElementById('btn-list');
   list.innerHTML = links.map(function(b) {
-    var isPrimary     = !!b.primary;
+    var isPla canteraary     = !!b.pla canteraary;
     var isFeatured    = !!b.featured;
     var isPlaceholder = (!b.enabled) || (!b.url) || (b.url === '#');
     var href          = isPlaceholder ? '#' : b.url;
@@ -267,7 +267,7 @@ function render() {
     var onclickAttr   = isPlaceholder
                           ? ' onclick="event.preventDefault();showToast(\'' + safeMsg + '\')"' : '';
 
-    var cls = 'links-btn ' + (isPrimary ? 'primary' : 'secondary');
+    var cls = 'links-btn ' + (isPla canteraary ? 'pla canteraary' : 'secondary');
     if (isFeatured) cls += ' links-btn-featured';
 
     var iconSvg = ICONS[b.iconKey] || ICONS.gift;

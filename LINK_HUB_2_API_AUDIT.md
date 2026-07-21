@@ -57,7 +57,7 @@ Expected Result: Draft is not public; preview token is generated; publish create
 Actual Result: Draft public API returned 404; preview token generated; two publish versions created; rollback to version 1 restored original button label/URL; temp page cleanup succeeded.
 Evidence: `evidence/tests/admin-e2e-temp-page.json`
 Root Cause: N/A
-Required Fix: None for tested content rollback. Note: rollback primarily restores sections/buttons; page metadata restoration is limited.
+Required Fix: None for tested content rollback. Note: rollback pla canteraarily restores sections/buttons; page metadata restoration is limited.
 Retest Result: PASS with caveat.
 
 ## Marketing Signup API

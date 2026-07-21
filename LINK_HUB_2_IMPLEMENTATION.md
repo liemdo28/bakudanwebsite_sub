@@ -24,7 +24,7 @@ Added to `api/index.php`'s schema (idempotent `ALTER TABLE`/`CREATE TABLE IF NOT
 - `pages.page_type`, `pages.visibility`, `pages.status`, `pages.preview_token`, `pages.scheduled_publish_at`, `pages.staff_password_hash`.
 - `link_sections.status`, `.start_at`, `.end_at` (section-level scheduling/hide/coming-soon).
 - New tables: `locations`, `audit_logs`, `page_versions` (draft/publish/rollback snapshots), `link_health`.
-- Seeded `locations` (The Rim / Stone Oak / Bandera) from the existing hardcoded Toast URLs in `settings`, so nothing regresses on first run.
+- Seeded `locations` (La Cantera / Stone Oak / Bandera) from the existing hardcoded Toast URLs in `settings`, so nothing regresses on first run.
 
 ## Phase 3 — Admin CMS
 

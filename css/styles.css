@@ -9,7 +9,7 @@
    =================================== */
 :root {
     /* Colors */
-    --color-bg-primary: #1C1C1C;
+    --color-bg-pla canteraary: #1C1C1C;
     --color-bg-warm: #2A2420;
     --color-bg-card: rgba(255, 255, 255, 0.04);
     --color-accent-red: #EC4A5E;
@@ -63,7 +63,7 @@ html {
 
 body {
     font-family: var(--font-body);
-    background-color: var(--color-bg-primary);
+    background-color: var(--color-bg-pla canteraary);
     color: var(--color-text-light);
     line-height: 1.6;
     overflow-x: hidden;
@@ -388,13 +388,13 @@ button:focus-visible {
     min-width: 48px;
 }
 
-.btn-primary {
+.btn-pla canteraary {
     background: var(--color-accent-red);
     color: white;
     box-shadow: 0 4px 20px rgba(196, 30, 58, 0.3);
 }
 
-.btn-primary:hover {
+.btn-pla canteraary:hover {
     background: var(--color-accent-red-dark);
     transform: translateY(-2px);
     box-shadow: 0 8px 30px rgba(196, 30, 58, 0.5);
@@ -408,7 +408,7 @@ button:focus-visible {
 
 .btn-outline:hover {
     background: var(--color-cream);
-    color: var(--color-bg-primary);
+    color: var(--color-bg-pla canteraary);
     transform: translateY(-2px);
 }
 
@@ -505,7 +505,7 @@ button:focus-visible {
    =================================== */
 .about-section {
     padding: var(--section-padding-lg);
-    background: var(--color-bg-primary);
+    background: var(--color-bg-pla canteraary);
 }
 
 .about-grid {
@@ -704,7 +704,7 @@ button:focus-visible {
    =================================== */
 .blog-teaser-section {
     padding: var(--section-padding-lg);
-    background: var(--color-bg-primary);
+    background: var(--color-bg-pla canteraary);
 }
 
 .blog-grid {
@@ -1023,7 +1023,7 @@ button:focus-visible {
    =================================== */
 .locations-section {
     padding: var(--section-padding-lg);
-    background: var(--color-bg-primary);
+    background: var(--color-bg-pla canteraary);
 }
 
 .locations-grid {
@@ -1105,7 +1105,7 @@ button:focus-visible {
    =================================== */
 .order-section {
     padding: var(--section-padding-lg);
-    background: var(--color-bg-primary);
+    background: var(--color-bg-pla canteraary);
     min-height: 60vh;
 }
 
@@ -1167,7 +1167,7 @@ button:focus-visible {
    =================================== */
 .menu-section {
     padding: var(--section-padding-lg);
-    background: var(--color-bg-primary);
+    background: var(--color-bg-pla canteraary);
 }
 
 .menu-categories {
@@ -1224,7 +1224,7 @@ button:focus-visible {
    =================================== */
 .happy-hour-section {
     padding: var(--section-padding-lg);
-    background: var(--color-bg-primary);
+    background: var(--color-bg-pla canteraary);
 }
 
 .happy-hour-container {
@@ -1291,7 +1291,7 @@ button:focus-visible {
    =================================== */
 .about-page-content {
     padding: var(--section-padding-lg);
-    background: var(--color-bg-primary);
+    background: var(--color-bg-pla canteraary);
 }
 
 .about-story {
@@ -1354,7 +1354,7 @@ button:focus-visible {
    =================================== */
 .blog-list-section {
     padding: var(--section-padding-lg);
-    background: var(--color-bg-primary);
+    background: var(--color-bg-pla canteraary);
 }
 
 /* ===================================
@@ -1469,7 +1469,7 @@ button:focus-visible {
    =================================== */
 .legal-content {
     padding: var(--section-padding-lg);
-    background: var(--color-bg-primary);
+    background: var(--color-bg-pla canteraary);
 }
 
 .legal-body {
@@ -1689,7 +1689,7 @@ button:focus-visible {
     border: 1px solid rgba(222, 184, 100, 0.3);
 }
 
-.location-badge--rim-so {
+.location-badge--la cantera-so {
     background: rgba(236, 74, 94, 0.1);
     color: var(--color-accent-red);
     border: 1px solid rgba(236, 74, 94, 0.25);

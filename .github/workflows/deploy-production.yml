@@ -25,15 +25,15 @@ jobs:
       - name: Validate production release target
         shell: bash
         env:
-          TARGET_DIR: ${{ secrets.PRODUCTION_TARGET_DIR }}
+          PRODUCTION_DIR: ${{ secrets.PRODUCTION_TARGET_DIR }}
         run: |
           set -euo pipefail
-          if [ -z "${TARGET_DIR}" ]; then
+          if [ -z "${PRODUCTION_DIR}" ]; then
             echo "PRODUCTION_TARGET_DIR is required."
             exit 1
           fi
-          if [[ "${TARGET_DIR}" != */www.bakudanramen.com && "${TARGET_DIR}" != */www.bakudanramen.com/ ]]; then
-            echo "Refusing production deploy to unexpected target: ${TARGET_DIR}"
+          if [[ "${PRODUCTION_DIR}" != */www.bakudanramen.com && "${PRODUCTION_DIR}" != */www.bakudanramen.com/ ]]; then
+            echo "Refusing production deploy to unexpected target: ${PRODUCTION_DIR}"
             exit 1
           fi
 

@@ -19,6 +19,19 @@ The workflow runs only when:
 
 Ordinary branch pushes do not deploy.
 
+## Broth Log Route Gate
+
+The Broth Log production routes are intentionally blocked in `.htaccess` until release approval:
+
+- `/broth-log-b1`
+- `/broth-log-b1.html`
+- `/broth-log-b2`
+- `/broth-log-b2.html`
+- `/broth-log-b3`
+- `/broth-log-b3.html`
+
+The block is isolated to `^broth-log-b[123](\.html)?/?$`. Removing it later and uncommenting the prepared Broth Log rewrite rules will not affect unrelated site routes such as `/about`, `/menu`, `/blog`, `/go/...`, or existing missing-page redirects.
+
 ## Required GitHub Configuration
 
 Create the GitHub `production` environment and configure required reviewers before releasing.
@@ -45,6 +58,7 @@ After deployment, verify these public routes:
 
 Required checks:
 
+- Remove the temporary Broth Log route block only after release approval.
 - Clean route refresh returns 200.
 - Google Sheets data loads.
 - Expected row counts are B1=6, B2=2, B3=15.

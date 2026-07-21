@@ -27,6 +27,7 @@ Ordinary branch pushes do not deploy.
 | Remove or rotate legacy generic deployment secrets | Not complete | Old generic secrets should not be used by deployment. |
 | Confirm production HTTPS | Required before release | Verify `https://www.bakudanramen.com`. |
 | Confirm production clean routes | Required before release | `/broth-log-b1`, `/broth-log-b2`, `/broth-log-b3`. |
+| Confirm temporary route block remains before release | Complete | `.htaccess` blocks Broth Log clean and `.html` routes until approval. |
 | Confirm clean-route refresh avoids 404 | Required before release | Hard-refresh each clean URL after deployment. |
 | Confirm Google Sheets row counts | Required before release | Expected counts: B1=6, B2=2, B3=15. |
 | Confirm no console/network errors | Required before release | Browser verification on the public domain. |
@@ -47,27 +48,28 @@ Ordinary branch pushes do not deploy.
 5. Create a version tag such as `v2026.07.21-broth-log`.
 6. Publish a GitHub Release or push the version tag.
 7. Approve the GitHub `production` environment deployment.
-8. Verify the public routes in a browser:
+8. Remove the temporary Broth Log route block in `.htaccess` and enable the prepared Broth Log rewrite rules.
+9. Verify the public routes in a browser:
    - `https://www.bakudanramen.com/broth-log-b1`
    - `https://www.bakudanramen.com/broth-log-b2`
    - `https://www.bakudanramen.com/broth-log-b3`
-9. Hard-refresh each route and confirm no 404.
-10. Confirm live row counts:
+10. Hard-refresh each route and confirm no 404.
+11. Confirm live row counts:
    - B1: 6
    - B2: 2
    - B3: 15
-11. Test filters:
+12. Test filters:
    - Reset filters
    - Min F / Max F
    - Date range
    - Employee
    - Issue
    - Shift
-12. Test exports:
+13. Test exports:
    - CSV
    - Excel-compatible `.xls`
    - Print/PDF
-13. Verify console/network:
+14. Verify console/network:
    - No JavaScript errors
    - No failed Google Sheet requests
    - No mixed-content warnings

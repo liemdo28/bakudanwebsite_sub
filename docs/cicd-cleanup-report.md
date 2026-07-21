@@ -45,6 +45,26 @@ The production workflow:
 - does not run on ordinary branch pushes
 - validates that the configured target directory ends with `www.bakudanramen.com`
 
+## Route Block Confirmation
+
+The temporary Broth Log production block remains active in `.htaccess`:
+
+- `^broth-log-b[123](\.html)?/?$`
+
+This keeps the Broth Log routes unavailable on production until the repository owner approves release. The block is scoped only to the three Broth Log routes and does not alter unrelated public site routing.
+
+## Dashboard Sync Verification
+
+Local browser verification confirmed:
+
+- B1 workbook rows: 6
+- B2 workbook rows: 2
+- B3 workbook rows: 15
+- refresh intervals: 30 seconds, 1 minute, 2 minutes, 5 minutes
+- failed refreshes preserve the last successful data
+- controlled refresh test detected one new row, one updated row, one deleted row, and one duplicate ignored
+- no browser reload is required after a successful refresh
+
 ## Final Verification
 
 Repository text search was run for:
@@ -54,6 +74,6 @@ Repository text search was run for:
 - removed non-production deployment phrases
 - removed non-production secret prefixes
 
-Final text search result: **0 matches**.
+Final text and filename search result: **0 matches**.
 
 Binary image payloads were not rewritten; random byte sequences inside image data are not deployment references.

@@ -15,9 +15,14 @@ RewriteRule ^terms-of-service/?$ /terms.html      [R=301,L]
 RewriteRule ^happy-hour/?$    /happy-hour.html    [R=301,L]
 RewriteRule ^menu/?$          /menu.html          [R=301,L]
 RewriteRule ^blog/?$          /blog.html          [R=301,L]
-RewriteRule ^broth-log-b1/?$  /broth-log-b1.html  [R=301,L]
-RewriteRule ^broth-log-b2/?$  /broth-log-b2.html  [R=301,L]
-RewriteRule ^broth-log-b3/?$  /broth-log-b3.html  [R=301,L]
+
+# Temporary production block — remove only after release approval.
+RewriteRule ^broth-log-b[123](\.html)?/?$ - [R=404,L]
+
+# Release rewrites to enable after approval:
+# RewriteRule ^broth-log-b1/?$  /broth-log-b1.html  [R=301,L]
+# RewriteRule ^broth-log-b2/?$  /broth-log-b2.html  [R=301,L]
+# RewriteRule ^broth-log-b3/?$  /broth-log-b3.html  [R=301,L]
 
 # Missing pages — redirect to nearest equivalent
 RewriteRule ^gift-cards?/?$   /order              [R=301,L]

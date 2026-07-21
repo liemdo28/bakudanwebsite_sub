@@ -46,7 +46,7 @@ Required production-only secrets:
 
 Do not use generic deployment secrets for production deployment.
 
-`PRODUCTION_TARGET_DIR` must point to the production document root. On DreamHost this may end with `bakudanramen.com` or `www.bakudanramen.com`; the workflow refuses any other final directory name.
+`PRODUCTION_TARGET_DIR` must point to the production document root. On DreamHost this path must contain `bakudanramen.com`; the workflow refuses empty targets and paths that look like non-production targets.
 
 ## Release Verification
 

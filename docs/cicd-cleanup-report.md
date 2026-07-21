@@ -43,7 +43,7 @@ The production workflow:
 - runs from version tags matching `v*`
 - runs from published GitHub Releases
 - does not run on ordinary branch pushes
-- validates that the configured target directory ends with `www.bakudanramen.com`
+- validates that the configured target directory ends with the production document root name
 
 ## Route Block Confirmation
 

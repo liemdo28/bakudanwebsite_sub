@@ -32,7 +32,7 @@ jobs:
             echo "PRODUCTION_TARGET_DIR is required."
             exit 1
           fi
-          if [[ "${PRODUCTION_DIR}" != */www.bakudanramen.com && "${PRODUCTION_DIR}" != */www.bakudanramen.com/ ]]; then
+          if [[ "${PRODUCTION_DIR}" != */bakudanramen.com && "${PRODUCTION_DIR}" != */bakudanramen.com/ && "${PRODUCTION_DIR}" != */www.bakudanramen.com && "${PRODUCTION_DIR}" != */www.bakudanramen.com/ ]]; then
             echo "Refusing production deploy to unexpected target: ${PRODUCTION_DIR}"
             exit 1
           fi

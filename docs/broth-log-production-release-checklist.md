@@ -44,7 +44,7 @@ Ordinary branch pushes do not deploy.
    - `PRODUCTION_PASSWORD`
    - `PRODUCTION_PORT`
    - `PRODUCTION_TARGET_DIR`
-4. Confirm `PRODUCTION_TARGET_DIR` points to the `www.bakudanramen.com` document root; the workflow rejects any other final directory name.
+4. Confirm `PRODUCTION_TARGET_DIR` points to the production document root; on DreamHost this may end with `bakudanramen.com` or `www.bakudanramen.com`, and the workflow rejects any other final directory name.
 5. Create a version tag such as `v2026.07.21-broth-log`.
 6. Publish a GitHub Release or push the version tag.
 7. Approve the GitHub `production` environment deployment.

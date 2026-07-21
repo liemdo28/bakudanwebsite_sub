@@ -37,13 +37,45 @@ The verification script checks:
 - B1/B2/B3 row counts match Google Sheets
 - browser console and network are clean
 
+## Visual QA Findings
+
+Issues found during screenshot and live Playwright review:
+
+- zero-value temperature KPIs competed visually with high/critical counts
+- the most severe issue was visible but not strong enough for a 3-second manager scan
+- safe station cards created repeated green visual noise across long logs
+- action-required stations were mixed into the full 19-card list, slowing triage
+
+## Fixes Applied
+
+- Added an `Action Required` strip above station cards for non-safe readings.
+- Muted zero-value KPI cards so active warnings/high/critical states carry more visual weight.
+- Reduced Safe-card background color strength.
+- Increased High/Critical card contrast and border emphasis.
+- Preserved the master-detail layout and did not change sync, SOP rules, severity logic, filters, or exports.
+
+## Before / After
+
+Before:
+
+- the detail panel worked but forced managers to scan many visually similar cards
+- zero-count KPI cards looked as important as active issue counts
+- safe cards created more repeated color than necessary
+
+After:
+
+- the selected log is still shown in a clear master-detail layout
+- non-safe readings are summarized immediately above the station list
+- critical data stands out sooner while all station cards remain available
+- station cards retain Current, Target, Deviation, Trend, Recorded, By, SOP marker, and Current marker
+
 ## Results
 
-| Viewport | Width | Horizontal overflow | Console/network errors |
-|---|---:|---:|---:|
-| Desktop | 1440 | No | 0 |
-| Tablet | 900 | No | 0 |
-| Mobile | 390 | No | 0 |
+| Viewport | Width | Horizontal overflow | Clipped checked text | Console/network errors |
+|---|---:|---:|---:|---:|
+| Desktop | 1440 | No | 0 | 0 |
+| Tablet | 900 | No | 0 | 0 |
+| Mobile | 390 | No | 0 | 0 |
 
 | Store | Rows | Selected log | Station cards | SOP markers | Current markers |
 |---|---:|---:|---:|---:|---:|
@@ -62,3 +94,13 @@ The verification script checks:
 - Real-device touch feel
 - Browser print dialog completion
 - Final production domain verification after deployment
+
+## Remaining UI Limitations
+
+- Mobile still has a long vertical scroll because each selected log contains 19 station cards plus issue/timeline/compliance sections.
+- The long scroll is intentional for now so every station remains inspectable without hiding data.
+- Further shortening would require collapsible groups or a default "show action-needed first" mode, which should be a separate product decision.
+
+## Recommendation
+
+Final local visual QA recommendation: **GO for push** after repository owner approves release timing.

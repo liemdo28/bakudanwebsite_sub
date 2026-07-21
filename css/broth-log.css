@@ -644,6 +644,11 @@ button {
     line-height: 1;
 }
 
+.bd-temp-kpi.zero {
+    opacity: .58;
+    background: color-mix(in srgb, var(--panel), var(--panel-2) 42%);
+}
+
 .bd-temp-kpi.safe strong { color: var(--green); }
 .bd-temp-kpi.warning strong { color: #f2c94c; }
 .bd-temp-kpi.high strong { color: #f2994a; }
@@ -660,6 +665,42 @@ button {
 .bd-temp-alert.high { color: #f2994a; }
 .bd-temp-alert.critical { color: var(--danger); }
 .bd-temp-alert.missing { color: var(--muted); }
+
+.bd-action-strip {
+    display: grid;
+    gap: 10px;
+    margin: 0 0 12px;
+    padding: 12px;
+    border: 1px solid rgba(255,91,91,.34);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--panel), var(--danger) 7%);
+}
+
+.bd-action-strip > strong {
+    font-size: .88rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.bd-action-strip div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.bd-action-strip span {
+    padding: 5px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel);
+    font-size: .78rem;
+    white-space: nowrap;
+}
+
+.bd-action-strip .warning { color: #f2c94c; }
+.bd-action-strip .high { color: #f2994a; }
+.bd-action-strip .critical { color: var(--danger); }
+.bd-action-strip .missing { color: var(--muted); }
 
 .bd-temp-groups {
     display: grid;
@@ -688,10 +729,10 @@ button {
     background: color-mix(in srgb, var(--panel), var(--panel-2) 34%);
 }
 
-.bd-temp-card.safe { background: color-mix(in srgb, var(--panel), var(--green) 8%); }
+.bd-temp-card.safe { background: color-mix(in srgb, var(--panel), var(--green) 3%); }
 .bd-temp-card.warning { background: color-mix(in srgb, var(--panel), #f2c94c 8%); }
-.bd-temp-card.high { background: color-mix(in srgb, var(--panel), #f2994a 9%); }
-.bd-temp-card.critical { background: color-mix(in srgb, var(--panel), var(--danger) 9%); }
+.bd-temp-card.high { background: color-mix(in srgb, var(--panel), #f2994a 12%); border-color: rgba(242,153,74,.38); }
+.bd-temp-card.critical { background: color-mix(in srgb, var(--panel), var(--danger) 13%); border-color: rgba(255,91,91,.44); }
 
 .bd-temp-card-head {
     display: flex;
@@ -919,6 +960,12 @@ button {
     .bd-current-temp,
     .bd-selected-timeline div {
         display: grid;
+    }
+    .bd-action-strip div {
+        display: grid;
+    }
+    .bd-action-strip span {
+        white-space: normal;
     }
     .bd-deviation-track {
         min-width: 0;

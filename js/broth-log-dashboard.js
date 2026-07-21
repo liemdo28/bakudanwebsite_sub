@@ -1128,6 +1128,7 @@
     function detailBody(row) {
         const summary = temperatureSummary(row.readings);
         const grouped = groupBy(row.readings, reading => reading.group);
+        const actionReadings = row.readings.filter(reading => reading.severityKey !== 'safe');
         return `
             <div class="bd-detail-head">
                 <div>
@@ -1147,6 +1148,10 @@
                     ${['safe', 'warning', 'high', 'critical', 'missing'].map(key => tempKpi(key, summary[key])).join('')}
                 </div>
                 ${summary.mostSevere ? `<div class="bd-temp-alert ${summary.mostSevere.severityKey}">Most severe: ${esc(summary.mostSevere.label)} · ${esc(severityLabel(summary.mostSevere.severityKey))} · ${esc(deviationText(summary.mostSevere))}</div>` : ''}
+                ${actionReadings.length ? `<div class="bd-action-strip" aria-label="Stations requiring attention">
+                    <strong>Action Required</strong>
+                    <div>${actionReadings.map(reading => `<span class="${esc(reading.severityKey)}">${esc(reading.label)} · ${esc(severityLabel(reading.severityKey))} · ${esc(deviationText(reading))}</span>`).join('')}</div>
+                </div>` : ''}
                 <div class="bd-muted">Each row compares the original reading directly against that station's SOP threshold. SOP and Current markers use a per-station deviation scale.</div>
                 <div class="bd-temp-groups">${Object.entries(grouped).map(([group, readings]) => `
                     <section class="bd-temp-group">
@@ -1164,7 +1169,7 @@
     }
 
     function tempKpi(key, value) {
-        return `<span class="bd-temp-kpi ${key}"><small>${esc(severityLabel(key))}</small><strong>${value}</strong></span>`;
+        return `<span class="bd-temp-kpi ${key} ${value ? '' : 'zero'}"><small>${esc(severityLabel(key))}</small><strong>${value}</strong></span>`;
     }
 
     function temperatureSummary(readings) {

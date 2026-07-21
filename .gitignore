@@ -45,3 +45,5 @@ scripts/_backup_*.html
 
 # Local verification artifacts
 work/
+test-results/
+playwright-report/

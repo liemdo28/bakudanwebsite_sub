@@ -14,9 +14,7 @@ No deployment was pushed or run.
 
 - `.github/workflows/deploy-production.yml`
 - `.htaccess.backup-20260624`
-- `broth-log-b1.html`
-- `broth-log-b2.html`
-- `broth-log-b3.html`
+- `broth-log.html`
 - `docs/broth-log-production-release-checklist.md`
 - `docs/broth-log-sync-cicd-hardening.md`
 - `docs/production-deployment.md`
@@ -45,13 +43,13 @@ The production workflow:
 - does not run on ordinary branch pushes
 - validates that the configured target directory ends with the production document root name
 
-## Route Block Confirmation
+## Broth Log Route Confirmation
 
-The temporary Broth Log production block remains active in `.htaccess`:
+The dashboard now uses one manager-facing route:
 
-- `^broth-log-b[123](\.html)?/?$`
+- `/broth-log`
 
-This keeps the Broth Log routes unavailable on production until the repository owner approves release. The block is scoped only to the three Broth Log routes and does not alter unrelated public site routing.
+Branch-specific Broth Log files and rewrite rules have been removed so managers do not need to remember separate URLs for B1, B2, and B3.
 
 ## Dashboard Sync Verification
 

@@ -6,11 +6,11 @@ Generated: 2026-07-21
 
 The dashboard was served locally from `D:\Project\Master\Bakudan\bakudanramen.com-current` at `http://127.0.0.1:8087`.
 
-Routes tested in a real Chromium browser via Playwright:
+Route tested in a real Chromium browser via Playwright:
 
-- `http://127.0.0.1:8087/broth-log-b1`
-- `http://127.0.0.1:8087/broth-log-b2`
-- `http://127.0.0.1:8087/broth-log-b3`
+- `http://127.0.0.1:8087/broth-log`
+
+The top store selector was used to switch between B1, B2, and B3.
 
 The Codex in-app browser could not reach the local loopback server, so functional and visual verification was completed in Playwright-launched Chromium. This still exercised the actual rendered HTML, CSS, JavaScript, Google Sheets JSONP requests, controls, downloads, console, network, and responsive viewports.
 

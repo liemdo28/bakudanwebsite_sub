@@ -25,7 +25,7 @@ The Broth Log dashboard has one manager-facing address:
 
 - `/broth-log`
 
-Managers choose B1, B2, or B3 from the store selector at the top of the dashboard. Legacy routes `/broth-log-b1`, `/broth-log-b2`, `/broth-log-b3`, and `/broth-log.html` redirect to `/broth-log` so there is only one visible address to remember.
+Managers choose B1, B2, or B3 from the store selector at the top of the dashboard. The removed branch-specific routes are not deployed; `/broth-log.html` redirects to `/broth-log` so there is only one visible address to remember.
 
 ## Required GitHub Configuration
 

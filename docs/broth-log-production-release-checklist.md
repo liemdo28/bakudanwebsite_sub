@@ -27,7 +27,7 @@ Ordinary branch pushes do not deploy.
 | Remove or rotate legacy generic deployment secrets | Not complete | Old generic secrets should not be used by deployment. |
 | Confirm production HTTPS | Required before release | Verify `https://www.bakudanramen.com`. |
 | Confirm production clean route | Required before release | `/broth-log` is the single manager-facing route. |
-| Confirm legacy route redirects | Required before release | `/broth-log-b1`, `/broth-log-b2`, and `/broth-log-b3` redirect to `/broth-log`. |
+| Confirm removed branch routes are unavailable | Required before release | Branch-specific Broth Log URLs are no longer deployed or routed. |
 | Confirm clean-route refresh avoids 404 | Required before release | Hard-refresh each clean URL after deployment. |
 | Confirm Google Sheets row counts | Required before release | Expected counts: B1=6, B2=2, B3=15. |
 | Confirm no console/network errors | Required before release | Browser verification on the public domain. |
@@ -81,7 +81,7 @@ Ordinary branch pushes do not deploy.
 
 Production can be marked **GO** only when:
 
-- Public clean-route refresh returns 200 for all three Broth Log URLs.
+- Public clean-route refresh returns 200 for `/broth-log`.
 - Public row counts match B1=6, B2=2, B3=15.
 - HTTPS works without certificate warnings.
 - Browser console/network checks are clean.

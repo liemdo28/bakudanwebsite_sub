@@ -16,13 +16,10 @@ RewriteRule ^happy-hour/?$    /happy-hour.html    [R=301,L]
 RewriteRule ^menu/?$          /menu.html          [R=301,L]
 RewriteRule ^blog/?$          /blog.html          [R=301,L]
 
-# Temporary production gate — remove this one block only during the controlled Broth Log release.
-RewriteRule ^broth-log(-b[123])?(\.html)?/?$ - [R=404,L]
-
-# Broth Log single-page clean routes — ready under the temporary gate above.
-RewriteRule ^broth-log-b1/?$ /broth-log.html [L]
-RewriteRule ^broth-log-b2/?$ /broth-log.html [L]
-RewriteRule ^broth-log-b3/?$ /broth-log.html [L]
+# Broth Log dashboard — one manager-facing URL. Stores are selected inside the dashboard.
+RewriteRule ^broth-log-b[123](\.html)?/?$ - [R=404,L]
+RewriteCond %{THE_REQUEST} \s/+broth-log\.html[\s?]
+RewriteRule ^broth-log\.html$ /broth-log [R=301,L]
 RewriteRule ^broth-log/?$ /broth-log.html [L]
 
 # Missing pages — redirect to nearest equivalent

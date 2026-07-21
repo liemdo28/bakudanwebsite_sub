@@ -4,11 +4,29 @@ Generated: 2026-07-21
 
 ## Verification Scope
 
-Route:
+Routes:
 
 - `/broth-log`
+- `/broth-log-b1`
+- `/broth-log-b2`
+- `/broth-log-b3`
 
-Stores verified through the top selector:
+Architecture:
+
+- `broth-log.html` is the only Broth Log HTML page.
+- `broth-log-b1.html`, `broth-log-b2.html`, and `broth-log-b3.html` are intentionally absent and must not be recreated.
+- Clean branch routes rewrite internally to `broth-log.html`.
+- JavaScript reads the current URL path before query parameters or stored selector state.
+
+Path-driven branch detection:
+
+- `/broth-log-b1` selects B1 Bandera.
+- `/broth-log-b2` selects B2 Stone Oak.
+- `/broth-log-b3` selects B3 La Cantera.
+- `/broth-log` opens the shared selector-based dashboard.
+- Unsupported Broth Log-looking paths show an unsupported-route message instead of silently loading the wrong branch.
+
+Stores verified:
 
 - B1 Bandera
 - B2 Stone Oak
@@ -36,6 +54,8 @@ The verification script checks:
 - desktop/tablet/mobile have no horizontal overflow
 - B1/B2/B3 row counts match Google Sheets
 - browser console and network are clean
+- direct navigation and browser refresh work for `/broth-log-b1`, `/broth-log-b2`, and `/broth-log-b3` when the local server reproduces the intended clean-route rewrites
+- branch-specific HTML files are not required
 
 ## Visual QA Findings
 
@@ -79,9 +99,9 @@ After:
 
 | Store | Rows | Selected log | Station cards | SOP markers | Current markers |
 |---|---:|---:|---:|---:|---:|
-| B1 | 6 | 1 | 19 | 19 | 19 |
-| B2 | 2 | 1 | 19 | 19 | 19 |
-| B3 | 15 | 1 | 19 | 19 | 19 |
+| B1 `/broth-log-b1` | 6 | 1 | 19 | 19 | 19 |
+| B2 `/broth-log-b2` | 2 | 1 | 19 | 19 | 19 |
+| B3 `/broth-log-b3` | 15 | 1 | 19 | 19 | 19 |
 
 ## Screenshots
 

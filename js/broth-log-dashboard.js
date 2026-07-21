@@ -7,6 +7,12 @@
         B3: { id: '1odx4Xq94kz50aJBuE2Q-WcZbvXdfeVFOksOeAxn4Kxw', tab: 'Form Responses 1', name: 'B3 La Cantera' }
     };
 
+    const PATH_BRANCHES = {
+        '/broth-log-b1': 'B1',
+        '/broth-log-b2': 'B2',
+        '/broth-log-b3': 'B3'
+    };
+
     const SYNC_CONFIG = {
         defaultIntervalSeconds: 60,
         intervals: [
@@ -236,8 +242,10 @@
         pastaBoilerRight: 'Cooking Equipment'
     };
 
+    const routeBranch = getRouteBranch();
+
     const state = {
-        activeBranch: getInitialBranch(),
+        activeBranch: routeBranch.branch || getInitialBranch(),
         activeView: 'home',
         records: [],
         recordsByBranch: {},
@@ -266,14 +274,23 @@
         theme: localStorage.getItem('brothTheme') || 'dark',
         timer: null,
         syncInFlight: null,
-        showStoreSelector: false
+        showStoreSelector: false,
+        routeUnsupported: routeBranch.unsupported
     };
 
     const root = document.getElementById('broth-dashboard');
     if (!root) return;
     state.showStoreSelector = root.dataset.storeSelector === 'true';
-    state.activeBranch = state.showStoreSelector ? getInitialBranch() : root.dataset.branch || getInitialBranch();
+    state.activeBranch = routeBranch.branch || (state.showStoreSelector ? getInitialBranch() : root.dataset.branch || getInitialBranch());
     document.documentElement.dataset.theme = state.theme;
+
+    function getRouteBranch() {
+        const path = window.location.pathname.replace(/\/+$/, '').replace(/\.html$/i, '').toLowerCase() || '/';
+        if (PATH_BRANCHES[path]) return { branch: PATH_BRANCHES[path], unsupported: false };
+        if (path === '/broth-log') return { branch: '', unsupported: false };
+        if (path.includes('broth-log')) return { branch: '', unsupported: true };
+        return { branch: '', unsupported: false };
+    }
 
     function getInitialBranch() {
         const params = new URLSearchParams(window.location.search);
@@ -674,6 +691,13 @@
     }
 
     async function syncSheets(options = {}) {
+        if (state.routeUnsupported) {
+            state.loading = false;
+            state.syncStatus = 'error';
+            state.syncMessage = 'Unsupported Broth Log route';
+            render();
+            return;
+        }
         if (state.syncInFlight) return state.syncInFlight;
         state.syncInFlight = runSync(options).finally(() => {
             state.syncInFlight = null;
@@ -1069,6 +1093,21 @@
     }
 
     function render() {
+        if (state.routeUnsupported) {
+            root.innerHTML = `
+            <div class="bd-shell">
+                <aside class="bd-sidebar">
+                    <a class="bd-brand" href="index.html"><span class="bd-brand-mark">B</span><span class="bd-brand-text"><strong>Bakudan</strong><span>Broth Log Ops</span></span></a>
+                </aside>
+                <main class="bd-main">
+                    <div class="bd-card bd-empty">
+                        <h1>Unsupported Broth Log route</h1>
+                        <p>This dashboard supports /broth-log, /broth-log-b1, /broth-log-b2, and /broth-log-b3.</p>
+                    </div>
+                </main>
+            </div>`;
+            return;
+        }
         const records = filteredRecords();
         const summary = aggregate(records);
         root.innerHTML = `

@@ -185,6 +185,45 @@ button {
     margin-bottom: 16px;
 }
 
+.bd-sync span {
+    padding: 3px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel);
+}
+
+.bd-sync-state {
+    color: var(--muted);
+}
+
+.bd-sync-state.syncing::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: bd-spin .8s linear infinite;
+}
+
+.bd-sync-state.ok {
+    color: var(--green);
+}
+
+.bd-sync-state.warning {
+    color: var(--amber);
+}
+
+.bd-sync-state.error {
+    color: var(--danger);
+}
+
+@keyframes bd-spin {
+    to { transform: rotate(360deg); }
+}
+
 .bd-filters {
     position: sticky;
     top: 0;

@@ -7,6 +7,18 @@
         B3: { id: '1odx4Xq94kz50aJBuE2Q-WcZbvXdfeVFOksOeAxn4Kxw', tab: 'Form Responses 1', name: 'B3 The Rim' }
     };
 
+    const SYNC_CONFIG = {
+        defaultIntervalSeconds: 60,
+        intervals: [
+            { label: '30 sec', seconds: 30 },
+            { label: '1 min', seconds: 60 },
+            { label: '2 min', seconds: 120 },
+            { label: '5 min', seconds: 300 }
+        ],
+        cacheTtlMs: 12000,
+        requestTimeoutMs: 18000
+    };
+
     const READING_FIELDS = [
         ['walkInCoolerProduce', 'Walk-In Cooler (Produce)', 'cold'],
         ['walkInFreezer', 'Walk-In Freezer', 'freezer'],
@@ -65,8 +77,15 @@
         activeBranch: 'B1',
         activeView: 'home',
         records: [],
+        recordsByBranch: {},
+        recordIndexByBranch: {},
         errors: [],
         lastSync: null,
+        lastAttempt: null,
+        syncStatus: 'idle',
+        syncMessage: 'Waiting for first synchronization',
+        consecutiveFailures: 0,
+        lastChanges: { new: 0, updated: 0, deleted: 0, duplicates: 0, unchanged: 0 },
         loading: false,
         filters: {
             query: '',
@@ -79,15 +98,21 @@
             tempMin: '',
             tempMax: ''
         },
-        refreshMinutes: Number(localStorage.getItem('brothRefreshMinutes') || 3),
+        refreshSeconds: getStoredRefreshSeconds(),
         theme: localStorage.getItem('brothTheme') || 'dark',
-        timer: null
+        timer: null,
+        syncInFlight: null
     };
 
     const root = document.getElementById('broth-dashboard');
     if (!root) return;
     state.activeBranch = root.dataset.branch || 'B1';
     document.documentElement.dataset.theme = state.theme;
+
+    function getStoredRefreshSeconds() {
+        const stored = Number(localStorage.getItem('brothRefreshSeconds') || localStorage.getItem('brothRefreshMinutes') * 60);
+        return SYNC_CONFIG.intervals.some(interval => interval.seconds === stored) ? stored : SYNC_CONFIG.defaultIntervalSeconds;
+    }
 
     function esc(value) {
         return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
@@ -151,6 +176,32 @@
         return index;
     }
 
+    function requiredWarnings(record) {
+        const missing = [];
+        if (!record.branch) missing.push('branch');
+        if (!record.businessDate) missing.push('businessDate');
+        if (!record.businessTime) missing.push('businessTime');
+        if (!record.submittedAt) missing.push('submittedAt');
+        if (!record.employeeName || record.employeeName === 'Unassigned') missing.push('employeeName');
+        return missing;
+    }
+
+    function fingerprint(record) {
+        return JSON.stringify({
+            branch: record.branch,
+            submittedAt: record.submittedAt ? record.submittedAt.toISOString() : '',
+            businessDate: record.businessDate,
+            businessTime: record.businessTime,
+            shift: record.shift,
+            employeeName: record.employeeName,
+            notes: record.notes,
+            correctiveAction: record.correctiveAction,
+            managerComment: record.managerComment,
+            responseId: record.responseId,
+            readings: record.readings.map(reading => [reading.key, reading.temperature])
+        });
+    }
+
     function normalizeRow(row, cols, sheetBranch) {
         const idx = buildIndex(cols);
         const cell = field => idx[field] >= 0 ? row.c[idx[field]] : null;
@@ -193,7 +244,7 @@
         const s = stats(measured.map(r => r.temperature));
         const businessDate = text('businessDate') || (submittedDate ? submittedDate.toISOString().slice(0, 10) : '');
         const idParts = [text('responseId'), branch, businessDate, text('businessTime'), text('employeeName'), submittedDate ? submittedDate.toISOString() : ''];
-        return {
+        const record = {
             id: idParts.filter(Boolean).join('|'),
             sourceSheetId: SHEETS[sheetBranch].id,
             sourceTab: SHEETS[sheetBranch].tab,
@@ -221,7 +272,31 @@
             },
             validation: { duplicate: false, missingRequired: [], warnings: [] }
         };
+        record.validation.missingRequired = requiredWarnings(record);
+        record.validation.warnings = record.validation.missingRequired.map(field => `Missing required field: ${field}`);
+        record.revisionHash = fingerprint(record);
+        return record;
     }
+
+    const googleSheetsDataSource = {
+        name: 'Google Sheets Visualization API',
+        cache: {},
+        getBranches(branches, options = {}) {
+            return Promise.allSettled(branches.map(branch => this.getBranch(branch, options)));
+        },
+        getBranch(branch, options = {}) {
+            const cached = this.cache[branch];
+            if (!options.force && cached && Date.now() - cached.loadedAt < SYNC_CONFIG.cacheTtlMs) {
+                return Promise.resolve({ branch, rows: cached.rows, fromCache: true });
+            }
+            return fetchSheet(branch).then(rows => {
+                this.cache[branch] = { rows, loadedAt: Date.now() };
+                return { branch, rows, fromCache: false };
+            });
+        }
+    };
+
+    const dataSource = googleSheetsDataSource;
 
     function fetchSheet(branch) {
         const cfg = SHEETS[branch];
@@ -232,7 +307,7 @@
             const timeout = window.setTimeout(() => {
                 cleanup();
                 reject(new Error(`${branch} sync timed out`));
-            }, 18000);
+            }, SYNC_CONFIG.requestTimeoutMs);
             function cleanup() {
                 window.clearTimeout(timeout);
                 delete window[callback];
@@ -256,24 +331,102 @@
         });
     }
 
-    async function syncSheets() {
-        state.loading = true;
-        state.errors = [];
-        render();
-        const branches = state.filters.branch === 'current' ? [state.activeBranch] : Object.keys(SHEETS);
-        const results = await Promise.allSettled(branches.map(fetchSheet));
+    function applyBranchRecords(branch, incomingRows) {
+        const previous = state.recordIndexByBranch[branch] || {};
+        const next = {};
         const rows = [];
+        const changes = { new: 0, updated: 0, deleted: 0, duplicates: 0, unchanged: 0 };
+        incomingRows.forEach(row => {
+            if (!row.id) {
+                row.validation.warnings.push('Missing stable record identifier');
+                row.id = `${branch}|row-${rows.length}`;
+            }
+            if (next[row.id]) {
+                row.validation.duplicate = true;
+                changes.duplicates += 1;
+                return;
+            }
+            const prev = previous[row.id];
+            if (!prev) changes.new += 1;
+            else if (prev.revisionHash !== row.revisionHash) changes.updated += 1;
+            else changes.unchanged += 1;
+            next[row.id] = row;
+            rows.push(row);
+        });
+        Object.keys(previous).forEach(id => {
+            if (!next[id]) changes.deleted += 1;
+        });
+        state.recordsByBranch[branch] = rows;
+        state.recordIndexByBranch[branch] = next;
+        return changes;
+    }
+
+    function mergeChanges(list) {
+        return list.reduce((sum, item) => {
+            sum.new += item.new;
+            sum.updated += item.updated;
+            sum.deleted += item.deleted;
+            sum.duplicates += item.duplicates;
+            sum.unchanged += item.unchanged;
+            return sum;
+        }, { new: 0, updated: 0, deleted: 0, duplicates: 0, unchanged: 0 });
+    }
+
+    function visibleBranches() {
+        return state.filters.branch === 'current' ? [state.activeBranch] : Object.keys(SHEETS);
+    }
+
+    function rebuildVisibleRecords() {
+        state.records = visibleBranches()
+            .flatMap(branch => state.recordsByBranch[branch] || [])
+            .sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+    }
+
+    async function syncSheets(options = {}) {
+        if (state.syncInFlight) return state.syncInFlight;
+        state.syncInFlight = runSync(options).finally(() => {
+            state.syncInFlight = null;
+        });
+        return state.syncInFlight;
+    }
+
+    async function runSync(options = {}) {
+        state.loading = true;
+        state.lastAttempt = new Date();
+        state.syncStatus = 'syncing';
+        state.syncMessage = 'Refreshing Google Sheets data';
+        render();
+        const branches = visibleBranches();
+        const results = await dataSource.getBranches(branches, { force: Boolean(options.force) });
+        const changeList = [];
+        const errors = [];
         results.forEach(result => {
-            if (result.status === 'fulfilled') rows.push(...result.value);
-            else state.errors.push(result.reason.message);
+            if (result.status === 'fulfilled') {
+                changeList.push(applyBranchRecords(result.value.branch, result.value.rows));
+            } else {
+                errors.push(result.reason.message);
+            }
         });
-        const seen = new Set();
-        rows.forEach(row => {
-            row.validation.duplicate = seen.has(row.id);
-            seen.add(row.id);
-        });
-        state.records = rows.sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
-        state.lastSync = new Date();
+        rebuildVisibleRecords();
+        state.lastChanges = mergeChanges(changeList);
+        state.errors = errors;
+        if (errors.length && !changeList.length) {
+            state.consecutiveFailures += 1;
+            state.syncStatus = 'error';
+            state.syncMessage = 'Google Sheets sync failed; showing last successful data';
+        } else if (errors.length) {
+            state.consecutiveFailures += 1;
+            state.syncStatus = 'warning';
+            state.syncMessage = 'Partial sync completed; some branches may be outdated';
+            state.lastSync = new Date();
+        } else {
+            state.consecutiveFailures = 0;
+            state.syncStatus = 'ok';
+            state.syncMessage = state.lastChanges.new || state.lastChanges.updated || state.lastChanges.deleted
+                ? 'Synchronized with latest sheet changes'
+                : 'Synchronized; no sheet changes detected';
+            state.lastSync = new Date();
+        }
         state.loading = false;
         render();
     }
@@ -416,14 +569,19 @@
                 ${kpi('Compliance', percent(summary.compliance), `${summary.missing} missing readings`)}
                 ${kpi('Average Temp', fmtTemp(summary.avgTemp), 'All station readings')}
                 ${kpi('Active Employees', summary.activeEmployees, 'Unique submitters')}
-                ${kpi('Refresh', `${state.refreshMinutes} min`, 'Configurable sync window')}
-                ${kpi('Last Sync', state.lastSync ? state.lastSync.toLocaleTimeString() : 'Waiting', state.loading ? 'Sync in progress' : 'Google Sheets')}
+                ${kpi('Refresh', refreshLabel(state.refreshSeconds), 'Configured in SYNC_CONFIG')}
+                ${kpi('Last Sync', state.lastSync ? state.lastSync.toLocaleTimeString() : 'Waiting', state.syncMessage)}
             </div>
         `;
     }
 
     function kpi(label, value, sub) {
         return `<div class="bd-card bd-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(sub)}</small></div>`;
+    }
+
+    function refreshLabel(seconds) {
+        const interval = SYNC_CONFIG.intervals.find(item => item.seconds === seconds);
+        return interval ? interval.label : `${seconds}s`;
     }
 
     function journal(records) {
@@ -633,8 +791,8 @@
                             <p>Centralized food-safety and broth temperature intelligence from Google Sheets.</p>
                         </div>
                         <div class="bd-actions">
-                            <select id="refreshMinutes" class="bd-btn" aria-label="Refresh interval">
-                                ${[1,2,3,4,5].map(n => option(n, `${n} min`, state.refreshMinutes)).join('')}
+                            <select id="refreshSeconds" class="bd-btn" aria-label="Refresh interval">
+                                ${SYNC_CONFIG.intervals.map(interval => option(interval.seconds, interval.label, state.refreshSeconds)).join('')}
                             </select>
                             <button class="bd-btn" data-action="csv">CSV</button>
                             <button class="bd-btn" data-action="excel">Excel</button>
@@ -644,9 +802,12 @@
                         </div>
                     </div>
                     <div class="bd-sync">
-                        <span>${state.loading ? 'Syncing Google Sheets...' : 'Ready'}</span>
+                        <span class="bd-sync-state ${esc(state.syncStatus)}">${state.loading ? 'Syncing Google Sheets...' : esc(state.syncMessage)}</span>
                         <span>Last successful sync: ${state.lastSync ? state.lastSync.toLocaleString() : 'not yet synced'}</span>
+                        <span>Last attempt: ${state.lastAttempt ? state.lastAttempt.toLocaleTimeString() : 'not yet attempted'}</span>
                         <span>Rows: ${state.records.length}</span>
+                        <span>Changes: +${state.lastChanges.new} / updated ${state.lastChanges.updated} / deleted ${state.lastChanges.deleted} / duplicates ignored ${state.lastChanges.duplicates}</span>
+                        ${state.consecutiveFailures ? `<span>Retrying automatically (${state.consecutiveFailures} failed attempt${state.consecutiveFailures === 1 ? '' : 's'})</span>` : ''}
                     </div>
                     ${state.errors.map(e => `<div class="bd-error">${esc(e)}</div>`).join('')}
                     <div class="bd-filters">${filters(records)}</div>
@@ -690,10 +851,11 @@
             else render();
         }));
         root.querySelectorAll('[data-action]').forEach(btn => btn.addEventListener('click', () => actions(btn.dataset.action)));
-        const refresh = root.querySelector('#refreshMinutes');
+        const refresh = root.querySelector('#refreshSeconds');
         if (refresh) refresh.addEventListener('change', () => {
-            state.refreshMinutes = Number(refresh.value);
-            localStorage.setItem('brothRefreshMinutes', String(state.refreshMinutes));
+            state.refreshSeconds = Number(refresh.value);
+            localStorage.setItem('brothRefreshSeconds', String(state.refreshSeconds));
+            localStorage.removeItem('brothRefreshMinutes');
             scheduleSync();
             render();
         });
@@ -709,7 +871,7 @@
     }
 
     function actions(action) {
-        if (action === 'sync') syncSheets();
+        if (action === 'sync') syncSheets({ force: true });
         if (action === 'reset') {
             state.filters = { query: '', dateRange: 'all', branch: 'current', employee: 'all', issue: 'all', shift: 'all', temp: 'all', tempMin: '', tempMax: '' };
             syncSheets();
@@ -747,7 +909,7 @@
 
     function scheduleSync() {
         if (state.timer) window.clearInterval(state.timer);
-        state.timer = window.setInterval(syncSheets, state.refreshMinutes * 60 * 1000);
+        state.timer = window.setInterval(() => syncSheets(), state.refreshSeconds * 1000);
     }
 
     render();

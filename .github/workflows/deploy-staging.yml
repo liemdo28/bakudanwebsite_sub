@@ -1,0 +1,46 @@
+name: Deploy staging
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  DEPLOY_SOURCE: >-
+    about.html,accessibility.html,a-local-guide-to-ramen-near-the-rim.html,blog-authentic.html,blog-chashu.html,blog-journey.html,blog-ramen-101.html,blog-tonkotsu.html,blog.html,broth-log-b1.html,broth-log-b2.html,broth-log-b3.html,fundraiser.html,happy-hour.html,index.html,locations.html,menu.html,order.html,privacy.html,ramen-guide.html,terms.html,css,js,images,locations,links,links-admin,api,forms,staff-training,marketing-signup,.htaccess,.htpasswd,the-ultimate-guide-to-garlic-tonkotsu-ramen.html,lighter-ramen-options-shoyu-and-shio-broth-basics.html,the-secret-to-our-24-hour-slow-simmered-tonkotsu-broth.html,top-rated-japanese-restaurants-in-san-antonio-today.html,the-best-soup-in-san-antonio-for-rainy-days.html,where-to-find-authentic-tonkotsu-ramen-in-san-antonio.html,daily-cocktail-specials-in-san-antonio-you-can-t-miss.html,handmade-vs-instant-why-fresh-noodles-matter.html,bakudan-ramen-why-we-are-the-rim-s-top-dining-spot.html,the-best-lunch-spots-in-san-antonio-for-ramen-lovers.html,why-bakudan-is-the-perfect-date-night-spot.html,top-5-spicy-chicken-ramen-spots-in-san-antonio.html,cilantro-lime-chicken-ramen-a-fresh-fusion-favorite.html,why-bok-choy-is-the-perfect-crunch-for-spicy-ramen.html,modern-japanese-dining-the-bakudan-ramen-experience.html,how-to-order-ramen-online-in-san-antonio.html,ramen-takeout-san-antonio-how-to-reheat-like-a-pro.html,best-ramen-san-antonio-the-definitive-2026-guide.html,why-fried-garlic-chips-are-the-ultimate-ramen-topping.html,ramen-101-what-makes-a-bowl-truly-soul-warming.html,chili-oil-101-elevating-your-spicy-ramen-bowl.html,your-guide-to-japanese-food-delivery-in-san-antonio.html,why-draft-beer-and-ramen-are-a-match-made-in-heaven.html,finding-a-japanese-restaurant-on-bandera-road.html,is-cilantro-lime-chicken-ramen-the-new-comfort-food.html,craft-cocktails-and-ramen-the-ultimate-pairing.html,how-to-perfectly-eat-garlic-tonkotsu-ramen.html,everything-you-need-to-know-about-spicy-umami-miso.html,the-bold-science-of-spicy-pork-broth-ramen.html,japanese-craft-cocktails-beyond-the-basic-martini.html,the-best-happy-hour-in-stone-oak-for-cocktails.html,sitemap.xml
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Validate staging target
+        shell: bash
+        env:
+          TARGET_DIR: ${{ secrets.STAGING_TARGET_DIR }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TARGET_DIR}" ]; then
+            echo "STAGING_TARGET_DIR is required."
+            exit 1
+          fi
+          if [[ "${TARGET_DIR}" == */bakudanramen.com || "${TARGET_DIR}" == */bakudanramen.com/ ]]; then
+            echo "Refusing staging deploy to production-looking target: ${TARGET_DIR}"
+            exit 1
+          fi
+
+      - name: Copy files to staging via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USERNAME }}
+          password: ${{ secrets.STAGING_PASSWORD }}
+          port: ${{ secrets.STAGING_PORT }}
+          source: ${{ env.DEPLOY_SOURCE }}
+          target: ${{ secrets.STAGING_TARGET_DIR }}
+          overwrite: true

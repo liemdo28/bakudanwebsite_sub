@@ -4,12 +4,24 @@ Generated: 2026-07-21
 
 Current release decision: **NO-GO**.
 
+## CI/CD Gate
+
+The previous generic workflow has been replaced in source by:
+
+- `.github/workflows/deploy-staging.yml`
+- `.github/workflows/deploy-production.yml`
+
+Production deployment is now release-only in source, but repository admins must still configure the GitHub `production` environment with required reviewers before approval gating is actually enforced.
+
 ## Required Before Production
 
 | Item | Status | Notes |
 |---|---|---|
 | Confirm real staging URL | Not complete | `rim.bakudanramen.com` does not resolve publicly. |
 | Confirm staging-only deploy target | Not complete | Existing workflow named for staging exposed files on `www.bakudanramen.com`. |
+| Configure `STAGING_*` secrets | Not complete | Required for the new staging workflow. |
+| Configure `PRODUCTION_*` secrets | Not complete | Required for the new production workflow. |
+| Configure GitHub `production` environment approval | Not complete | GitHub API showed no environments yet. |
 | Confirm staging HTTPS | Not complete | Forced-host HTTPS check failed certificate trust. |
 | Confirm staging clean routes | Not complete | `/broth-log-b1`, `/broth-log-b2`, `/broth-log-b3` were not reachable on staging. |
 | Confirm clean-route refresh avoids 404 | Not complete | Must be verified on real staging domain. |
@@ -23,7 +35,7 @@ Current release decision: **NO-GO**.
 
 1. Fix DNS so `rim.bakudanramen.com` resolves publicly.
 2. Install/verify a trusted TLS certificate for `https://rim.bakudanramen.com`.
-3. Confirm the GitHub Actions `TARGET_DIR` secret points to the staging document root, not production.
+3. Confirm the GitHub Actions `STAGING_TARGET_DIR` secret points to the staging document root, not production.
 4. Deploy the dashboard to staging again.
 5. Verify these staging routes in a browser:
    - `/broth-log-b1`

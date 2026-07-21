@@ -19,18 +19,13 @@ The workflow runs only when:
 
 Ordinary branch pushes do not deploy.
 
-## Broth Log Route Gate
+## Broth Log Route
 
-The Broth Log production routes are intentionally blocked in `.htaccess` until release approval:
+The Broth Log dashboard has one manager-facing address:
 
-- `/broth-log-b1`
-- `/broth-log-b1.html`
-- `/broth-log-b2`
-- `/broth-log-b2.html`
-- `/broth-log-b3`
-- `/broth-log-b3.html`
+- `/broth-log`
 
-The block is isolated to `^broth-log-b[123](\.html)?/?$`. Removing it later and uncommenting the prepared Broth Log rewrite rules will not affect unrelated site routes such as `/about`, `/menu`, `/blog`, `/go/...`, or existing missing-page redirects.
+Managers choose B1, B2, or B3 from the store selector at the top of the dashboard. Legacy routes `/broth-log-b1`, `/broth-log-b2`, `/broth-log-b3`, and `/broth-log.html` redirect to `/broth-log` so there is only one visible address to remember.
 
 ## Required GitHub Configuration
 
@@ -52,14 +47,12 @@ Do not use generic deployment secrets for production deployment.
 
 After deployment, verify these public routes:
 
-- `https://www.bakudanramen.com/broth-log-b1`
-- `https://www.bakudanramen.com/broth-log-b2`
-- `https://www.bakudanramen.com/broth-log-b3`
+- `https://www.bakudanramen.com/broth-log`
 
 Required checks:
 
-- Remove the temporary Broth Log route block only after release approval.
 - Clean route refresh returns 200.
+- Store selector switches B1, B2, and B3 without needing separate links.
 - Google Sheets data loads.
 - Expected row counts are B1=6, B2=2, B3=15.
 - No browser console errors.

@@ -142,6 +142,36 @@ button {
     line-height: .88;
 }
 
+.bd-title-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+}
+
+.bd-store-select {
+    display: grid;
+    gap: 4px;
+    min-width: min(280px, 100%);
+    margin-bottom: 4px;
+}
+
+.bd-store-select span {
+    color: var(--muted);
+    font-size: .76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.bd-store-select select {
+    height: 42px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--text);
+    padding: 8px 10px;
+}
+
 .bd-title p {
     margin: 6px 0 0;
     color: var(--muted);

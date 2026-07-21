@@ -210,7 +210,7 @@
     };
 
     const state = {
-        activeBranch: 'B1',
+        activeBranch: getInitialBranch(),
         activeView: 'home',
         records: [],
         recordsByBranch: {},
@@ -237,13 +237,24 @@
         refreshSeconds: getStoredRefreshSeconds(),
         theme: localStorage.getItem('brothTheme') || 'dark',
         timer: null,
-        syncInFlight: null
+        syncInFlight: null,
+        showStoreSelector: false
     };
 
     const root = document.getElementById('broth-dashboard');
     if (!root) return;
-    state.activeBranch = root.dataset.branch || 'B1';
+    state.showStoreSelector = root.dataset.storeSelector === 'true';
+    state.activeBranch = state.showStoreSelector ? getInitialBranch() : root.dataset.branch || getInitialBranch();
     document.documentElement.dataset.theme = state.theme;
+
+    function getInitialBranch() {
+        const params = new URLSearchParams(window.location.search);
+        const requested = String(params.get('store') || params.get('branch') || '').toUpperCase();
+        const stored = String(localStorage.getItem('brothSelectedStore') || '').toUpperCase();
+        if (SHEETS[requested]) return requested;
+        if (SHEETS[stored]) return stored;
+        return 'B1';
+    }
 
     function getStoredRefreshSeconds() {
         const stored = Number(localStorage.getItem('brothRefreshSeconds') || localStorage.getItem('brothRefreshMinutes') * 60);
@@ -808,6 +819,11 @@
         return `<div class="bd-card bd-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(sub)}</small></div>`;
     }
 
+    function storeSelector() {
+        if (!state.showStoreSelector) return '';
+        return `<label class="bd-store-select"><span>Store</span><select id="storeSelect" aria-label="Select store">${Object.entries(SHEETS).map(([key, cfg]) => option(key, `${key} · ${cfg.name.replace(/^B\d+\s*/, '')}`, state.activeBranch)).join('')}</select></label>`;
+    }
+
     function refreshLabel(seconds) {
         const interval = SYNC_CONFIG.intervals.find(item => item.seconds === seconds);
         return interval ? interval.label : `${seconds}s`;
@@ -1017,7 +1033,10 @@
                 <main class="bd-main">
                     <div class="bd-topbar">
                         <div class="bd-title">
-                            <h1>${esc(SHEETS[state.activeBranch].name)}</h1>
+                            <div class="bd-title-row">
+                                <h1>${esc(SHEETS[state.activeBranch].name)}</h1>
+                                ${storeSelector()}
+                            </div>
                             <p>Centralized food-safety and broth temperature intelligence from Google Sheets.</p>
                         </div>
                         <div class="bd-actions">
@@ -1095,6 +1114,16 @@
             localStorage.removeItem('brothRefreshMinutes');
             scheduleSync();
             render();
+        });
+        const storeSelect = root.querySelector('#storeSelect');
+        if (storeSelect) storeSelect.addEventListener('change', () => {
+            state.activeBranch = storeSelect.value;
+            state.filters.branch = 'current';
+            localStorage.setItem('brothSelectedStore', state.activeBranch);
+            const url = new URL(window.location.href);
+            url.searchParams.set('store', state.activeBranch);
+            window.history.replaceState(null, '', url);
+            syncSheets({ force: true });
         });
         root.querySelectorAll('[data-detail]').forEach(btn => btn.addEventListener('click', () => {
             const row = state.records.find(r => r.id === btn.dataset.detail);

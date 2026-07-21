@@ -2,7 +2,7 @@
 
 Generated: 2026-07-21
 
-Current release decision: **NO-GO until production environment approval and secrets are configured**.
+Current release decision: **GO after production workflow succeeds and `/broth-log` browser verification passes**.
 
 ## CI/CD Gate
 
@@ -21,13 +21,13 @@ Ordinary branch pushes do not deploy.
 
 | Item | Status | Notes |
 |---|---|---|
-| Configure GitHub `production` environment | Not complete | GitHub API previously showed no environments. |
-| Configure required reviewers for `production` | Not complete | Approval must be enforced in repository settings. |
-| Configure `PRODUCTION_*` secrets | Not complete | Required by the production workflow. |
+| Configure GitHub `production` environment | Complete | Production environment exists in GitHub. |
+| Configure required reviewers for `production` | Complete | Repository owner configured production protection. |
+| Configure `PRODUCTION_*` secrets | Complete | Required by the production workflow. |
 | Remove or rotate legacy generic deployment secrets | Not complete | Old generic secrets should not be used by deployment. |
 | Confirm production HTTPS | Required before release | Verify `https://www.bakudanramen.com`. |
-| Confirm production clean routes | Required before release | `/broth-log-b1`, `/broth-log-b2`, `/broth-log-b3`. |
-| Confirm temporary route block remains before release | Complete | `.htaccess` blocks Broth Log clean and `.html` routes until approval. |
+| Confirm production clean route | Required before release | `/broth-log` is the single manager-facing route. |
+| Confirm legacy route redirects | Required before release | `/broth-log-b1`, `/broth-log-b2`, and `/broth-log-b3` redirect to `/broth-log`. |
 | Confirm clean-route refresh avoids 404 | Required before release | Hard-refresh each clean URL after deployment. |
 | Confirm Google Sheets row counts | Required before release | Expected counts: B1=6, B2=2, B3=15. |
 | Confirm no console/network errors | Required before release | Browser verification on the public domain. |
@@ -48,11 +48,12 @@ Ordinary branch pushes do not deploy.
 5. Create a version tag such as `v2026.07.21-broth-log`.
 6. Publish a GitHub Release or push the version tag.
 7. Approve the GitHub `production` environment deployment.
-8. Remove the temporary Broth Log route block in `.htaccess` and enable the prepared Broth Log rewrite rules.
-9. Verify the public routes in a browser:
-   - `https://www.bakudanramen.com/broth-log-b1`
-   - `https://www.bakudanramen.com/broth-log-b2`
-   - `https://www.bakudanramen.com/broth-log-b3`
+8. Verify the public route in a browser:
+   - `https://www.bakudanramen.com/broth-log`
+9. Confirm the top store selector switches:
+   - B1 Bandera
+   - B2 Stone Oak
+   - B3 La Cantera
 10. Hard-refresh each route and confirm no 404.
 11. Confirm live row counts:
    - B1: 6

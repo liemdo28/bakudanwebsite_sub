@@ -73,6 +73,142 @@
         pastaBoilerRight: ['pasta boiler right']
     };
 
+    const TEMPERATURE_SOP = {
+        walkInCoolerProduce: {
+            category: 'Cold Holding',
+            item: 'Walk-in Cooler',
+            operator: '<=',
+            target: 40,
+            correctiveAction: 'Close door, re-temp in 10 min, alert MOD if still high'
+        },
+        walkInFreezer: {
+            category: 'Cold Holding',
+            item: 'Walk-in Freezer',
+            operator: '<=',
+            target: 0,
+            correctiveAction: 'Close door, alert MOD if above 0F'
+        },
+        prepAreaCooler: {
+            category: 'Cold Holding',
+            item: 'Prep Area Cooler',
+            operator: '<=',
+            target: 40,
+            correctiveAction: 'Alert MOD; move product if above 40F'
+        },
+        bowlWarmer: {
+            category: 'Hot Holding',
+            item: 'Bowl Warmers',
+            operator: '>=',
+            target: 100,
+            correctiveAction: 'Adjust warmer and re-temp'
+        },
+        ramenReachInTop: {
+            category: 'Cold Holding',
+            item: 'Ramen Refrigeration Top',
+            operator: '<=',
+            target: 40,
+            correctiveAction: 'Do not serve exposed product if high; cool/replace'
+        },
+        ramenReachInBelow: {
+            category: 'Cold Holding',
+            item: 'Ramen Refrigeration Below',
+            operator: '<=',
+            target: 40,
+            correctiveAction: 'Cover/cool/replace and alert MOD if high'
+        },
+        lineFreezer: {
+            category: 'Cold Holding',
+            item: 'Line Freezer',
+            operator: '<=',
+            target: 0,
+            correctiveAction: 'Alert MOD; verify product condition'
+        },
+        seasonedEggs: {
+            category: 'Hot Holding',
+            item: 'Seasoned Eggs',
+            operator: '>=',
+            target: 100,
+            correctiveAction: 'Must have designated timer; verify 4-hour holding'
+        },
+        slicedPorkHot: {
+            category: 'Hot Holding',
+            item: 'Pork Chashu',
+            operator: '>=',
+            target: 100,
+            correctiveAction: 'Verify SOP; if below hot holding standard, do not serve'
+        },
+        dicedPorkHot: {
+            category: 'Hot Holding',
+            item: 'Pork Chashu',
+            operator: '>=',
+            target: 100,
+            correctiveAction: 'Verify SOP; if below hot holding standard, do not serve'
+        },
+        tapasReachInTop: {
+            category: 'Cold Holding',
+            item: 'Tapas Refrigeration Top',
+            operator: '<=',
+            target: 40,
+            correctiveAction: 'Do not serve exposed product if high; cool/replace'
+        },
+        chickenCold: {
+            category: 'Cold Holding',
+            item: 'Chicken Chashu',
+            operator: '<=',
+            target: 40,
+            correctiveAction: 'If above 40F, cover/cool/replace and alert MOD'
+        },
+        porkCold: {
+            category: 'Cold Holding',
+            item: 'Pork Cold Holding',
+            operator: '<=',
+            target: 40,
+            correctiveAction: 'If above 40F, cover/cool/replace and alert MOD'
+        },
+        tapasReachInBelow: {
+            category: 'Cold Holding',
+            item: 'Tapas Refrigeration Below',
+            operator: '<=',
+            target: 40,
+            correctiveAction: 'Cover/cool/replace and alert MOD if high'
+        },
+        walkInProduceRecheck: {
+            category: 'Cold Holding',
+            item: 'Walk-in Cooler',
+            operator: '<=',
+            target: 40,
+            correctiveAction: 'Close door, re-temp in 10 min, alert MOD if still high'
+        },
+        fryerLeft: {
+            category: 'Cooking Equipment',
+            item: 'Fryer 1',
+            operator: '>=',
+            target: 325,
+            correctiveAction: 'Adjust temperature dial and alert MOD'
+        },
+        fryerRight: {
+            category: 'Cooking Equipment',
+            item: 'Fryer 2',
+            operator: '>=',
+            target: 325,
+            correctiveAction: 'Adjust temperature dial and alert MOD'
+        },
+        pastaBoilerLeft: {
+            category: 'Cooking Equipment',
+            item: 'Pasta Boiler 1',
+            operator: '>=',
+            target: 200,
+            correctiveAction: 'Adjust temp and re-temp in 10 min'
+        },
+        pastaBoilerRight: {
+            category: 'Cooking Equipment',
+            item: 'Pasta Boiler 2',
+            operator: '>=',
+            target: 200,
+            correctiveAction: 'Adjust temp and re-temp in 10 min'
+        }
+    };
+
     const state = {
         activeBranch: 'B1',
         activeView: 'home',
@@ -148,15 +284,35 @@
         return Number.isFinite(n) ? n : null;
     }
 
-    function statusFor(category, temp) {
+    function sopLabel(sop) {
+        return sop ? `${sop.operator} ${sop.target}F` : 'No SOP target';
+    }
+
+    function isSopSafe(sop, temp) {
+        if (!sop || temp === null) return false;
+        if (sop.operator === '<=') return temp <= sop.target;
+        if (sop.operator === '>=') return temp >= sop.target;
+        return true;
+    }
+
+    function varianceFromTarget(sop, temp) {
+        if (!sop || temp === null) return 0;
+        if (sop.operator === '<=') return temp - sop.target;
+        if (sop.operator === '>=') return sop.target - temp;
+        return 0;
+    }
+
+    function statusFor(key, category, temp) {
+        const sop = TEMPERATURE_SOP[key];
         if (temp === null) return ['Missing Reading', 'warn', 'Missing Reading'];
-        if (category === 'cold' && temp > 41) return ['Temperature Too High', temp >= 45 ? 'critical' : 'warn', 'Temperature Too High'];
-        if (category === 'freezer' && temp > 10) return ['Temperature Too High', temp >= 20 ? 'critical' : 'warn', 'Temperature Too High'];
-        if (category === 'hot' && temp < 135) return ['Temperature Too Low', temp < 100 ? 'critical' : 'warn', 'Temperature Too Low'];
-        if (category === 'fryer' && (temp < 325 || temp > 375)) return ['Out of Range', 'warn', temp < 325 ? 'Temperature Too Low' : 'Temperature Too High'];
-        if (category === 'boiler' && (temp < 200 || temp > 214)) return ['Out of Range', 'warn', temp < 200 ? 'Temperature Too Low' : 'Temperature Too High'];
         if (Math.abs(temp) > 500) return ['Sensor Error', 'critical', 'Sensor Error'];
-        return ['Compliant', 'ok', null];
+        if (!sop) return ['Compliant', 'ok', null];
+        if (isSopSafe(sop, temp)) return ['Safe', 'ok', null];
+
+        const variance = varianceFromTarget(sop, temp);
+        const severity = variance >= 5 || category === 'freezer' && variance > 10 ? 'critical' : 'warn';
+        const issueType = sop.operator === '<=' ? 'Temperature Too High' : 'Temperature Too Low';
+        return [`Unsafe: target ${sopLabel(sop)}`, severity, issueType];
     }
 
     function stats(nums) {
@@ -210,8 +366,23 @@
         const branch = text('branch') || sheetBranch;
         const readings = READING_FIELDS.map(([key, label, category]) => {
             const temp = toNumber(valueOf(cell(key)));
-            const [status, severity, issueType] = statusFor(category, temp);
-            return { key, label, category, temperature: temp, status, severity, issueType };
+            const sop = TEMPERATURE_SOP[key] || null;
+            const [status, severity, issueType] = statusFor(key, category, temp);
+            return {
+                key,
+                label,
+                category,
+                temperature: temp,
+                status,
+                severity,
+                issueType,
+                sopCategory: sop ? sop.category : '',
+                sopItem: sop ? sop.item : label,
+                targetOperator: sop ? sop.operator : '',
+                targetTemperature: sop ? sop.target : null,
+                targetLabel: sopLabel(sop),
+                correctiveActionSop: sop ? sop.correctiveAction : ''
+            };
         });
         const issues = readings
             .filter(reading => reading.issueType)
@@ -219,11 +390,13 @@
                 type: reading.issueType,
                 severity: reading.severity,
                 station: reading.label,
+                target: reading.targetLabel,
+                sopItem: reading.sopItem,
                 owner: text('employeeName') || 'Unassigned',
                 status: text('correctiveAction') ? 'Closed' : reading.severity === 'critical' ? 'Escalated' : 'Open',
                 createdAt: submittedDate,
                 closedAt: text('correctiveAction') ? submittedDate : null,
-                resolution: text('correctiveAction'),
+                resolution: text('correctiveAction') || reading.correctiveActionSop,
                 preventiveAction: text('managerComment')
             }));
         if (text('notes')) {
@@ -662,7 +835,7 @@
         return `<div class="bd-list">${issues.map(issue => `
             <div class="bd-list-item">
                 <strong>${esc(issue.type)} · ${esc(issue.station)}</strong>
-                <span>${esc(issue.owner)} · ${esc(issue.status)} · ${esc(issue.severity)}</span>
+                <span>${esc(issue.owner)} · ${esc(issue.status)} · ${esc(issue.severity)}${issue.target ? ` · target ${esc(issue.target)}` : ''}</span>
                 ${issue.resolution ? `<div>${esc(issue.resolution)}</div>` : ''}
             </div>`).join('')}</div>`;
     }
@@ -734,7 +907,8 @@
         const byCategory = READING_FIELDS.map(([key, label]) => {
             const readings = records.flatMap(r => r.readings).filter(r => r.key === key);
             const rate = readings.length ? readings.filter(r => r.severity === 'ok').length / readings.length : 0;
-            return { label, rate, count: readings.length };
+            const sop = TEMPERATURE_SOP[key];
+            return { label: `${label} (${sopLabel(sop)})`, rate, count: readings.length };
         });
         return `<div class="bd-grid bd-two">
             <div class="bd-card bd-section"><h2>Compliance Dashboard</h2>${barRows(byCategory)}</div>
@@ -827,7 +1001,7 @@
                 ${field('Branch', row.branch)}${field('Kitchen/Station', 'All logged stations')}${field('Batch ID', row.responseId || row.id.slice(0, 42))}${field('Broth Name', 'Food safety temperature log')}${field('Supervisor', row.managerComment || 'Not recorded')}${field('Submitted', fmtDate(row.submittedAt))}
             </div>
             <div class="bd-card bd-section" style="margin-top:14px"><h2>Temperature History</h2>
-                <div class="bd-timeline">${row.readings.map(reading => `<div class="bd-time-row"><strong>${esc(reading.label)}</strong><div class="bd-bar-track"><div class="bd-bar-fill" style="width:${Math.max(3, Math.min(100, ((reading.temperature || 0) / max) * 100))}%"></div></div><span class="bd-pill ${reading.severity}">${fmtTemp(reading.temperature)}</span></div>`).join('')}</div>
+                <div class="bd-timeline">${row.readings.map(reading => `<div class="bd-time-row"><strong>${esc(reading.label)}<small>Safe target ${esc(reading.targetLabel)}</small></strong><div class="bd-bar-track"><div class="bd-bar-fill" style="width:${Math.max(3, Math.min(100, ((reading.temperature || 0) / max) * 100))}%"></div></div><span class="bd-pill ${reading.severity}">${fmtTemp(reading.temperature)}</span></div>`).join('')}</div>
             </div>
             <div class="bd-grid bd-two" style="margin-top:14px">
                 <div class="bd-card bd-section"><h2>Issues</h2>${issueList(row.issues)}</div>

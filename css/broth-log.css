@@ -498,6 +498,14 @@ button {
     align-items: center;
 }
 
+.bd-time-row strong small {
+    display: block;
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: .72rem;
+    font-weight: 500;
+}
+
 .bd-empty,
 .bd-error {
     padding: 18px;

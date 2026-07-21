@@ -8,6 +8,14 @@
 | B2 | Food Safety Stone Oak (Responses) | `1qk78Spg8GmyP4RCjQYwU8Nm0bXdoyl240iUDcSkK3MQ` | `Form Responses 1` | Default export returns B2 rows. |
 | B3 | Food Safety | `1odx4Xq94kz50aJBuE2Q-WcZbvXdfeVFOksOeAxn4Kxw` | `Form Responses 1` | Back freezer header is bilingual: `Congelador trasero / Back Freezer`. |
 
+## SOP Threshold Workbook
+
+The dashboard safety/compliance model uses the operations workbook provided on 2026-07-21:
+
+| Purpose | Workbook ID | Tab | Notes |
+|---|---|---|---|
+| Standard safe temperature targets and corrective actions | `1Lf1P1lPXUZrwxR4Pt58_5A-RPGvjqRBS` | `Thresholds_SOP` | Each row defines category, item, operator, target temperature, unit, and corrective action. |
+
 Google's public worksheet-list feed returned a Google "not found/open later" page, but the spreadsheet UI bootstrap and the Google Visualization export both exposed a single visible tab, `Form Responses 1`, for the inspected workbooks.
 
 ## Observed Headers
@@ -104,11 +112,25 @@ Branch-specific differences:
 
 The sheet stores broad food-safety temperatures, not only broth temperatures. The dashboard therefore models each submitted row as one operations log containing multiple station readings.
 
-| Category | Fields | Expected range | Issue examples |
+| SOP item | Dashboard field(s) | Safe target | Corrective action source |
 |---|---|---|---|
-| Cold holding | walk-in cooler, prep cooler, reach-ins, eggs, cold chicken/pork | `<= 41F`; freezer fields `<= 10F` | Temperature Too High, Missing Reading |
-| Hot holding | bowl warmer, seasoned eggs, sliced/diced pork hot | `>= 135F`, except bowl warmer monitored as warm equipment | Temperature Too Low |
-| Cooking equipment | fryers, pasta boilers | fryer `325F-375F`, boiler `200F-214F` | Temperature Too Low/High, Sensor Error |
+| Walk-in Cooler | `walkInCoolerProduce`, `walkInProduceRecheck` | `<= 40F` | `Thresholds_SOP` |
+| Walk-in Freezer | `walkInFreezer`; B3 alias `Congelador trasero / Back Freezer` | `<= 0F` | `Thresholds_SOP` |
+| Prep Area Cooler | `prepAreaCooler` | `<= 40F` | `Thresholds_SOP` |
+| Ramen Refrigeration Top | `ramenReachInTop` | `<= 40F` | `Thresholds_SOP` |
+| Ramen Refrigeration Below | `ramenReachInBelow` | `<= 40F` | `Thresholds_SOP` |
+| Line Freezer | `lineFreezer` | `<= 0F` | `Thresholds_SOP` |
+| Tapas Refrigeration Top | `tapasReachInTop` | `<= 40F` | `Thresholds_SOP` |
+| Tapas Refrigeration Below | `tapasReachInBelow` | `<= 40F` | `Thresholds_SOP` |
+| Bowl Warmers | `bowlWarmer` | `>= 100F` | `Thresholds_SOP` |
+| Pork Chashu | `slicedPorkHot`, `dicedPorkHot` | `>= 100F` | `Thresholds_SOP` |
+| Chicken Chashu | `chickenCold` | `<= 40F` | `Thresholds_SOP` |
+| Pork Cold Holding | `porkCold` | `<= 40F` | Dashboard alias derived from cold-holding SOP because the source log has a Pork Cold field. |
+| Seasoned Eggs | `seasonedEggs` | `>= 100F` | `Thresholds_SOP` |
+| Fryer 1 / Fryer 2 | `fryerLeft`, `fryerRight` | `>= 325F` | `Thresholds_SOP` |
+| Pasta Boiler 1 / Pasta Boiler 2 | `pastaBoilerLeft`, `pastaBoilerRight` | `>= 200F` | `Thresholds_SOP` |
+
+Rows that miss the target are marked unsafe and create an issue. The issue includes the SOP target and the corrective action from `Thresholds_SOP` unless the submitted log already contains a corrective action.
 
 Deduplication key priority:
 

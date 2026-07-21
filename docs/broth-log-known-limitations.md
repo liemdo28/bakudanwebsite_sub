@@ -14,7 +14,7 @@ Generated: 2026-07-21
 | Slack/email alerts | Not working | Notification Center is in-app only. External messages require backend/API credentials. |
 | PDF export file generation | Partially working | Browser print flow works and can be saved as PDF by the user; no generated PDF file is created by the static app. |
 | Excel export fidelity | Partially working | `.xls` export is Excel-compatible HTML, not a native `.xlsx` workbook. |
-| Realtime updates | Partially working | Auto refresh is configurable from 1-5 minutes. It is polling, not push realtime. |
+| Realtime updates | Partially working | Auto refresh is configurable at 30 seconds, 1 minute, 2 minutes, or 5 minutes. It is polling, not push realtime. |
 | Pagination | Partially working | Current journal scrolls and home limits the embedded table; full numbered pagination is not implemented. |
 
 ## Data And Schema Limitations
@@ -26,7 +26,7 @@ Generated: 2026-07-21
 | Empty submitted rows | Partially working | B3 contains rows with branch/date/shift but empty employees/readings. Dashboard keeps them and marks missing readings/issues. |
 | Unit assumptions | Partially working | Sheet values are treated as Fahrenheit based on current San Antonio food-safety data. |
 | Broth-specific naming | Partially working | Current sheets are broad food-safety station logs, not broth-only batch logs. Dashboard labels the module as broth/food-safety operations and maps station readings canonically. |
-| Issue severity rules | Partially working | Rules are deterministic static thresholds. They should be reviewed by QA/operations before production use. |
+| Issue severity rules | Partially working | Rules now use the provided SOP threshold workbook. Severity is still deterministic and should be reviewed by QA/operations as store SOP changes. |
 | Duplicate handling with blank response IDs | Verified working | Falls back to branch/date/time/employee/submitted timestamp. No duplicates were found in current data. |
 
 ## Browser Verification Limitations
@@ -39,7 +39,7 @@ Generated: 2026-07-21
 
 ## Recommended Next Steps Before Broader Rollout
 
-1. Have QA/operations approve the temperature thresholds and severity model.
+1. Keep the SOP threshold workbook and dashboard mapping reviewed together whenever operations changes safe temperature targets.
 2. Add backend auth before enabling employee/role-specific data restrictions.
 3. Add backend scheduled jobs if email/Slack/PDF reports are required.
 4. Add a native `.xlsx` export path if Excel formatting becomes important.

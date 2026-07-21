@@ -315,6 +315,62 @@
         return [`Unsafe: target ${sopLabel(sop)}`, severity, issueType];
     }
 
+    function safetyPosition(reading) {
+        if (reading.temperature === null) return 0;
+        if (!reading.targetTemperature) return 50;
+        const target = reading.targetTemperature;
+        const temp = reading.temperature;
+        const over = Math.max(10, target * 0.3);
+        const under = Math.max(10, target * 0.3);
+        if (reading.targetOperator === '<=') {
+            const min = target - under;
+            const max = target + over;
+            return Math.max(0, Math.min(100, ((temp - min) / (max - min)) * 100));
+        }
+        const min = target - under;
+        const max = target + over;
+        return Math.max(0, Math.min(100, ((temp - min) / (max - min)) * 100));
+    }
+
+    function safetyFill(reading) {
+        if (reading.temperature === null) return 0;
+        if (!reading.targetTemperature) return 50;
+        const variance = Math.max(0, varianceFromTarget({
+            operator: reading.targetOperator,
+            target: reading.targetTemperature
+        }, reading.temperature));
+        if (variance === 0) return 92;
+        const dangerWindow = Math.max(10, reading.targetTemperature * 0.3);
+        return Math.max(8, 92 - Math.min(70, (variance / dangerWindow) * 70));
+    }
+
+    function targetMarker(reading) {
+        if (!reading.targetTemperature) return 50;
+        const target = reading.targetTemperature;
+        const over = Math.max(10, target * 0.3);
+        const under = Math.max(10, target * 0.3);
+        const min = target - under;
+        const max = target + over;
+        return Math.max(0, Math.min(100, ((target - min) / (max - min)) * 100));
+    }
+
+    function safetyClass(reading) {
+        if (reading.severity === 'ok') return 'safe';
+        if (reading.severity === 'critical') return 'critical';
+        return 'warn';
+    }
+
+    function safetyNote(reading) {
+        if (reading.temperature === null) return 'Missing reading';
+        if (reading.severity === 'ok') return 'Safe';
+        const variance = Math.round(Math.max(0, varianceFromTarget({
+            operator: reading.targetOperator,
+            target: reading.targetTemperature
+        }, reading.temperature)));
+        const direction = reading.targetOperator === '<=' ? 'above target' : 'below target';
+        return `${variance}F ${direction}`;
+    }
+
     function stats(nums) {
         const values = nums.filter(n => Number.isFinite(n));
         if (!values.length) return { avg: 0, min: 0, max: 0, std: 0 };
@@ -994,14 +1050,21 @@
     }
 
     function detail(row) {
-        const max = Math.max(...row.readings.map(r => r.temperature || 0), 1);
         return `<div class="bd-drawer-backdrop" data-close></div><div class="bd-drawer-panel">
             <div class="bd-detail-head"><div><h2>${esc(row.branch)} · ${esc(row.businessDate)} ${esc(row.businessTime)}</h2><div class="bd-muted">${esc(row.employeeName)} · ${esc(row.shift)} · ${statusPill(row)}</div></div><button class="bd-icon-btn" data-close>X</button></div>
             <div class="bd-detail-grid">
                 ${field('Branch', row.branch)}${field('Kitchen/Station', 'All logged stations')}${field('Batch ID', row.responseId || row.id.slice(0, 42))}${field('Broth Name', 'Food safety temperature log')}${field('Supervisor', row.managerComment || 'Not recorded')}${field('Submitted', fmtDate(row.submittedAt))}
             </div>
             <div class="bd-card bd-section" style="margin-top:14px"><h2>Temperature History</h2>
-                <div class="bd-timeline">${row.readings.map(reading => `<div class="bd-time-row"><strong>${esc(reading.label)}<small>Safe target ${esc(reading.targetLabel)}</small></strong><div class="bd-bar-track"><div class="bd-bar-fill" style="width:${Math.max(3, Math.min(100, ((reading.temperature || 0) / max) * 100))}%"></div></div><span class="bd-pill ${reading.severity}">${fmtTemp(reading.temperature)}</span></div>`).join('')}</div>
+                <div class="bd-muted">Bars show safety score against each station's own SOP target, not raw Fahrenheit.</div>
+                <div class="bd-timeline">${row.readings.map(reading => `<div class="bd-time-row">
+                    <strong>${esc(reading.label)}<small>Safe target ${esc(reading.targetLabel)} · ${esc(safetyNote(reading))}</small></strong>
+                    <div class="bd-safety-track ${safetyClass(reading)}">
+                        <span class="bd-safety-fill" style="width:${safetyFill(reading)}%"></span>
+                        <span class="bd-target-marker" style="left:${targetMarker(reading)}%" title="SOP target"></span>
+                    </div>
+                    <span class="bd-pill ${reading.severity}">${fmtTemp(reading.temperature)}</span>
+                </div>`).join('')}</div>
             </div>
             <div class="bd-grid bd-two" style="margin-top:14px">
                 <div class="bd-card bd-section"><h2>Issues</h2>${issueList(row.issues)}</div>

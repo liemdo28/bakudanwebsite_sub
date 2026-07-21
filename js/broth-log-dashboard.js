@@ -209,6 +209,33 @@
         }
     };
 
+    const SEVERITY_RULES = {
+        warningMax: 2,
+        highMax: 5
+    };
+
+    const STATION_GROUPS = {
+        walkInCoolerProduce: 'Cold Storage',
+        walkInFreezer: 'Freezers',
+        prepAreaCooler: 'Prep and Service Line',
+        bowlWarmer: 'Hot Holding',
+        ramenReachInTop: 'Prep and Service Line',
+        ramenReachInBelow: 'Prep and Service Line',
+        lineFreezer: 'Freezers',
+        seasonedEggs: 'Hot Holding',
+        slicedPorkHot: 'Cooked Food',
+        dicedPorkHot: 'Cooked Food',
+        tapasReachInTop: 'Prep and Service Line',
+        chickenCold: 'Cooked Food',
+        porkCold: 'Cooked Food',
+        tapasReachInBelow: 'Prep and Service Line',
+        walkInProduceRecheck: 'Cold Storage',
+        fryerLeft: 'Cooking Equipment',
+        fryerRight: 'Cooking Equipment',
+        pastaBoilerLeft: 'Cooking Equipment',
+        pastaBoilerRight: 'Cooking Equipment'
+    };
+
     const state = {
         activeBranch: getInitialBranch(),
         activeView: 'home',
@@ -313,73 +340,93 @@
         return 0;
     }
 
+    function classifySeverity(variance) {
+        if (variance === null) return 'missing';
+        if (variance <= 0) return 'safe';
+        if (variance <= SEVERITY_RULES.warningMax) return 'warning';
+        if (variance <= SEVERITY_RULES.highMax) return 'high';
+        return 'critical';
+    }
+
+    function severityToIssueSeverity(severity) {
+        if (severity === 'critical') return 'critical';
+        if (severity === 'high') return 'high';
+        return severity === 'safe' ? 'ok' : 'warn';
+    }
+
+    function severityLabel(severity) {
+        return ({ safe: 'Safe', warning: 'Warning', high: 'High', critical: 'Critical', missing: 'Missing' }[severity] || 'Missing');
+    }
+
     function statusFor(key, category, temp) {
         const sop = TEMPERATURE_SOP[key];
-        if (temp === null) return ['Missing Reading', 'warn', 'Missing Reading'];
-        if (Math.abs(temp) > 500) return ['Sensor Error', 'critical', 'Sensor Error'];
-        if (!sop) return ['Compliant', 'ok', null];
-        if (isSopSafe(sop, temp)) return ['Safe', 'ok', null];
+        if (temp === null) return ['Missing Reading', 'warn', 'missing', 'Missing Reading'];
+        if (Math.abs(temp) > 500) return ['Invalid Reading', 'critical', 'critical', 'Sensor Error'];
+        if (!sop) return ['Safe', 'ok', 'safe', null];
 
         const variance = varianceFromTarget(sop, temp);
-        const severity = variance >= 5 || category === 'freezer' && variance > 10 ? 'critical' : 'warn';
+        const severityKey = classifySeverity(variance);
+        const issueSeverity = severityToIssueSeverity(severityKey);
+        if (severityKey === 'safe') return ['Safe', issueSeverity, severityKey, null];
+
         const issueType = sop.operator === '<=' ? 'Temperature Too High' : 'Temperature Too Low';
-        return [`Unsafe: target ${sopLabel(sop)}`, severity, issueType];
+        return [`${severityLabel(severityKey)}: target ${sopLabel(sop)}`, issueSeverity, severityKey, issueType];
     }
 
-    function safetyPosition(reading) {
-        if (reading.temperature === null) return 0;
-        if (!reading.targetTemperature) return 50;
-        const target = reading.targetTemperature;
-        const temp = reading.temperature;
-        const over = Math.max(10, target * 0.3);
-        const under = Math.max(10, target * 0.3);
+    function signedDeviation(reading) {
+        if (reading.temperature === null || reading.targetTemperature === null) return null;
+        return reading.temperature - reading.targetTemperature;
+    }
+
+    function deviationText(reading) {
+        const diff = signedDeviation(reading);
+        if (diff === null) return 'Not recorded';
+        const sign = diff > 0 ? '+' : '';
         if (reading.targetOperator === '<=') {
-            const min = target - under;
-            const max = target + over;
-            return Math.max(0, Math.min(100, ((temp - min) / (max - min)) * 100));
+            return `${sign}${fmtNumber(diff)}F ${diff <= 0 ? 'below/equal limit' : 'above limit'}`;
         }
-        const min = target - under;
-        const max = target + over;
-        return Math.max(0, Math.min(100, ((temp - min) / (max - min)) * 100));
+        return `${sign}${fmtNumber(diff)}F ${diff >= 0 ? 'above minimum' : 'below minimum'}`;
     }
 
-    function safetyFill(reading) {
-        if (reading.temperature === null) return 0;
-        if (!reading.targetTemperature) return 50;
-        const variance = Math.max(0, varianceFromTarget({
-            operator: reading.targetOperator,
-            target: reading.targetTemperature
-        }, reading.temperature));
-        if (variance === 0) return 92;
-        const dangerWindow = Math.max(10, reading.targetTemperature * 0.3);
-        return Math.max(8, 92 - Math.min(70, (variance / dangerWindow) * 70));
+    function currentMarker(reading) {
+        const diff = signedDeviation(reading);
+        if (diff === null) return 50;
+        const span = Math.max(8, Math.abs(reading.targetTemperature || 0) * 0.08, 6);
+        return Math.max(4, Math.min(96, 50 + (diff / span) * 38));
     }
 
-    function targetMarker(reading) {
-        if (!reading.targetTemperature) return 50;
-        const target = reading.targetTemperature;
-        const over = Math.max(10, target * 0.3);
-        const under = Math.max(10, target * 0.3);
-        const min = target - under;
-        const max = target + over;
-        return Math.max(0, Math.min(100, ((target - min) / (max - min)) * 100));
+    function trendFor(row, reading) {
+        const currentTime = row.submittedAt ? row.submittedAt.getTime() : null;
+        const previous = state.records
+            .filter(record => record.branch === row.branch && record.id !== row.id && record.submittedAt && (!currentTime || record.submittedAt.getTime() < currentTime))
+            .sort((a, b) => b.submittedAt - a.submittedAt)
+            .map(record => ({
+                record,
+                reading: record.readings.find(item => item.key === reading.key)
+            }))
+            .find(item => item.reading && item.reading.temperature !== null);
+        if (!previous || reading.temperature === null || !row.submittedAt) return 'No prior reading';
+        const change = reading.temperature - previous.reading.temperature;
+        const elapsedMs = row.submittedAt - previous.record.submittedAt;
+        if (Math.abs(change) < 0.5) return `Stable · ${elapsedLabel(elapsedMs)}`;
+        const arrow = change > 0 ? 'Up' : 'Down';
+        const riskDirection = reading.targetOperator === '<='
+            ? change > 0 ? 'risk increasing' : 'risk decreasing'
+            : change < 0 ? 'risk increasing' : 'risk decreasing';
+        return `${arrow} ${change > 0 ? '+' : ''}${fmtNumber(change)}F in ${elapsedLabel(elapsedMs)} · ${riskDirection}`;
     }
 
-    function safetyClass(reading) {
-        if (reading.severity === 'ok') return 'safe';
-        if (reading.severity === 'critical') return 'critical';
-        return 'warn';
+    function elapsedLabel(ms) {
+        if (!Number.isFinite(ms) || ms <= 0) return 'unknown time';
+        const minutes = Math.round(ms / 60000);
+        if (minutes < 60) return `${minutes} min`;
+        const hours = Math.round(minutes / 60);
+        return `${hours} hr`;
     }
 
-    function safetyNote(reading) {
-        if (reading.temperature === null) return 'Missing reading';
-        if (reading.severity === 'ok') return 'Safe';
-        const variance = Math.round(Math.max(0, varianceFromTarget({
-            operator: reading.targetOperator,
-            target: reading.targetTemperature
-        }, reading.temperature)));
-        const direction = reading.targetOperator === '<=' ? 'above target' : 'below target';
-        return `${variance}F ${direction}`;
+    function fmtNumber(n) {
+        if (!Number.isFinite(n)) return '-';
+        return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
     }
 
     function stats(nums) {
@@ -434,14 +481,16 @@
         const readings = READING_FIELDS.map(([key, label, category]) => {
             const temp = toNumber(valueOf(cell(key)));
             const sop = TEMPERATURE_SOP[key] || null;
-            const [status, severity, issueType] = statusFor(key, category, temp);
+            const [status, severity, severityKey, issueType] = statusFor(key, category, temp);
             return {
                 key,
                 label,
                 category,
+                group: STATION_GROUPS[key] || 'Other',
                 temperature: temp,
                 status,
                 severity,
+                severityKey,
                 issueType,
                 sopCategory: sop ? sop.category : '',
                 sopItem: sop ? sop.item : label,
@@ -456,6 +505,7 @@
             .map(reading => ({
                 type: reading.issueType,
                 severity: reading.severity,
+                severityKey: reading.severityKey,
                 station: reading.label,
                 target: reading.targetLabel,
                 sopItem: reading.sopItem,
@@ -734,7 +784,7 @@
     }
 
     function fmtTemp(n) {
-        return Number.isFinite(n) ? `${Math.round(n)}F` : '-';
+        return Number.isFinite(n) ? `${fmtNumber(n)}F` : 'Not recorded';
     }
 
     function fmtDate(d) {
@@ -1069,27 +1119,71 @@
     }
 
     function detail(row) {
+        const summary = temperatureSummary(row.readings);
+        const grouped = groupBy(row.readings, reading => reading.group);
         return `<div class="bd-drawer-backdrop" data-close></div><div class="bd-drawer-panel">
             <div class="bd-detail-head"><div><h2>${esc(row.branch)} · ${esc(row.businessDate)} ${esc(row.businessTime)}</h2><div class="bd-muted">${esc(row.employeeName)} · ${esc(row.shift)} · ${statusPill(row)}</div></div><button class="bd-icon-btn" data-close>X</button></div>
             <div class="bd-detail-grid">
                 ${field('Branch', row.branch)}${field('Kitchen/Station', 'All logged stations')}${field('Batch ID', row.responseId || row.id.slice(0, 42))}${field('Broth Name', 'Food safety temperature log')}${field('Supervisor', row.managerComment || 'Not recorded')}${field('Submitted', fmtDate(row.submittedAt))}
             </div>
             <div class="bd-card bd-section" style="margin-top:14px"><h2>Temperature History</h2>
-                <div class="bd-muted">Bars show safety score against each station's own SOP target, not raw Fahrenheit.</div>
-                <div class="bd-timeline">${row.readings.map(reading => `<div class="bd-time-row">
-                    <strong>${esc(reading.label)}<small>Safe target ${esc(reading.targetLabel)} · ${esc(safetyNote(reading))}</small></strong>
-                    <div class="bd-safety-track ${safetyClass(reading)}">
-                        <span class="bd-safety-fill" style="width:${safetyFill(reading)}%"></span>
-                        <span class="bd-target-marker" style="left:${targetMarker(reading)}%" title="SOP target"></span>
-                    </div>
-                    <span class="bd-pill ${reading.severity}">${fmtTemp(reading.temperature)}</span>
-                </div>`).join('')}</div>
+                <div class="bd-temp-summary" aria-label="Temperature status summary">
+                    ${['safe', 'warning', 'high', 'critical', 'missing'].map(key => `<span class="${key}">${summary[key]} ${severityLabel(key)}</span>`).join('')}
+                </div>
+                ${summary.mostSevere ? `<div class="bd-temp-alert ${summary.mostSevere.severityKey}">Most severe: ${esc(summary.mostSevere.label)} · ${esc(severityLabel(summary.mostSevere.severityKey))} · ${esc(deviationText(summary.mostSevere))}</div>` : ''}
+                <div class="bd-muted">Each row compares the original reading directly against that station's SOP threshold. SOP and Current markers use a per-station deviation scale.</div>
+                <div class="bd-temp-groups">${Object.entries(grouped).map(([group, readings]) => `
+                    <section class="bd-temp-group">
+                        <h3>${esc(group)}</h3>
+                        <div class="bd-temp-list">${readings.map(reading => tempReadingCard(row, reading)).join('')}</div>
+                    </section>`).join('')}
+                </div>
             </div>
             <div class="bd-grid bd-two" style="margin-top:14px">
                 <div class="bd-card bd-section"><h2>Issues</h2>${issueList(row.issues)}</div>
                 <div class="bd-card bd-section"><h2>Notes & Actions</h2><p>${esc(row.notes || 'No notes')}</p><p>${esc(row.correctiveAction || 'No corrective action')}</p><p class="bd-muted">${esc(row.managerComment || 'No manager comment')}</p></div>
             </div>
         </div>`;
+    }
+
+    function temperatureSummary(readings) {
+        const summary = { safe: 0, warning: 0, high: 0, critical: 0, missing: 0, mostSevere: null };
+        const rank = { safe: 0, warning: 1, high: 2, critical: 3, missing: 1 };
+        readings.forEach(reading => {
+            const key = reading.severityKey || 'missing';
+            summary[key] += 1;
+            if (key !== 'safe' && (!summary.mostSevere || rank[key] > rank[summary.mostSevere.severityKey])) summary.mostSevere = reading;
+        });
+        return summary;
+    }
+
+    function tempReadingCard(row, reading) {
+        return `<article class="bd-temp-card ${esc(reading.severityKey)}" aria-label="${esc(reading.label)} ${esc(severityLabel(reading.severityKey))}">
+            <div class="bd-temp-main">
+                <strong>${esc(reading.label)}</strong>
+                <span>${esc(reading.sopItem)} · ${esc(reading.sopCategory || reading.group)}</span>
+            </div>
+            <div class="bd-temp-values">
+                ${tempMetric('Current', fmtTemp(reading.temperature))}
+                ${tempMetric('Target', reading.targetLabel)}
+                ${tempMetric('Deviation', deviationText(reading))}
+                ${tempMetric('Trend', trendFor(row, reading))}
+                ${tempMetric('Recorded', fmtDate(row.submittedAt))}
+                ${tempMetric('By', row.employeeName || 'Unassigned')}
+            </div>
+            <div class="bd-deviation-wrap">
+                <div class="bd-deviation-track" role="img" aria-label="Current reading compared with SOP target">
+                    <span class="bd-limit-band"></span>
+                    <span class="bd-sop-marker" style="left:50%"><b>SOP</b></span>
+                    <span class="bd-current-marker ${esc(reading.severityKey)}" style="left:${currentMarker(reading)}%"><b>Current</b></span>
+                </div>
+            </div>
+            <div class="bd-temp-status"><span class="bd-pill ${esc(reading.severityKey)}">${esc(severityLabel(reading.severityKey))}</span><span>${esc(reading.status)}</span></div>
+        </article>`;
+    }
+
+    function tempMetric(label, value) {
+        return `<div><span>${esc(label)}</span><strong>${esc(value || '-')}</strong></div>`;
     }
 
     function field(label, value) {

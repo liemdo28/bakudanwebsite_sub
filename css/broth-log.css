@@ -389,6 +389,10 @@ button {
 .bd-pill.ok { color: var(--green); }
 .bd-pill.warn { color: var(--amber); }
 .bd-pill.critical { color: var(--danger); }
+.bd-pill.safe { color: var(--green); }
+.bd-pill.warning { color: #f2c94c; }
+.bd-pill.high { color: #f2994a; }
+.bd-pill.missing { color: var(--muted); }
 
 .bd-chart {
     width: 100%;
@@ -418,48 +422,6 @@ button {
 .bd-bar-fill {
     height: 100%;
     background: linear-gradient(90deg, var(--green), var(--gold), var(--red));
-}
-
-.bd-safety-track {
-    position: relative;
-    height: 12px;
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: var(--panel-2);
-}
-
-.bd-safety-track::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(90deg, rgba(255,91,91,.24), rgba(233,166,58,.22), rgba(87,183,122,.28));
-}
-
-.bd-safety-fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    border-radius: inherit;
-    background: var(--green);
-}
-
-.bd-safety-track.warn .bd-safety-fill {
-    background: var(--amber);
-}
-
-.bd-safety-track.critical .bd-safety-fill {
-    background: var(--danger);
-}
-
-.bd-target-marker {
-    position: absolute;
-    top: -2px;
-    bottom: -2px;
-    width: 2px;
-    border-radius: 999px;
-    background: var(--text);
-    opacity: .86;
-    transform: translateX(-1px);
 }
 
 .bd-list {
@@ -563,6 +525,158 @@ button {
     margin-top: 12px;
 }
 
+.bd-temp-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 10px;
+}
+
+.bd-temp-summary span,
+.bd-temp-alert {
+    padding: 5px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel);
+    font-size: .82rem;
+    font-weight: 700;
+}
+
+.bd-temp-summary .safe { color: var(--green); }
+.bd-temp-summary .warning { color: #f2c94c; }
+.bd-temp-summary .high { color: #f2994a; }
+.bd-temp-summary .critical { color: var(--danger); }
+.bd-temp-summary .missing { color: var(--muted); }
+
+.bd-temp-alert {
+    display: inline-flex;
+    margin-bottom: 10px;
+    border-radius: var(--radius);
+}
+
+.bd-temp-alert.warning { color: #f2c94c; }
+.bd-temp-alert.high { color: #f2994a; }
+.bd-temp-alert.critical { color: var(--danger); }
+.bd-temp-alert.missing { color: var(--muted); }
+
+.bd-temp-groups {
+    display: grid;
+    gap: 16px;
+    margin-top: 14px;
+}
+
+.bd-temp-group h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+}
+
+.bd-temp-list {
+    display: grid;
+    gap: 10px;
+}
+
+.bd-temp-card {
+    display: grid;
+    grid-template-columns: minmax(160px, .8fr) minmax(280px, 1.5fr) minmax(220px, 1fr) minmax(120px, .5fr);
+    gap: 12px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--muted);
+    border-radius: var(--radius);
+    background: var(--panel);
+}
+
+.bd-temp-card.safe { border-left-color: var(--green); }
+.bd-temp-card.warning { border-left-color: #f2c94c; }
+.bd-temp-card.high { border-left-color: #f2994a; }
+.bd-temp-card.critical { border-left-color: var(--danger); }
+.bd-temp-card.missing { border-left-color: var(--muted); }
+
+.bd-temp-main strong {
+    display: block;
+}
+
+.bd-temp-main span,
+.bd-temp-values span,
+.bd-temp-status span:last-child {
+    color: var(--muted);
+    font-size: .76rem;
+}
+
+.bd-temp-values {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.bd-temp-values strong {
+    display: block;
+    font-size: .84rem;
+}
+
+.bd-deviation-track {
+    position: relative;
+    height: 34px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel-2);
+}
+
+.bd-limit-band {
+    position: absolute;
+    top: 14px;
+    left: 0;
+    right: 0;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--panel-2);
+}
+
+.bd-sop-marker,
+.bd-current-marker {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    transform: translateX(-1px);
+    background: var(--text);
+}
+
+.bd-sop-marker b,
+.bd-current-marker b {
+    position: absolute;
+    top: -1px;
+    left: 5px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: .62rem;
+    white-space: nowrap;
+}
+
+.bd-current-marker {
+    width: 10px;
+    height: 10px;
+    top: 12px;
+    bottom: auto;
+    border-radius: 50%;
+    border: 2px solid var(--panel);
+    background: var(--green);
+}
+
+.bd-current-marker.warning { background: #f2c94c; }
+.bd-current-marker.high { background: #f2994a; }
+.bd-current-marker.critical { background: var(--danger); }
+.bd-current-marker.missing { background: var(--muted); }
+
+.bd-temp-status {
+    display: grid;
+    gap: 4px;
+    justify-items: start;
+}
+
 .bd-time-row {
     display: grid;
     grid-template-columns: 170px minmax(0, 1fr) 80px;
@@ -605,6 +719,9 @@ button {
     .bd-three {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .bd-temp-card {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 720px) {
@@ -627,6 +744,10 @@ button {
         grid-template-columns: 92px minmax(0, 1fr) 46px;
     }
     .bd-time-row {
+        grid-template-columns: 1fr;
+    }
+    .bd-temp-card,
+    .bd-temp-values {
         grid-template-columns: 1fr;
     }
 }

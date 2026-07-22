@@ -53,9 +53,9 @@ Ordinary branch pushes do not deploy.
 9. Verify the public route in a browser:
    - `https://www.bakudanramen.com/broth-log`
 10. Confirm the top store selector switches:
-   - B1 Bandera
+   - B1 The Rim
    - B2 Stone Oak
-   - B3 La Cantera
+   - B3 Bandera
 11. Hard-refresh each route and confirm no 404.
 12. Confirm live row counts:
    - B1: 6

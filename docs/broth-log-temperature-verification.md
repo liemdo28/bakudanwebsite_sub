@@ -12,9 +12,9 @@ Manager-facing route:
 
 Store selection happens through the top store selector:
 
-- B1 Bandera
+- B1 The Rim
 - B2 Stone Oak
-- B3 La Cantera
+- B3 Bandera
 
 ## Checks Run
 

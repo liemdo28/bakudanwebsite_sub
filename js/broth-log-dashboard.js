@@ -2,9 +2,9 @@
     'use strict';
 
     const SHEETS = {
-        B1: { id: '1-T9WLdHI1MWp0kX7U2SNPOnc7nDBnrrc0njFxBUKnqo', tab: 'Form Responses 1', name: 'B1 Bandera' },
+        B1: { id: '1-T9WLdHI1MWp0kX7U2SNPOnc7nDBnrrc0njFxBUKnqo', tab: 'Form Responses 1', name: 'B1 The Rim' },
         B2: { id: '1qk78Spg8GmyP4RCjQYwU8Nm0bXdoyl240iUDcSkK3MQ', tab: 'Form Responses 1', name: 'B2 Stone Oak' },
-        B3: { id: '1odx4Xq94kz50aJBuE2Q-WcZbvXdfeVFOksOeAxn4Kxw', tab: 'Form Responses 1', name: 'B3 La Cantera' }
+        B3: { id: '1odx4Xq94kz50aJBuE2Q-WcZbvXdfeVFOksOeAxn4Kxw', tab: 'Form Responses 1', name: 'B3 Bandera' }
     };
 
     const PATH_BRANCHES = {

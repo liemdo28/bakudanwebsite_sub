@@ -20,17 +20,17 @@ Architecture:
 
 Path-driven branch detection:
 
-- `/broth-log-b1` selects B1 Bandera.
+- `/broth-log-b1` selects B1 The Rim.
 - `/broth-log-b2` selects B2 Stone Oak.
-- `/broth-log-b3` selects B3 La Cantera.
+- `/broth-log-b3` selects B3 Bandera.
 - `/broth-log` opens the shared selector-based dashboard.
 - Unsupported Broth Log-looking paths show an unsupported-route message instead of silently loading the wrong branch.
 
 Stores verified:
 
-- B1 Bandera
+- B1 The Rim
 - B2 Stone Oak
-- B3 La Cantera
+- B3 Bandera
 
 ## Automated Checks
 

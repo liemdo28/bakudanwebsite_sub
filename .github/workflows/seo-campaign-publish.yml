@@ -34,6 +34,13 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # PRODUCTION_* secrets are scoped to the "production" GitHub Environment
+    # (same as deploy-production.yml) -- without this, secrets.PRODUCTION_*
+    # below would silently resolve to empty strings and every deploy would
+    # fail closed on missing env vars. DREAMHOST_HOST_KEY is a repo-level
+    # secret, which remains accessible either way (repo secrets are always
+    # available; environment scoping only adds environment-specific ones).
+    environment: production
     steps:
       - uses: actions/checkout@v4
         with:

@@ -48,6 +48,17 @@ def main():
     if 'secrets.PRODUCTION_PASSWORD' not in workflow_text:
         errors.append('seo-campaign-publish.yml does not reference secrets.PRODUCTION_PASSWORD -- check credential wiring')
 
+    # PRODUCTION_* secrets are scoped to the "production" GitHub Environment
+    # (see deploy-production.yml, which declares `environment: production`).
+    # A job that references secrets.PRODUCTION_* without also declaring that
+    # environment gets empty strings for all of them -- this bug shipped
+    # once already in this workflow and must never regress.
+    if re.search(r'environment:\s*production', workflow_text) is None:
+        errors.append(
+            'seo-campaign-publish.yml references secrets.PRODUCTION_* but does not declare '
+            '`environment: production` on the job -- those secrets would silently resolve to empty strings'
+        )
+
     if errors:
         print(f'FAIL: {len(errors)} error(s):')
         for e in errors:

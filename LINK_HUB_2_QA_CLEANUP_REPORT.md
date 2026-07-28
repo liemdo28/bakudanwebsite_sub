@@ -21,7 +21,7 @@ Every deletion in this pass followed the same pattern: fetch the item fresh, ass
 | QA Test Campaign | Campaign | Name matched exactly |
 | QA Perm La Cantera Campaign ×2 | Campaign | Name matched exactly (this pass's own permission-test duplicates, created while re-running the test script) |
 | `qa-storemanager-therim@bakudanramen.com` | User | Email + role matched exactly |
-| `qa-manager-la cantera@bakudanramen.com` | User | Email + role matched exactly (this pass's own permission-test account) |
+| `qa-manager-la-cantera@bakudanramen.com` | User | Email + role matched exactly (this pass's own permission-test account) |
 | `qa-manager-stone-oak@bakudanramen.com` | User | Email + role matched exactly (this pass's own permission-test account) |
 | `qa-manager-bandera@bakudanramen.com` | User | Email + role matched exactly (this pass's own permission-test account) |
 | "QA test notice — Tier 3 verification" | Notice | Message matched exactly |

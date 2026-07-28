@@ -2,35 +2,148 @@
   "_comment": "Durable publishing state, managed by scripts/campaign/scheduler.py. automation_enabled is the master kill-switch -- the scheduled GitHub Actions workflow checks this first and does nothing at all while it's false. Do not hand-edit article statuses; use the scheduler's approve/reconcile commands.",
   "automation_enabled": false,
   "articles": {
-    "campaign-2026-08-03-beginners-guide-to-ordering-ramen-at-bakudan": { "status": "approved", "history": [] },
-    "campaign-2026-08-05-bakudans-three-locations-compared": { "status": "approved", "history": [] },
-    "campaign-2026-08-07-bandera-road-sake-happy-hour": { "status": "approved", "history": [] },
-    "campaign-2026-08-09-beginners-guide-to-sake-at-bakudan": { "status": "approved", "history": [] },
-    "campaign-2026-08-11-family-friendly-ramen-night": { "status": "approved", "history": [] },
-    "campaign-2026-08-13-not-in-the-mood-for-ramen": { "status": "approved", "history": [] },
-    "campaign-2026-08-15-how-to-build-your-perfect-bowl": { "status": "approved", "history": [] },
-    "campaign-2026-08-17-bakudan-starters-guide": { "status": "approved", "history": [] },
-    "campaign-2026-08-19-ramen-in-the-san-antonio-heat": { "status": "approved", "history": [] },
-    "campaign-2026-08-21-cold-snap-comfort-bowl": { "status": "approved", "history": [] },
-    "campaign-2026-08-23-non-alcoholic-pairings": { "status": "approved", "history": [] },
-    "campaign-2026-08-25-our-san-antonio-ramen-story": { "status": "approved", "history": [] },
-    "campaign-2026-08-27-stone-oak-lunch-break": { "status": "approved", "history": [] },
-    "campaign-2026-08-29-visiting-san-antonio-la-cantera": { "status": "approved", "history": [] },
-    "campaign-2026-08-31-dessert-after-ramen-mochi": { "status": "approved", "history": [] },
-    "campaign-2026-09-02-which-broth-is-right-for-you": { "status": "approved", "history": [] },
-    "campaign-2026-09-04-group-dining-at-bakudan": { "status": "approved", "history": [] },
-    "campaign-2026-09-06-date-night-palladium-la-cantera": { "status": "approved", "history": [] },
-    "campaign-2026-09-08-ramen-and-karaage": { "status": "approved", "history": [] },
-    "campaign-2026-09-10-takeout-friendly-bowls": { "status": "approved", "history": [] },
-    "campaign-2026-09-12-solo-ramen-night": { "status": "approved", "history": [] },
-    "campaign-2026-09-14-spice-level-101": { "status": "approved", "history": [] },
-    "campaign-2026-09-16-full-bar-guide": { "status": "approved", "history": [] },
-    "campaign-2026-09-18-vegetarian-at-bakudan": { "status": "approved", "history": [] },
-    "campaign-2026-09-20-the-bakudan-difference-broth": { "status": "approved", "history": [] },
-    "campaign-2026-09-22-ramen-topping-glossary": { "status": "approved", "history": [] },
-    "campaign-2026-09-24-weekend-timing-tips": { "status": "approved", "history": [] },
-    "campaign-2026-09-26-hosting-out-of-town-family": { "status": "approved", "history": [] },
-    "campaign-2026-09-28-ordering-for-a-mixed-group": { "status": "approved", "history": [] },
-    "campaign-2026-09-30-a-locals-faq": { "status": "approved", "history": [] }
+    "campaign-2026-08-03-beginners-guide-to-ordering-ramen-at-bakudan": {
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-07-28T15:11:52.463247+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-07-28T15:12:04.163121+00:00",
+          "backup_dir": "D:\\Project\\Master\\Bakudan\\bakudanramen.com-current\\scripts\\_deploy_backups\\20260728-221157-beginners-guide-to-ordering-ramen-at-bakudan"
+        },
+        {
+          "event": "published",
+          "at": "2026-07-28T15:12:06.246594+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
+    },
+    "campaign-2026-08-05-bakudans-three-locations-compared": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-07-bandera-road-sake-happy-hour": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-09-beginners-guide-to-sake-at-bakudan": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-11-family-friendly-ramen-night": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-13-not-in-the-mood-for-ramen": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-15-how-to-build-your-perfect-bowl": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-17-bakudan-starters-guide": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-19-ramen-in-the-san-antonio-heat": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-21-cold-snap-comfort-bowl": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-23-non-alcoholic-pairings": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-25-our-san-antonio-ramen-story": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-27-stone-oak-lunch-break": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-29-visiting-san-antonio-la-cantera": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-08-31-dessert-after-ramen-mochi": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-02-which-broth-is-right-for-you": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-04-group-dining-at-bakudan": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-06-date-night-palladium-la-cantera": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-08-ramen-and-karaage": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-10-takeout-friendly-bowls": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-12-solo-ramen-night": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-14-spice-level-101": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-16-full-bar-guide": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-18-vegetarian-at-bakudan": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-20-the-bakudan-difference-broth": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-22-ramen-topping-glossary": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-24-weekend-timing-tips": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-26-hosting-out-of-town-family": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-28-ordering-for-a-mixed-group": {
+      "status": "approved",
+      "history": []
+    },
+    "campaign-2026-09-30-a-locals-faq": {
+      "status": "approved",
+      "history": []
+    }
   }
 }

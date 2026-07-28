@@ -313,6 +313,8 @@ def reconcile_stale_publishing(state, manifest, now=None):
 
 
 def run(dry_run=False):
+    """Recurring-automation entrypoint (used by the GitHub Actions workflow).
+    Respects the automation_enabled kill-switch -- does nothing while it's false."""
     state = load_state()
     manifest = load_manifest()
 
@@ -336,5 +338,34 @@ def run(dry_run=False):
     print(json.dumps(result, indent=2, default=str))
 
 
+def run_one_manual(seq, dry_run=False):
+    """
+    Controlled, human-authorized single-article publish for the rollout gate
+    (Phase 14). Deliberately bypasses the automation_enabled kill-switch --
+    unlike run(), this is never invoked by the scheduled workflow, only by an
+    operator explicitly running this command for one specific seq. Still
+    fails closed the same way run() does (missing credential, deploy error,
+    live-verification mismatch all behave identically).
+    """
+    state = load_state()
+    manifest = load_manifest()
+    entry = next((a for a in manifest['articles'] if a['seq'] == seq), None)
+    if entry is None:
+        raise ValueError(f'no article with seq {seq}')
+    rec = state['articles'][entry['id']]
+    if rec['status'] not in ('approved', 'scheduled'):
+        raise ValueError(f'seq {seq} has status {rec["status"]!r}, expected approved/scheduled -- refusing to publish')
+
+    print(f'MANUAL CONTROLLED PUBLISH: seq {entry["seq"]} ({entry["slug"]}), dry_run={dry_run}')
+    result = publish_one(entry, state, manifest, dry_run=dry_run)
+    print(json.dumps(result, indent=2, default=str))
+    return result
+
+
 if __name__ == '__main__':
-    run(dry_run='--dry-run' in sys.argv)
+    if '--publish-one' in sys.argv:
+        idx = sys.argv.index('--publish-one')
+        seq_arg = int(sys.argv[idx + 1])
+        run_one_manual(seq_arg, dry_run='--dry-run' in sys.argv)
+    else:
+        run(dry_run='--dry-run' in sys.argv)

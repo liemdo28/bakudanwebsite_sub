@@ -8,6 +8,8 @@ ROOT_RELATIVE_SCRIPTS = [
     'tests/campaign/test_articles.py',
     'tests/campaign/test_images.py',
     'tests/campaign/test_deterministic_render.py',
+    'tests/campaign/test_state_authority.py',
+    'tests/campaign/test_git_ops.py',
     'tests/campaign/test_scheduler.py',
     'tests/campaign/test_no_secrets.py',
 ]

@@ -1,16 +1,23 @@
 name: SEO campaign publish
 
 # Separate from deploy-production.yml on purpose -- this workflow never
-# touches that file or its trigger. It reuses the same PRODUCTION_* secrets
-# (no new secrets needed) but deploys a tightly scoped file set: the one due
-# article, its hero image, blog.html, and sitemap.xml -- never the full
-# DEPLOY_SOURCE allowlist.
+# touches that file or its trigger. It reuses the existing PRODUCTION_*
+# secrets for the SFTP endpoint (no new secrets needed there) but ALSO
+# requires DREAMHOST_HOST_KEY (strict SSH host-key verification -- see
+# scripts/campaign/scheduler.py's connect_ssh(); the workflow fails closed
+# without it, on purpose) and BAKUDAN_REMOTE_WR (the bounded target
+# directory, explicit rather than hardcoded).
+#
+# All git operations (fetch, scoped add, commit, bounded-retry push) happen
+# INSIDE scripts/campaign/scheduler.py via scripts/campaign/git_ops.py --
+# this workflow does not run any git commands itself, and never stages a
+# wildcard path.
 #
 # Safe by default: content/campaign/campaign-state.json ships with
-# automation_enabled: false, and scripts/campaign/scheduler.py checks that
-# flag before doing anything. This workflow can run on its schedule
-# indefinitely without publishing anything until that flag is flipped on
-# (a separate, reviewed commit) after article #1 passes controlled rollout.
+# automation_enabled: false, and scheduler.py checks that flag before doing
+# anything. This workflow can run on its schedule indefinitely without
+# publishing anything until that flag is flipped on (a separate, reviewed
+# commit) after each new article batch passes controlled rollout.
 
 on:
   schedule:
@@ -46,16 +53,20 @@ jobs:
           BAKUDAN_SFTP_PORT: ${{ secrets.PRODUCTION_PORT }}
           BAKUDAN_SFTP_USER: ${{ secrets.PRODUCTION_USERNAME }}
           BAKUDAN_SFTP_PASS: ${{ secrets.PRODUCTION_PASSWORD }}
+          BAKUDAN_REMOTE_WR: ${{ secrets.PRODUCTION_TARGET_DIR }}
+          DREAMHOST_HOST_KEY: ${{ secrets.DREAMHOST_HOST_KEY }}
         run: python scripts/campaign/scheduler.py
 
-      - name: Commit published article, blog index, sitemap, and state
-        run: |
-          git config user.name "seo-campaign-bot"
-          git config user.email "actions@github.com"
-          git add "*.html" sitemap.xml content/campaign/campaign-state.json images/campaign/ 2>/dev/null || true
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(campaign): scheduled publish run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            git push
-          else
-            echo "no changes to commit this run"
-          fi
+      # Durable backup evidence: scheduler.py writes scripts/_deploy_backups/
+      # (gitignored, never committed) with a manifest.json per run containing
+      # remote path + timestamp + sha256 checksum for every file it replaced.
+      # Upload it as a build artifact so it survives after this ephemeral
+      # runner is destroyed, instead of relying on the runner's local disk.
+      - name: Upload deploy backup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: campaign-deploy-backup-${{ github.run_id }}
+          path: scripts/_deploy_backups/
+          retention-days: 90
+          if-no-files-found: ignore

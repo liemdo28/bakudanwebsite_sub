@@ -53,8 +53,9 @@ def main():
     for a in articles:
         if parse_ts(a['publish_at']).strftime('%H:%M') != '14:00':
             errors.append(f'{a["slug"]}: publish_at should be 14:00 UTC (09:00 America/Chicago)')
-        if a['status'] not in ('draft', 'approved', 'scheduled', 'publishing', 'published', 'failed'):
-            errors.append(f'{a["slug"]}: invalid status {a["status"]!r}')
+        if 'status' in a:
+            errors.append(f'{a["slug"]}: manifest entries must not carry a status field -- '
+                           f'campaign-state.json is the sole status authority (see test_state_authority.py)')
 
     if errors:
         print(f'FAIL: {len(errors)} manifest validation error(s):')

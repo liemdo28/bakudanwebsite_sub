@@ -1,5 +1,5 @@
 {
-  "_comment": "30-article SEO campaign schedule. One article every 48h, 09:00 America/Chicago (14:00 UTC, no DST transition in this window). publish_at is scheduler-authoritative (ISO 8601 UTC). status is managed by scripts/campaign/scheduler.py -- do not hand-edit status after seeding.",
+  "_comment": "30-article SEO campaign schedule. publish_at (ISO 8601 UTC) is the ONLY scheduling authority. Article status/publishing lifecycle lives EXCLUSIVELY in content/campaign/campaign-state.json, keyed by id -- this file has no status field and none should ever be added; code must never read a status off a manifest entry (see tests/campaign/test_state_authority.py). The id strings are stable opaque identifiers assigned at manifest design time; their embedded dates are historical/legacy and are NOT re-derived from or kept in sync with publish_at after a schedule shift (see the 2026-07-28 reschedule, where publish_at moved but ids did not, intentionally, per the standing rule against renaming a stable id after publication).",
   "timezone": "America/Chicago",
   "publish_local_time": "09:00",
   "articles": [
@@ -11,8 +11,7 @@
       "title": "Beginner's Guide to Ordering Ramen at Bakudan",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 2,
@@ -22,8 +21,7 @@
       "title": "Bakudan's Three Locations Compared: Which One Fits Tonight",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 3,
@@ -33,8 +31,7 @@
       "title": "Bandera Road Saké Happy Hour: What's Different at Our Original Saké Bar",
       "location_focus": [
         "bandera"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 4,
@@ -45,8 +42,7 @@
       "location_focus": [
         "bandera",
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 5,
@@ -56,8 +52,7 @@
       "title": "Family-Friendly Ramen Night: Kids Ramen & Bringing Little Ones",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 6,
@@ -67,8 +62,7 @@
       "title": "Not in the Mood for Ramen? Bibimbap, Curry Rice & Bulgogi at Bakudan",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 7,
@@ -78,8 +72,7 @@
       "title": "How to Build Your Perfect Bowl: Toppings, Add-Ons & Spice Bombs",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 8,
@@ -89,8 +82,7 @@
       "title": "Bakudan Starters Guide: What to Order Before Your Ramen Arrives",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 9,
@@ -100,8 +92,7 @@
       "title": "Why Ramen Still Makes Sense in the San Antonio Heat",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 10,
@@ -111,8 +102,7 @@
       "title": "Cold Snap Comfort: Building a Warmer Bowl for San Antonio's Cooler Months",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 11,
@@ -122,8 +112,7 @@
       "title": "Non-Alcoholic Pairings at Bakudan: Mocktails, Sodas & DD-Friendly Options",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 12,
@@ -133,8 +122,7 @@
       "title": "Our San Antonio Ramen Story: From La Cantera in 2019 to Three Locations",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 13,
@@ -144,8 +132,7 @@
       "title": "Stone Oak Lunch Break: Fast Ramen Near the Highway 281 Corridor",
       "location_focus": [
         "stone_oak"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 14,
@@ -155,8 +142,7 @@
       "title": "Visiting San Antonio? Finding Bakudan Near Six Flags Fiesta Texas & The Rim",
       "location_focus": [
         "la_cantera"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 15,
@@ -166,8 +152,7 @@
       "title": "Dessert After Ramen: Why Mochi Ice Cream Is the Perfect Finish",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 16,
@@ -177,8 +162,7 @@
       "title": "Which Bakudan Broth Is Right for You Tonight? A Quick Decision Guide",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 17,
@@ -188,8 +172,7 @@
       "title": "Group Dining at Bakudan: What to Know Before You Bring the Whole Crew",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 18,
@@ -199,8 +182,7 @@
       "title": "Date Night Beyond Dinner: Ramen Before or After the Palladium at La Cantera",
       "location_focus": [
         "la_cantera"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 19,
@@ -210,8 +192,7 @@
       "title": "Ramen and Karaage: Why Fried Chicken Belongs on Your Order",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 20,
@@ -221,8 +202,7 @@
       "title": "Takeout-Friendly Bowls: Which Bakudan Ramen Travels Best",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 21,
@@ -232,8 +212,7 @@
       "title": "Solo Ramen Night: Why Eating Alone at Bakudan Is Totally Normal",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 22,
@@ -243,8 +222,7 @@
       "title": "Spice Level 101: How Hot Are Bakudan's Spicy Bowls, Really?",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 23,
@@ -255,8 +233,7 @@
       "location_focus": [
         "stone_oak",
         "la_cantera"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 24,
@@ -266,8 +243,7 @@
       "title": "Vegetarian at Bakudan: What You Can Order Beyond the Vegetarian Ramen",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 25,
@@ -277,8 +253,7 @@
       "title": "The Bakudan Difference: What a 6½-Hour Broth Actually Means",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 26,
@@ -288,8 +263,7 @@
       "title": "A Ramen Topping Glossary for First-Timers (Chashu, Kikurage, Nori & More)",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 27,
@@ -299,8 +273,7 @@
       "title": "Weekend Timing Tips: Why an Early Visit Beats the Rush",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 28,
@@ -310,8 +283,7 @@
       "title": "Hosting Out-of-Town Family in San Antonio? Where Bakudan Fits Your Itinerary",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 29,
@@ -321,8 +293,7 @@
       "title": "Ordering for a Mixed Group: Vegetarian, Spicy, Mild & Kids in One Order",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     },
     {
       "seq": 30,
@@ -332,8 +303,7 @@
       "title": "A Local's FAQ: The Most-Asked Questions About Bakudan Ramen",
       "location_focus": [
         "all"
-      ],
-      "status": "draft"
+      ]
     }
   ]
 }

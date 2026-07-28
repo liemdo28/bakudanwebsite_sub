@@ -1,28 +1,45 @@
 """
-Campaign publishing state machine and pipeline.
+Campaign publishing state machine and pipeline (hardened v2).
 
 States: draft -> approved -> scheduled -> publishing -> published
                                         \\-> failed (retryable)
 
 Flow for each due article:
-  1. select_due()          -- publish_at <= now, status == 'approved'
-  2. render_and_validate()  -- deterministic HTML, checked against required fields
-  3. update_blog_index()    -- insert into blog.html's campaign marker block
-  4. update_sitemap()       -- idempotent <url> insert
-  5. git_commit_atomic()    -- one commit for article + blog.html + sitemap.xml
-  6. deploy_scp()           -- scoped SFTP upload (article, hero image, blog.html, sitemap.xml)
-  7. verify_live()          -- real HTTP checks against the live URL
-  8. mark_published()       -- only after verify_live() passes; else status stays 'publishing'
-                               for reconcile_stale_publishing() to retry safely
+  1. select_due()        -- publish_at <= now, status == 'approved' (state.json
+                             is the ONLY status authority -- see test_state_authority.py)
+  2. render_and_validate() -- deterministic HTML, checked against required fields
+  3. check_already_live()  -- BEFORE any deploy: is the exact artifact already
+                             genuinely live (real identity checks, never HTTP
+                             200 alone)? If yes, this is a stale-git recovery
+                             from a prior run whose SFTP deploy succeeded but
+                             whose git push failed -- reconcile state and
+                             commit, WITHOUT re-deploying or duplicating the
+                             blog/sitemap entry.
+  4. write_local_files()   -- idempotent blog.html/sitemap.xml insertion
+  5. deploy_scp()          -- scoped SFTP upload with durable backup manifest,
+                             strict host-key verification, required env vars
+  6. verify_live()         -- real HTTP identity checks against the live URL
+  7. mark_published()      -- only after verify_live() passes; else status
+                             stays 'publishing' for reconcile_stale_publishing()
+  8. commit_and_push()     -- explicit scoped path list (git_ops.py), fetch +
+                             drift check + bounded retry, never force-push.
+                             A push failure here does NOT roll back a
+                             successful live deploy -- the next run's
+                             check_already_live() reconciles it instead of
+                             blindly redeploying.
 
-Fails closed: any missing credential, SFTP error, or live-verification mismatch
-leaves the article NOT published (never a false-positive "published" status).
+Fails closed at every stage: missing credential, unset/mismatched SSH host
+key, SFTP error, partial upload, or live-verification mismatch all leave the
+article NOT published (never a false-positive "published" status), and never
+force-push or overwrite a human commit.
 """
 import datetime
+import hashlib
 import json
 import os
 import re
 import sys
+import tempfile
 import time
 import xml.sax.saxutils
 
@@ -31,6 +48,7 @@ import paramiko
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, 'scripts', 'campaign'))
 import render_template as rt  # noqa: E402
+import git_ops  # noqa: E402
 
 STATE_PATH = os.path.join(ROOT, 'content', 'campaign', 'campaign-state.json')
 MANIFEST_PATH = os.path.join(ROOT, 'content', 'campaign', 'campaign-manifest.json')
@@ -38,7 +56,6 @@ BLOG_HTML_PATH = os.path.join(ROOT, 'blog.html')
 SITEMAP_PATH = os.path.join(ROOT, 'sitemap.xml')
 
 SITE_URL = 'https://www.bakudanramen.com'
-REMOTE_WR = '/home/hoale24new/bakudanramen.com'
 
 BLOG_MARKER_START = '<!-- SEO-CAMPAIGN-2026-START -->'
 BLOG_MARKER_END = '<!-- SEO-CAMPAIGN-2026-END -->'
@@ -46,15 +63,29 @@ BLOG_MARKER_END = '<!-- SEO-CAMPAIGN-2026-END -->'
 MAX_PUBLISHING_AGE_MINUTES = 30  # beyond this, a 'publishing' article is considered stale
 
 
+# ---------------------------------------------------------------------------
+# State I/O -- atomic writes so a hard kill (workflow cancellation) mid-write
+# can never leave campaign-state.json truncated/corrupted.
+# ---------------------------------------------------------------------------
+
 def load_state():
     with open(STATE_PATH, encoding='utf-8') as f:
         return json.load(f)
 
 
 def save_state(state):
-    with open(STATE_PATH, 'w', encoding='utf-8') as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
-        f.write('\n')
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(STATE_PATH), suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+            f.write('\n')
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, STATE_PATH)  # atomic on POSIX and Windows
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
 
 
 def load_manifest():
@@ -68,6 +99,7 @@ def _log(state, article_id, event, **kw):
 
 
 def published_slugs(state, manifest):
+    # state.json only -- never reads status off a manifest entry (manifest has none).
     id_to_slug = {a['id']: a['slug'] for a in manifest['articles']}
     return {id_to_slug[aid] for aid, rec in state['articles'].items() if rec['status'] == 'published'}
 
@@ -117,7 +149,7 @@ def update_blog_index(article, html_text=None):
         f'                </article>\n'
     )
     if f'href="{article["slug"]}.html"' in text:
-        return text  # idempotent: already linked
+        return text  # idempotent: already linked, never insert a duplicate card
     if BLOG_MARKER_START not in text:
         text = text.replace(
             '<div class="blog-grid">',
@@ -131,7 +163,7 @@ def update_blog_index(article, html_text=None):
 def update_sitemap(canonical_url, xml_text=None):
     text = xml_text if xml_text is not None else open(SITEMAP_PATH, encoding='utf-8').read()
     if f'<loc>{canonical_url}</loc>' in text:
-        return text  # idempotent
+        return text  # idempotent: never insert a duplicate <url> entry
     entry = f'<url>\n<loc>{canonical_url}</loc>\n<changefreq>monthly</changefreq>\n<priority>0.6</priority>\n</url>\n'
     return text.replace('</urlset>', entry + '</urlset>')
 
@@ -157,48 +189,144 @@ def write_local_files(article, html):
     return article_path, BLOG_HTML_PATH, SITEMAP_PATH
 
 
-def deploy_scp(article, local_files):
-    host = os.environ.get('BAKUDAN_SFTP_HOST', 'pdx1-shared-a3-05.dreamhost.com')
-    port = int(os.environ.get('BAKUDAN_SFTP_PORT', '22'))
-    user = os.environ.get('BAKUDAN_SFTP_USER', 'hoale24new')
-    password = os.environ.get('BAKUDAN_SFTP_PASS')
-    if not password:
-        raise RuntimeError('BAKUDAN_SFTP_PASS not set -- failing closed, not deploying')
+# ---------------------------------------------------------------------------
+# SFTP: required env vars (no hardcoded fallback host/user/path), strict
+# host-key verification (no AutoAddPolicy), durable backup manifest.
+# ---------------------------------------------------------------------------
 
+REQUIRED_SFTP_ENV_VARS = (
+    'BAKUDAN_SFTP_HOST', 'BAKUDAN_SFTP_PORT', 'BAKUDAN_SFTP_USER',
+    'BAKUDAN_SFTP_PASS', 'BAKUDAN_REMOTE_WR', 'DREAMHOST_HOST_KEY',
+)
+
+
+def _require_env(name):
+    val = os.environ.get(name)
+    if not val:
+        # never echo which OTHER vars are/aren't set, or any partial value --
+        # just the name of the missing one.
+        raise RuntimeError(f'{name} is required and not set -- failing closed, not deploying')
+    return val
+
+
+def get_sftp_config():
+    return {
+        'host': _require_env('BAKUDAN_SFTP_HOST'),
+        'port': int(_require_env('BAKUDAN_SFTP_PORT')),
+        'user': _require_env('BAKUDAN_SFTP_USER'),
+        'password': _require_env('BAKUDAN_SFTP_PASS'),
+        'remote_wr': _require_env('BAKUDAN_REMOTE_WR'),
+    }
+
+
+def connect_ssh(config):
+    """
+    Strict host-key verification: DREAMHOST_HOST_KEY holds one or more
+    known_hosts-format lines (e.g. from `ssh-keyscan`). RejectPolicy means
+    paramiko raises immediately on any host key it can't match against that
+    pinned set -- no silent trust-on-first-use, no AutoAddPolicy.
+    """
+    host_key_data = _require_env('DREAMHOST_HOST_KEY')
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(host, port=port, username=user, password=password, timeout=30)
+    fd, known_hosts_path = tempfile.mkstemp(suffix='_known_hosts')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(host_key_data.strip() + '\n')
+        ssh.load_host_keys(known_hosts_path)
+    finally:
+        os.unlink(known_hosts_path)
+    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
+    ssh.connect(config['host'], port=config['port'], username=config['user'],
+                password=config['password'], timeout=30)
+    return ssh
+
+
+def _sha256(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def deploy_scp(article, local_files):
+    config = get_sftp_config()
+    remote_wr = config['remote_wr']
+
+    ssh = connect_ssh(config)
     sftp = ssh.open_sftp()
 
     remote_files = [
-        (local_files[0], REMOTE_WR + f'/{article["slug"]}.html'),
-        (local_files[1], REMOTE_WR + '/blog.html'),
-        (local_files[2], REMOTE_WR + '/sitemap.xml'),
-        (os.path.join(ROOT, article['image']), REMOTE_WR + '/' + article['image']),
+        (local_files[0], remote_wr + f'/{article["slug"]}.html'),
+        (local_files[1], remote_wr + '/blog.html'),
+        (local_files[2], remote_wr + '/sitemap.xml'),
+        (os.path.join(ROOT, article['image']), remote_wr + '/' + article['image']),
     ]
+
     backup_dir = os.path.join(ROOT, 'scripts', '_deploy_backups',
                                datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + f'-{article["slug"]}')
     os.makedirs(backup_dir, exist_ok=True)
+
+    backup_manifest = {'article_id': article['id'], 'slug': article['slug'],
+                        'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        'files': []}
+
     for local_path, remote_path in remote_files:
+        backup_local_path = os.path.join(backup_dir, os.path.basename(remote_path))
         try:
-            sftp.get(remote_path, os.path.join(backup_dir, os.path.basename(remote_path)))
+            sftp.get(remote_path, backup_local_path)
+            backup_manifest['files'].append({
+                'remote_path': remote_path,
+                'backed_up_to': backup_local_path,
+                'checksum_sha256': _sha256(backup_local_path),
+                'was_new_file': False,
+            })
         except FileNotFoundError:
-            pass  # new file, nothing to back up
-    for local_path, remote_path in remote_files:
-        remote_dir = remote_path.rsplit('/', 1)[0]
-        try:
-            sftp.stat(remote_dir)
-        except FileNotFoundError:
-            sftp.mkdir(remote_dir)
-        sftp.put(local_path, remote_path)
+            backup_manifest['files'].append({
+                'remote_path': remote_path, 'backed_up_to': None,
+                'checksum_sha256': None, 'was_new_file': True,
+            })
+
+    uploaded = []
+    try:
+        for local_path, remote_path in remote_files:
+            remote_dir = remote_path.rsplit('/', 1)[0]
+            try:
+                sftp.stat(remote_dir)
+            except FileNotFoundError:
+                sftp.mkdir(remote_dir)
+            sftp.put(local_path, remote_path)
+            uploaded.append(remote_path)
+    except Exception as e:
+        backup_manifest['upload_error'] = str(e)
+        backup_manifest['uploaded_before_failure'] = uploaded
+        _write_backup_manifest(backup_dir, backup_manifest)
+        sftp.close()
+        ssh.close()
+        raise
+    finally:
+        pass
 
     sftp.close()
     ssh.close()
-    return backup_dir
+
+    backup_manifest['uploaded'] = uploaded
+    _write_backup_manifest(backup_dir, backup_manifest)
+    return {'backup_dir': backup_dir, 'manifest': backup_manifest}
+
+
+def _write_backup_manifest(backup_dir, manifest):
+    with open(os.path.join(backup_dir, 'manifest.json'), 'w', encoding='utf-8') as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+        f.write('\n')
 
 
 def verify_live(article, retries=3, delay_seconds=5):
-    """Fail-closed live verification. Requires urllib (stdlib, no extra deps)."""
+    """
+    Fail-closed live identity verification -- NEVER treats HTTP 200 alone as
+    proof. A homepage-fallback / soft-404 response would pass http_200 but
+    fail every identity check below, so all_passed would still be False.
+    """
     import urllib.request
     import urllib.error
 
@@ -241,6 +369,30 @@ def verify_live(article, retries=3, delay_seconds=5):
     return checks
 
 
+# ---------------------------------------------------------------------------
+# Git persistence: explicit scoped path list only, fetch + drift check +
+# bounded retry, never force-push. Lives in git_ops.py; this is the glue.
+# ---------------------------------------------------------------------------
+
+def commit_and_push(article, new_image_uploaded, commit_message):
+    paths = [f'{article["slug"]}.html', 'blog.html', 'sitemap.xml', 'content/campaign/campaign-state.json']
+    if new_image_uploaded:
+        paths.append(article['image'])
+
+    git_ops.fetch_origin('main')
+    added = git_ops.scoped_add(paths, expected_slug=article['slug'])
+    if not git_ops.has_staged_changes():
+        return {'committed': False, 'reason': 'no changes to commit', 'considered_paths': paths}
+
+    sha = git_ops.commit(commit_message)
+    push_result = git_ops.push_with_bounded_retry('main')
+    return {'committed': True, 'sha': sha, 'staged_paths': added, 'push': push_result}
+
+
+# ---------------------------------------------------------------------------
+# Publish transaction
+# ---------------------------------------------------------------------------
+
 def publish_one(entry, state, manifest, dry_run=False):
     article_id = entry['id']
     rec = state['articles'][article_id]
@@ -252,34 +404,68 @@ def publish_one(entry, state, manifest, dry_run=False):
         remote_files_would_change = [f'{article["slug"]}.html', 'blog.html', 'sitemap.xml', article['image']]
         return {'dry_run': True, 'article_id': article_id, 'local_files': local_files_would_change, 'remote_files': remote_files_would_change}
 
+    # Reconcile-before-deploy: if a PRIOR run's SFTP deploy already succeeded
+    # but its git commit/push failed (so this article is still 'approved' in
+    # git even though it's genuinely live), do NOT redeploy or duplicate the
+    # blog/sitemap entry -- just catch git up to reality.
+    already_live_checks = verify_live(article, retries=1)
+    if already_live_checks['all_passed']:
+        local_files = write_local_files(article, html)  # idempotent; ensures local checkout matches live
+        rec['status'] = 'published'
+        _log(state, article_id, 'reconciled_from_already_live', checks=already_live_checks,
+             note='artifact was already genuinely live -- skipped SFTP deploy, only reconciled state+git')
+        save_state(state)
+        git_result = commit_and_push(article, new_image_uploaded=False,
+                                      commit_message=f'chore(campaign): reconcile already-live {article["slug"]}')
+        return {'published': True, 'reconciled': True, 'redeployed': False,
+                'checks': already_live_checks, 'git': git_result}
+
     rec['status'] = 'publishing'
     _log(state, article_id, 'publishing_started')
     save_state(state)
 
-    local_files = write_local_files(article, html)
-
     try:
-        backup_dir = deploy_scp(article, local_files)
+        local_files = write_local_files(article, html)
     except Exception as e:
-        _log(state, article_id, 'deploy_failed', error=str(e))
-        rec['status'] = 'approved'  # roll back to approved for retry next run
+        _log(state, article_id, 'local_write_failed', error=str(e))
+        rec['status'] = 'approved'
         save_state(state)
         raise
 
-    _log(state, article_id, 'deployed', backup_dir=backup_dir)
+    try:
+        deploy_result = deploy_scp(article, local_files)
+    except Exception as e:
+        _log(state, article_id, 'deploy_failed', error=str(e))
+        rec['status'] = 'approved'  # nothing (or only a partial upload) is confirmed live -- safe to retry fully
+        save_state(state)
+        raise
+
+    _log(state, article_id, 'deployed', backup_dir=deploy_result['backup_dir'])
     save_state(state)
 
     checks = verify_live(article)
     if not checks['all_passed']:
         _log(state, article_id, 'live_verification_failed', checks=checks)
         save_state(state)
-        # status stays 'publishing' -- reconcile_stale_publishing() will retry/investigate
+        # status stays 'publishing' -- reconcile_stale_publishing() (or the
+        # next run's check_already_live() at the top of this function) will
+        # retry/investigate; never advances to 'published' on a failed check.
         return {'published': False, 'checks': checks}
 
     rec['status'] = 'published'
     _log(state, article_id, 'published', checks=checks)
     save_state(state)
-    return {'published': True, 'checks': checks}
+
+    # Git commit/push happens AFTER the live deploy is confirmed. If this
+    # fails (commit error, push rejected after bounded retries, workflow
+    # cancelled here), the article is genuinely live and state.json correctly
+    # says 'published' locally -- we do NOT roll that back, since it's true.
+    # The failure only means origin/main hasn't caught up yet; the NEXT run's
+    # check_already_live() reconciles that without re-deploying (see above).
+    git_result = commit_and_push(article, new_image_uploaded=True,
+                                  commit_message=f'chore(campaign): publish {article["slug"]}')
+    return {'published': True, 'reconciled': False, 'redeployed': True,
+            'checks': checks, 'git': git_result}
 
 
 def reconcile_stale_publishing(state, manifest, now=None):
@@ -344,8 +530,7 @@ def run_one_manual(seq, dry_run=False):
     (Phase 14). Deliberately bypasses the automation_enabled kill-switch --
     unlike run(), this is never invoked by the scheduled workflow, only by an
     operator explicitly running this command for one specific seq. Still
-    fails closed the same way run() does (missing credential, deploy error,
-    live-verification mismatch all behave identically).
+    fails closed the same way run() does.
     """
     state = load_state()
     manifest = load_manifest()

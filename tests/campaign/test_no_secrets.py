@@ -20,9 +20,12 @@ FORBIDDEN_PATTERNS = [
 CAMPAIGN_PATHS = [
     'content/campaign/**/*.json',
     'scripts/campaign/*.py',
-    'tests/campaign/*.py',
     '.github/workflows/seo-campaign-publish.yml',
 ]
+# tests/campaign/*.py is intentionally NOT scanned here: test files legitimately
+# contain string literals like 'BAKUDAN_SFTP_PASS=' as forbidden-pattern
+# assertions (see test_no_secrets_in_history_log in test_scheduler.py), which
+# would otherwise false-positive against this same check.
 
 
 def main():

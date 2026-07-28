@@ -26,23 +26,25 @@ RewriteRule ^broth-log/?$ /broth-log.html [L]
 # readings) and its JS pulls from Google Sheets by ID -- gate every asset the
 # dashboard needs, not just the HTML page, so an unauthenticated request never
 # reaches the Sheet IDs. Same AuthName on all three so the browser reuses one
-# prompt. Credentials in .htpasswd-broth-log (bcrypt, not committed in plaintext).
+# prompt. Credential file lives at /home/hoale24new/.protected-htpasswd/broth-log,
+# OUTSIDE the bakudanramen.com document root and NOT tracked in git (bcrypt hash
+# only ever existed on the server + a local gitignored handoff file).
 <Files "broth-log.html">
     AuthType Basic
     AuthName "Bakudan Staff - Broth Log"
-    AuthUserFile /home/hoale24new/bakudanramen.com/.htpasswd-broth-log
+    AuthUserFile /home/hoale24new/.protected-htpasswd/broth-log
     Require valid-user
 </Files>
 <Files "broth-log-dashboard.js">
     AuthType Basic
     AuthName "Bakudan Staff - Broth Log"
-    AuthUserFile /home/hoale24new/bakudanramen.com/.htpasswd-broth-log
+    AuthUserFile /home/hoale24new/.protected-htpasswd/broth-log
     Require valid-user
 </Files>
 <Files "broth-log.css">
     AuthType Basic
     AuthName "Bakudan Staff - Broth Log"
-    AuthUserFile /home/hoale24new/bakudanramen.com/.htpasswd-broth-log
+    AuthUserFile /home/hoale24new/.protected-htpasswd/broth-log
     Require valid-user
 </Files>
 

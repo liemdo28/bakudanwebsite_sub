@@ -1,6 +1,6 @@
 {
   "_comment": "Durable publishing state, managed by scripts/campaign/scheduler.py. automation_enabled is the master kill-switch -- the scheduled GitHub Actions workflow checks this first and does nothing at all while it's false. Do not hand-edit article statuses; use the scheduler's approve/reconcile commands.",
-  "automation_enabled": false,
+  "automation_enabled": true,
   "articles": {
     "campaign-2026-08-03-beginners-guide-to-ordering-ramen-at-bakudan": {
       "status": "published",

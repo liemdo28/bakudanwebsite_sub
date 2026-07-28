@@ -1,0 +1,40 @@
+{
+  "seq": 12,
+  "id": "campaign-2026-08-25-our-san-antonio-ramen-story",
+  "slug": "our-san-antonio-ramen-story",
+  "seo_title": "Our San Antonio Ramen Story | Bakudan Ramen, 2018-Present",
+  "h1": "Our San Antonio Ramen Story: From La Cantera in 2019 to Three Locations",
+  "meta_description": "How Bakudan Ramen grew from a 2018 idea into three San Antonio locations — La Cantera, Stone Oak, and Bandera Road.",
+  "primary_keyword": "Bakudan Ramen story",
+  "supporting_keywords": [
+    "Bakudan Ramen history",
+    "San Antonio ramen restaurant story"
+  ],
+  "intent": "informational, brand/trust",
+  "audience": "Locals interested in the brand, potential regulars",
+  "location_focus": [
+    "all"
+  ],
+  "funnel_stage": "awareness",
+  "date_published": "2026-08-19",
+  "date_modified": "2026-08-19",
+  "image": "images/campaign/our-san-antonio-ramen-story-hero.webp",
+  "image_alt": "Bakudan Ramen brand table setting",
+  "cta_url": "about.html",
+  "cta_text": "Read Our Full Story",
+  "evergreen_links": [
+    {
+      "href": "about.html",
+      "text": "Read more about Bakudan"
+    },
+    {
+      "href": "locations.html",
+      "text": "See all three locations"
+    }
+  ],
+  "related_campaign_slugs": [
+    "bakudans-three-locations-compared",
+    "the-bakudan-difference-six-and-a-half-hour-broth"
+  ],
+  "body_html": "                <p>Bakudan Ramen didn't start as three locations — it started as an idea in 2018, with a ramen consultant who developed the recipe and continues to travel to Japan regularly. Here's how that turned into the three San Antonio locations open today.</p>\n\n                <h2>2018: The Groundwork</h2>\n                <p>Before any location opened, the recipe itself came first. A ramen consultant developed what would become Bakudan's broth and menu, a process that started well before the doors opened anywhere.</p>\n\n                <h2>2019: La Cantera Opens First</h2>\n                <p>La Cantera was Bakudan's first location, opening in May 2019 along La Cantera Parkway — near the Palladium IMAX and the Shops at La Cantera. It's still the flagship location today.</p>\n\n                <h2>2022: Stone Oak</h2>\n                <p>The second location opened in October 2022 on U.S. Hwy 281 North in Stone Oak, bringing Bakudan to San Antonio's north side with the same full ramen menu and cocktail program as La Cantera.</p>\n\n                <h2>2023: Bandera Road</h2>\n                <p>Bandera Road opened most recently, in February 2023, and it's set up differently from the other two — instead of a full cocktail list, it runs a dedicated saké bar. It's the newest location, but it's not a smaller version of the others; it just leans into a different drink program.</p>\n\n                <h2>What's Stayed the Same</h2>\n                <p>Across all three openings, one thing hasn't changed: the broth. It's still slow-simmered for 6.5 to 7 hours, built on the recipe that consultant developed back in 2018, and it's the throughline connecting all three locations regardless of when they opened or what's different about their bar programs.</p>"
+}

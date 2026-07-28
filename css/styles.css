@@ -1689,7 +1689,7 @@ button:focus-visible {
     border: 1px solid rgba(222, 184, 100, 0.3);
 }
 
-.location-badge--la cantera-so {
+.location-badge--stone-oak-la-cantera {
     background: rgba(236, 74, 94, 0.1);
     color: var(--color-accent-red);
     border: 1px solid rgba(236, 74, 94, 0.25);

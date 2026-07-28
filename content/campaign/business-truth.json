@@ -1,0 +1,120 @@
+{
+  "_comment": "Verified 2026-07-28 directly against https://www.bakudanramen.com (live site treated as source of truth, not repo files, which have shown drift). Every factual claim in a campaign article must trace to a field here. Never invent facts not present here.",
+  "brand": {
+    "name": "Bakudan Ramen",
+    "domain": "https://www.bakudanramen.com",
+    "cuisine": ["Japanese", "Ramen"],
+    "priceRange": "$$",
+    "social": {
+      "instagram": "https://www.instagram.com/bakudanramen/",
+      "facebook": "https://www.facebook.com/bakudanSA/",
+      "yelp": "https://www.yelp.com/biz/bakudan-ramen-san-antonio"
+    },
+    "story": {
+      "planningBegan": "2018",
+      "consultant": "A ramen consultant develops the recipe and travels to Japan regularly (about.html)",
+      "brothSimmerHours": "6.5 to 7 hours",
+      "timeline": [
+        { "location": "la-cantera", "opened": "May 2019", "note": "First location" },
+        { "location": "stone-oak", "opened": "October 2022" },
+        { "location": "bandera", "opened": "February 2023" }
+      ]
+    }
+  },
+  "hours": {
+    "all_locations": {
+      "mon_thu": "11:00 AM - 8:30 PM",
+      "fri_sat": "11:00 AM - 9:00 PM",
+      "sun": "11:00 AM - 8:00 PM"
+    }
+  },
+  "happy_hour": {
+    "schedule": "Daily, 3:00 PM - 6:00 PM, all locations",
+    "stone_oak_la_cantera": {
+      "type": "full cocktail program",
+      "items": ["$6.50 espresso martinis", "1/2 off cocktails", "$5 shots", "$3 draft beer", "$4 house wine", "food specials"]
+    },
+    "bandera": {
+      "type": "sake-focused (no cocktail menu)",
+      "items": ["$5 sake cocktails", "$20 sake sangria pitchers"]
+    }
+  },
+  "locations": {
+    "bandera": {
+      "name": "Bakudan Ramen - Bandera",
+      "address": "11309 Bandera Rd Ste 111, San Antonio, TX 78254",
+      "phone": "(210) 277-7740",
+      "url": "/locations/bandera.html",
+      "opened": "February 2023",
+      "notes": "Saké bar (no cocktail menu at this location)"
+    },
+    "stone_oak": {
+      "name": "Bakudan Ramen - Stone Oak",
+      "address": "22506 U.S. Hwy 281 N Ste 106, San Antonio, TX 78258",
+      "phone": "(210) 437-0632",
+      "url": "/locations/stone-oak.html",
+      "opened": "October 2022",
+      "notes": "Full cocktail program"
+    },
+    "la_cantera": {
+      "name": "Bakudan Ramen - La Cantera",
+      "address": "17619 La Cantera Pkwy Unit 208, San Antonio, TX 78256",
+      "phone": "(210) 257-8080",
+      "url": "/locations/la-cantera.html",
+      "opened": "May 2019",
+      "notes": "First location; near the Palladium IMAX / Shops at La Cantera / Six Flags Fiesta Texas area. Full cocktail program."
+    }
+  },
+  "ordering": {
+    "platform": "Toast",
+    "url": "/order.html",
+    "note": "Per-location \"Order From X\" buttons on /order.html redirect to Toast for pickup/delivery. Delivery areas, fees, and estimated times are managed by Toast. No verified third-party delivery app integration (DoorDash/UberEats) beyond this -- do not claim one."
+  },
+  "not_verified_do_not_use": [
+    "gift cards (a .htaccess redirect exists but /gift-cards returns a real 404 live -- no gift card program confirmed)",
+    "catering",
+    "reservations policy",
+    "allergen/gluten-free guarantees",
+    "delivery radius",
+    "awards",
+    "chef biography beyond 'a ramen consultant... travels to Japan regularly'"
+  ],
+  "menu": {
+    "ramen": [
+      { "name": "Bakudan Chicken", "description": "Rich Chicken Broth, Shio Base, Chicken Chashu, Spinach, Green Onion, Fried Onion, Thin Noodles", "price": "14.99" },
+      { "name": "Gyoza Chicken", "description": "Rich Chicken Broth, Shio Base, Four Chicken Gyozas, Spinach, Green Onion, Thin Noodles", "price": "14.99" },
+      { "name": "Cilantro Lime Chicken", "description": "Chicken Broth, Shoyu & Shio Base, Chicken Chashu, Kikurage, Cilantro, Lime, Seasoned Egg, Togarashi, Thin Noodles", "price": "15.99" },
+      { "name": "Garlic Tonkotsu", "description": "Rich Pork Broth, Tonkotsu Base, Pork Chashu, Kikurage, Green Onion, Bean Sprouts, Fried Garlic Chips, Fried Onion, Seasoned Egg, Nori, Thick Noodles", "price": "15.99" },
+      { "name": "Spicy Umami Miso", "description": "Rich Pork Broth, Miso Base, Chili Oil, Paste, Diced Pork Chashu, Green Onion, Bok Choy, Bean Sprouts, Egg, Nori, Thick Noodles", "price": "15.99" },
+      { "name": "Spicy Shoyu", "description": "Chicken Broth, Chicken Chashu, Shoyu Base, Bean Sprouts, Green Onion, Corn, Egg, Togarashi, Chili Threads, Enoki Mushrooms, Thick Noodles", "price": "15.99" },
+      { "name": "Vegetarian", "description": "Oat Milk, Garlic Oil, Tofu, Spinach, Cabbage, Garlic Chips, Green Onion, Sesame Seed, Thick Noodles", "price": "15.99" },
+      { "name": "Shrimp Tempura", "description": "Chicken Broth, Shio Base, Shrimp Oil, Three Shrimp Tempura, Cilantro, Bean Sprouts, Seasoned Egg, Thin Noodle", "price": "15.99" },
+      { "name": "Kids Ramen", "description": "Chicken Broth, Chicken Chashu, Corn, Thin Noodles", "price": "8.50" }
+    ],
+    "starters": [
+      { "name": "Spicy Tuna Poke Nachos", "price": "9.50" },
+      { "name": "Tebasaki Wings", "description": "Sweet & Peppery (4 pcs)", "price": "9.50" },
+      { "name": "Honey Sriracha Wings", "description": "Spicy, Sweet & Savory (4 pcs)", "price": "9.50" },
+      { "name": "Edamame", "description": "Lightly salted", "price": "5.50" },
+      { "name": "Bakudan Edamame", "description": "Spicy Garlic", "price": "6.50" },
+      { "name": "Takoyaki", "description": "Six Octopus Balls", "price": "9.50" },
+      { "name": "Shrimp Tempura", "description": "6 pieces", "price": "9.50" },
+      { "name": "Gyoza", "description": "6 pieces", "price": "8.99" },
+      { "name": "Chicken Karaage", "description": "Fried chicken tossed in Japanese Spices (6 pcs)", "price": "9.50" },
+      { "name": "Katsu Bun", "description": "Fried Pork Cutlet, Mayo, Cabbage, Original Sauce", "price": "6.00" }
+    ],
+    "not_ramen": [
+      { "name": "Bibimbap Stone Pot", "description": "Choice of Rice or Noodles, Broccoli, Cauliflower, Bell Peppers, Carrots, Garlic, Green Onion, Egg Yolk, House-Made BBQ Sauce", "price": "10.99" },
+      { "name": "Chicken Katsu Tokyo Curry Rice", "description": "Deep Fried Panko Breaded Chicken, Curry Sauce, served With Steamed Rice and a Side Salad", "price": "14.99" },
+      { "name": "Bulgogi Bowl", "description": "Thinly Sliced Marinated Beef Steak, Steamed Rice, Broccoli, Carrots, Green Onion, Sesame Seeds", "price": "12.99" },
+      { "name": "Bakudan Salad", "description": "Spring Mix, Red Onion, Carrots, Cucumber, Avocado, Egg, w/ sesame dressing", "price": "10.99" }
+    ],
+    "dessert": [
+      { "name": "Mochi Ice Cream", "description": "Vanilla, Strawberry, or Green Tea (choose two)", "price": "5.50" }
+    ],
+    "notes": [
+      "\"Be Extra\" add-ons, Spice Bombs, cocktails/sake/wine/beer/mocktails exist per live menu.html but full itemized list not re-verified for this manifest -- do not quote exact add-on prices unless re-checked against menu.html live.",
+      "Cocktails/wine only at Stone Oak and La Cantera. Bandera has a dedicated saké bar instead."
+    ]
+  }
+}

@@ -1,0 +1,339 @@
+{
+  "_comment": "30-article SEO campaign schedule. One article every 48h, 09:00 America/Chicago (14:00 UTC, no DST transition in this window). publish_at is scheduler-authoritative (ISO 8601 UTC). status is managed by scripts/campaign/scheduler.py -- do not hand-edit status after seeding.",
+  "timezone": "America/Chicago",
+  "publish_local_time": "09:00",
+  "articles": [
+    {
+      "seq": 1,
+      "id": "campaign-2026-08-03-beginners-guide-to-ordering-ramen-at-bakudan",
+      "slug": "beginners-guide-to-ordering-ramen-at-bakudan",
+      "publish_at": "2026-07-28T14:00:00Z",
+      "title": "Beginner's Guide to Ordering Ramen at Bakudan",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 2,
+      "id": "campaign-2026-08-05-bakudans-three-locations-compared",
+      "slug": "bakudans-three-locations-compared",
+      "publish_at": "2026-07-30T14:00:00Z",
+      "title": "Bakudan's Three Locations Compared: Which One Fits Tonight",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 3,
+      "id": "campaign-2026-08-07-bandera-road-sake-happy-hour",
+      "slug": "bandera-road-sake-happy-hour",
+      "publish_at": "2026-08-01T14:00:00Z",
+      "title": "Bandera Road Saké Happy Hour: What's Different at Our Original Saké Bar",
+      "location_focus": [
+        "bandera"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 4,
+      "id": "campaign-2026-08-09-beginners-guide-to-sake-at-bakudan",
+      "slug": "beginners-guide-to-sake-at-bakudan",
+      "publish_at": "2026-08-03T14:00:00Z",
+      "title": "A Beginner's Guide to Saké at Bakudan",
+      "location_focus": [
+        "bandera",
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 5,
+      "id": "campaign-2026-08-11-family-friendly-ramen-night",
+      "slug": "family-friendly-ramen-night-kids-ramen",
+      "publish_at": "2026-08-05T14:00:00Z",
+      "title": "Family-Friendly Ramen Night: Kids Ramen & Bringing Little Ones",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 6,
+      "id": "campaign-2026-08-13-not-in-the-mood-for-ramen",
+      "slug": "not-in-the-mood-for-ramen-bibimbap-curry-bulgogi",
+      "publish_at": "2026-08-07T14:00:00Z",
+      "title": "Not in the Mood for Ramen? Bibimbap, Curry Rice & Bulgogi at Bakudan",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 7,
+      "id": "campaign-2026-08-15-how-to-build-your-perfect-bowl",
+      "slug": "how-to-build-your-perfect-bowl-toppings-add-ons",
+      "publish_at": "2026-08-09T14:00:00Z",
+      "title": "How to Build Your Perfect Bowl: Toppings, Add-Ons & Spice Bombs",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 8,
+      "id": "campaign-2026-08-17-bakudan-starters-guide",
+      "slug": "bakudan-starters-guide",
+      "publish_at": "2026-08-11T14:00:00Z",
+      "title": "Bakudan Starters Guide: What to Order Before Your Ramen Arrives",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 9,
+      "id": "campaign-2026-08-19-ramen-in-the-san-antonio-heat",
+      "slug": "why-ramen-still-makes-sense-in-the-san-antonio-heat",
+      "publish_at": "2026-08-13T14:00:00Z",
+      "title": "Why Ramen Still Makes Sense in the San Antonio Heat",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 10,
+      "id": "campaign-2026-08-21-cold-snap-comfort-bowl",
+      "slug": "cold-snap-comfort-building-a-warmer-bowl",
+      "publish_at": "2026-08-15T14:00:00Z",
+      "title": "Cold Snap Comfort: Building a Warmer Bowl for San Antonio's Cooler Months",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 11,
+      "id": "campaign-2026-08-23-non-alcoholic-pairings",
+      "slug": "non-alcoholic-pairings-at-bakudan",
+      "publish_at": "2026-08-17T14:00:00Z",
+      "title": "Non-Alcoholic Pairings at Bakudan: Mocktails, Sodas & DD-Friendly Options",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 12,
+      "id": "campaign-2026-08-25-our-san-antonio-ramen-story",
+      "slug": "our-san-antonio-ramen-story",
+      "publish_at": "2026-08-19T14:00:00Z",
+      "title": "Our San Antonio Ramen Story: From La Cantera in 2019 to Three Locations",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 13,
+      "id": "campaign-2026-08-27-stone-oak-lunch-break",
+      "slug": "stone-oak-lunch-break",
+      "publish_at": "2026-08-21T14:00:00Z",
+      "title": "Stone Oak Lunch Break: Fast Ramen Near the Highway 281 Corridor",
+      "location_focus": [
+        "stone_oak"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 14,
+      "id": "campaign-2026-08-29-visiting-san-antonio-la-cantera",
+      "slug": "visiting-san-antonio-bakudan-near-six-flags-fiesta-texas",
+      "publish_at": "2026-08-23T14:00:00Z",
+      "title": "Visiting San Antonio? Finding Bakudan Near Six Flags Fiesta Texas & The Rim",
+      "location_focus": [
+        "la_cantera"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 15,
+      "id": "campaign-2026-08-31-dessert-after-ramen-mochi",
+      "slug": "dessert-after-ramen-mochi-ice-cream",
+      "publish_at": "2026-08-25T14:00:00Z",
+      "title": "Dessert After Ramen: Why Mochi Ice Cream Is the Perfect Finish",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 16,
+      "id": "campaign-2026-09-02-which-broth-is-right-for-you",
+      "slug": "which-bakudan-broth-is-right-for-you-tonight",
+      "publish_at": "2026-08-27T14:00:00Z",
+      "title": "Which Bakudan Broth Is Right for You Tonight? A Quick Decision Guide",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 17,
+      "id": "campaign-2026-09-04-group-dining-at-bakudan",
+      "slug": "group-dining-at-bakudan",
+      "publish_at": "2026-08-29T14:00:00Z",
+      "title": "Group Dining at Bakudan: What to Know Before You Bring the Whole Crew",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 18,
+      "id": "campaign-2026-09-06-date-night-palladium-la-cantera",
+      "slug": "date-night-beyond-dinner-palladium-la-cantera",
+      "publish_at": "2026-08-31T14:00:00Z",
+      "title": "Date Night Beyond Dinner: Ramen Before or After the Palladium at La Cantera",
+      "location_focus": [
+        "la_cantera"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 19,
+      "id": "campaign-2026-09-08-ramen-and-karaage",
+      "slug": "ramen-and-karaage-fried-chicken",
+      "publish_at": "2026-09-02T14:00:00Z",
+      "title": "Ramen and Karaage: Why Fried Chicken Belongs on Your Order",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 20,
+      "id": "campaign-2026-09-10-takeout-friendly-bowls",
+      "slug": "takeout-friendly-bowls-which-travels-best",
+      "publish_at": "2026-09-04T14:00:00Z",
+      "title": "Takeout-Friendly Bowls: Which Bakudan Ramen Travels Best",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 21,
+      "id": "campaign-2026-09-12-solo-ramen-night",
+      "slug": "solo-ramen-night",
+      "publish_at": "2026-09-06T14:00:00Z",
+      "title": "Solo Ramen Night: Why Eating Alone at Bakudan Is Totally Normal",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 22,
+      "id": "campaign-2026-09-14-spice-level-101",
+      "slug": "spice-level-101-how-hot-are-bakudans-spicy-bowls",
+      "publish_at": "2026-09-08T14:00:00Z",
+      "title": "Spice Level 101: How Hot Are Bakudan's Spicy Bowls, Really?",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 23,
+      "id": "campaign-2026-09-16-full-bar-guide",
+      "slug": "bakudans-full-bar-guide-stone-oak-la-cantera",
+      "publish_at": "2026-09-10T14:00:00Z",
+      "title": "Bakudan's Full Bar Guide: Cocktails, Beer & Wine at Stone Oak and La Cantera",
+      "location_focus": [
+        "stone_oak",
+        "la_cantera"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 24,
+      "id": "campaign-2026-09-18-vegetarian-at-bakudan",
+      "slug": "vegetarian-at-bakudan-beyond-the-vegetarian-ramen",
+      "publish_at": "2026-09-12T14:00:00Z",
+      "title": "Vegetarian at Bakudan: What You Can Order Beyond the Vegetarian Ramen",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 25,
+      "id": "campaign-2026-09-20-the-bakudan-difference-broth",
+      "slug": "the-bakudan-difference-six-and-a-half-hour-broth",
+      "publish_at": "2026-09-14T14:00:00Z",
+      "title": "The Bakudan Difference: What a 6½-Hour Broth Actually Means",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 26,
+      "id": "campaign-2026-09-22-ramen-topping-glossary",
+      "slug": "ramen-topping-glossary-for-first-timers",
+      "publish_at": "2026-09-16T14:00:00Z",
+      "title": "A Ramen Topping Glossary for First-Timers (Chashu, Kikurage, Nori & More)",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 27,
+      "id": "campaign-2026-09-24-weekend-timing-tips",
+      "slug": "weekend-timing-tips-beat-the-rush",
+      "publish_at": "2026-09-18T14:00:00Z",
+      "title": "Weekend Timing Tips: Why an Early Visit Beats the Rush",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 28,
+      "id": "campaign-2026-09-26-hosting-out-of-town-family",
+      "slug": "hosting-out-of-town-family-in-san-antonio",
+      "publish_at": "2026-09-20T14:00:00Z",
+      "title": "Hosting Out-of-Town Family in San Antonio? Where Bakudan Fits Your Itinerary",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 29,
+      "id": "campaign-2026-09-28-ordering-for-a-mixed-group",
+      "slug": "ordering-for-a-mixed-group",
+      "publish_at": "2026-09-22T14:00:00Z",
+      "title": "Ordering for a Mixed Group: Vegetarian, Spicy, Mild & Kids in One Order",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    },
+    {
+      "seq": 30,
+      "id": "campaign-2026-09-30-a-locals-faq",
+      "slug": "a-locals-faq-about-bakudan-ramen",
+      "publish_at": "2026-09-24T14:00:00Z",
+      "title": "A Local's FAQ: The Most-Asked Questions About Bakudan Ramen",
+      "location_focus": [
+        "all"
+      ],
+      "status": "draft"
+    }
+  ]
+}

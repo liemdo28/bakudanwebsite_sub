@@ -45,7 +45,7 @@ The first attempt at scoping `/admin/analytics` used `db()->quote($scope)` to sa
 ## Test accounts and matrix
 
 Created three real Store Manager accounts (removed after testing — see `LINK_HUB_2_QA_CLEANUP_REPORT.md`):
-- `qa-manager-la cantera@bakudanramen.com` → `la-cantera`
+- `qa-manager-la-cantera@bakudanramen.com` → `la-cantera`
 - `qa-manager-stone-oak@bakudanramen.com` → `stone-oak`
 - `qa-manager-bandera@bakudanramen.com` → `bandera`
 

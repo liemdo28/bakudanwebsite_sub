@@ -1,0 +1,61 @@
+name: SEO campaign publish
+
+# Separate from deploy-production.yml on purpose -- this workflow never
+# touches that file or its trigger. It reuses the same PRODUCTION_* secrets
+# (no new secrets needed) but deploys a tightly scoped file set: the one due
+# article, its hero image, blog.html, and sitemap.xml -- never the full
+# DEPLOY_SOURCE allowlist.
+#
+# Safe by default: content/campaign/campaign-state.json ships with
+# automation_enabled: false, and scripts/campaign/scheduler.py checks that
+# flag before doing anything. This workflow can run on its schedule
+# indefinitely without publishing anything until that flag is flipped on
+# (a separate, reviewed commit) after article #1 passes controlled rollout.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: seo-campaign-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install paramiko
+
+      - name: Run scheduler (publishes at most one due, approved article)
+        id: run
+        env:
+          BAKUDAN_SFTP_HOST: ${{ secrets.PRODUCTION_HOST }}
+          BAKUDAN_SFTP_PORT: ${{ secrets.PRODUCTION_PORT }}
+          BAKUDAN_SFTP_USER: ${{ secrets.PRODUCTION_USERNAME }}
+          BAKUDAN_SFTP_PASS: ${{ secrets.PRODUCTION_PASSWORD }}
+        run: python scripts/campaign/scheduler.py
+
+      - name: Commit published article, blog index, sitemap, and state
+        run: |
+          git config user.name "seo-campaign-bot"
+          git config user.email "actions@github.com"
+          git add "*.html" sitemap.xml content/campaign/campaign-state.json images/campaign/ 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(campaign): scheduled publish run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          else
+            echo "no changes to commit this run"
+          fi

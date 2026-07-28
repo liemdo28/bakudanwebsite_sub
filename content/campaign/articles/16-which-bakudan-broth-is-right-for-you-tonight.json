@@ -1,0 +1,36 @@
+{
+  "seq": 16,
+  "id": "campaign-2026-09-02-which-broth-is-right-for-you",
+  "slug": "which-bakudan-broth-is-right-for-you-tonight",
+  "seo_title": "Which Bakudan Broth Is Right for You Tonight? | Decision Guide",
+  "h1": "Which Bakudan Broth Is Right for You Tonight? A Quick Decision Guide",
+  "meta_description": "Not sure which Bakudan Ramen bowl to order? A quick, practical way to pick between our nine ramen bowls based on what you're actually craving.",
+  "primary_keyword": "which ramen to order at Bakudan",
+  "supporting_keywords": [
+    "Bakudan ramen menu guide",
+    "best ramen bowl to order"
+  ],
+  "intent": "commercial, decision-making",
+  "audience": "Anyone deciding what to order that visit",
+  "location_focus": [
+    "all"
+  ],
+  "funnel_stage": "decision",
+  "date_published": "2026-08-27",
+  "date_modified": "2026-08-27",
+  "image": "images/campaign/which-bakudan-broth-is-right-for-you-tonight-hero.webp",
+  "image_alt": "A bowl of Spicy Umami Miso ramen at Bakudan Ramen",
+  "cta_url": "order.html",
+  "cta_text": "Order Your Bowl Now",
+  "evergreen_links": [
+    {
+      "href": "menu.html",
+      "text": "See the full ramen menu"
+    }
+  ],
+  "related_campaign_slugs": [
+    "how-to-build-your-perfect-bowl-toppings-add-ons",
+    "spice-level-101-how-hot-are-bakudans-spicy-bowls"
+  ],
+  "body_html": "                <p>Nine ramen bowls is enough options that deciding can take longer than it needs to. Here's a faster way to narrow it down based on what you actually want tonight, not a full breakdown of every ingredient.</p>\n\n                <h2>If you want something rich and classic:</h2>\n                <p>Garlic Tonkotsu. Pork broth, tonkotsu base, pork chashu, fried garlic chips, seasoned egg, thick noodles. This is the bowl to default to if you just want a proper, hearty ramen and don't have a specific craving pulling you elsewhere.</p>\n\n                <h2>If you want heat:</h2>\n                <p>Spicy Umami Miso or Spicy Shoyu. Spicy Umami Miso leans into a pork miso base with chili oil and paste; Spicy Shoyu builds heat around a chicken shoyu base with chili threads and togarashi. Both are legitimately spicy — if you want to control the heat further, a Spice Bomb ($0.75) works on either.</p>\n\n                <h2>If you want something lighter:</h2>\n                <p>Cilantro Lime Chicken or Bakudan Chicken. Cilantro Lime Chicken is bright and citrus-forward on a shoyu and shio base; Bakudan Chicken is the simplest, mildest bowl on the menu — a shio base with chicken chashu and spinach.</p>\n\n                <h2>If you don't eat meat:</h2>\n                <p>Vegetarian. Oat milk and garlic oil base, tofu, spinach, cabbage, garlic chips — no animal broth in it at all.</p>\n\n                <h2>If you want seafood instead of chicken or pork:</h2>\n                <p>Shrimp Tempura. Chicken broth, shio base, shrimp oil, three shrimp tempura pieces — the only bowl built specifically around shrimp.</p>\n\n                <h2>If you're ordering for a kid:</h2>\n                <p>Kids Ramen. Chicken broth, chicken chashu, corn, thin noodles, $8.50 — sized and priced for a smaller appetite.</p>\n\n                <h2>Still Not Sure?</h2>\n                <p>Garlic Tonkotsu is the closest thing to a default order here — rich, classic, and representative of what Bakudan does well. If you're genuinely torn between two, that's a reasonable tiebreaker.</p>"
+}

@@ -66,11 +66,11 @@ body {
   transition: all .18s; border: none; font-family: inherit;
   position: relative;
 }
-.links-btn.pla canteraary {
+.links-btn.primary {
   background: #EC4A5E;
   box-shadow: 0 4px 16px rgba(236,74,94,.35);
 }
-.links-btn.pla canteraary:hover  { background: #c73a4c; transform: translateY(-1px); }
+.links-btn.primary:hover  { background: #c73a4c; transform: translateY(-1px); }
 .links-btn.secondary      { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); }
 .links-btn.secondary:hover { background: rgba(255,255,255,.1); transform: translateY(-1px); }
 
@@ -79,12 +79,12 @@ body {
   display: flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,.1); font-size: 18px;
 }
-.links-btn.pla canteraary .links-btn-icon { background: rgba(0,0,0,.15); }
+.links-btn.primary .links-btn-icon { background: rgba(0,0,0,.15); }
 .links-btn-icon svg { width: 20px; height: 20px; }
 
 .links-btn-text { flex: 1; text-align: left; }
 .links-btn-title    { font-size: 14px; font-weight: 700; }
-.links-btn.pla canteraary .links-btn-title { font-size: 15px; }
+.links-btn.primary .links-btn-title { font-size: 15px; }
 .links-btn-subtitle { font-size: 11px; opacity: .7; margin-top: 1px; }
 
 .links-btn-featured::after { content: '★'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: #DEB864; font-size: 12px; }
@@ -313,7 +313,7 @@ body {
       href,
       enabled: isEnabled,
       visible: isVisible,
-      isPla canteraary: b.style_variant === 'pla canteraary' || Number(b.is_featured) === 1,
+      isPrimary: b.style_variant === 'primary' || Number(b.is_featured) === 1,
       isFeatured: Number(b.is_featured) === 1 || b.is_featured === true,
       opensInNewTab: b.opens_in_new_tab === undefined ? isExternal : !!b.opens_in_new_tab,
     };
@@ -526,7 +526,7 @@ body {
         }
 
         const button = normalizeButton(b);
-        const isPla canteraary  = button.isPla canteraary;
+        const isPrimary  = button.isPrimary;
         const isFeatured = button.isFeatured;
 
         // In preview mode show all buttons, even hidden/disabled (with indicators)
@@ -548,7 +548,7 @@ body {
 
         return `
         <a href="${escapeAttr(href)}" target="${target}"${rel}
-           class="links-btn ${isPla canteraary?'pla canteraary':'secondary'}${isFeatured?' links-btn-featured':''}${(isHidden||isDisabled)?' disabled-preview':''}"
+           class="links-btn ${isPrimary?'primary':'secondary'}${isFeatured?' links-btn-featured':''}${(isHidden||isDisabled)?' disabled-preview':''}"
            onclick="${href==='#'?'event.preventDefault();showComingSoon()':''}${!isPreviewMode&&href!=='#'?`fetch('/api/public/analytics/click',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page_id:${Number(page.id)},button_id:${Number(button.id)}})}).catch(()=>{})`:''}" >
           <div class="links-btn-icon">${getIcon(b)}</div>
           <div class="links-btn-text" style="flex:1">

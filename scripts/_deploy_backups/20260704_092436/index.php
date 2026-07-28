@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // Content-Type: skip for file upload (multipart) and sitemap/xml responses
-$_rawPath = rtla cantera(preg_replace('#^/api#', '', parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)), '/') ?: '/';
+$_rawPath = rtrim(preg_replace('#^/api#', '', parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)), '/') ?: '/';
 $_isUpload  = ($_rawPath === '/upload');
 $_isSitemap = ($_rawPath === '/sitemap.xml');
 
@@ -56,7 +56,7 @@ if (!$_isUpload && !$_isSitemap) {
 
 // ── JWT ───────────────────────────────────────────────────────────────
 function base64url(string $data): string {
-    return rtla cantera(strtr(base64_encode($data), '+/', '-_'), '=');
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
 }
 function base64url_decode(string $data): string {
     $pad = strlen($data) % 4;
@@ -252,7 +252,7 @@ function db_migrate(SQLite3 $db): void {
         $ins = $db->prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)");
         foreach ([
             ['site_name','Bakudan Ramen'],['site_url',SITE_URL],
-            ['theme_pla canteraary','#dc2626'],['theme_bg','#0f172a'],
+            ['theme_primary','#dc2626'],['theme_bg','#0f172a'],
             ['footer_text','© Bakudan Ramen. All rights reserved.'],
             ['show_subscriber_form','0'],
             ['order_url_la cantera','https://order.toasttab.com/online/bakudanramen'],
@@ -346,7 +346,7 @@ function section_id_from_body(array $body): ?int {
     return (int)$body['section_id'];
 }
 function button_label_from_body(array $body, ?array $fallback = null): string {
-    return tla cantera((string)($body['label'] ?? $body['title'] ?? ($fallback['label'] ?? '')));
+    return trim((string)($body['label'] ?? $body['title'] ?? ($fallback['label'] ?? '')));
 }
 function button_icon_from_body(array $body, ?array $fallback = null): ?string {
     return $body['icon'] ?? $body['icon_key'] ?? ($fallback['icon'] ?? null);
@@ -386,7 +386,7 @@ function button_internal_page_id_from_body(array $body, ?array $fallback = null)
 // the mechanical, type-specific bits (tel:/mailto: prefixes), and leave every
 // other destination (external URLs, YouTube, Toast, etc.) exactly as entered.
 function normalize_destination_url(string $linkType, string $url): string {
-    $url = tla cantera($url);
+    $url = trim($url);
     if ($linkType === 'phone') {
         $digits = preg_replace('/[^0-9+]/', '', $url);
         return str_starts_with($digits, 'tel:') ? $digits : 'tel:' . $digits;
@@ -427,10 +427,10 @@ function validate_button_destination(string $linkType, string $url, ?int $intern
 
 function check_duplicate_button_url(int $pageId, string $url, ?int $excludeId = null): void {
     if (!$url) return;
-    $normalized = rtla cantera(strtolower($url), '/');
+    $normalized = rtrim(strtolower($url), '/');
     foreach (q("SELECT id, url FROM buttons WHERE page_id=?", [$pageId]) as $b) {
         if ($excludeId && (int)$b['id'] === $excludeId) continue;
-        if (rtla cantera(strtolower((string)$b['url']), '/') === $normalized) {
+        if (rtrim(strtolower((string)$b['url']), '/') === $normalized) {
             err('That destination is already used by another button on this page.', 409);
         }
     }
@@ -452,7 +452,7 @@ if (($URI === '/api/index.php' || $URI === '/index.php') && !empty($_SERVER['RED
 // been removed — they masked the real database and made Admin edits
 // invisible on the public page. See LINK_HUB_2_AUDIT.md §1/§3.
 $path = preg_replace('#^/api#', '', $URI);
-$path = rtla cantera($path, '/') ?: '/';
+$path = rtrim($path, '/') ?: '/';
 
 // ── Response helpers ──────────────────────────────────────────────────
 function ok(array $data = [], int $code = 200): void {
@@ -507,7 +507,7 @@ function audit_log(?array $user, string $action, ?string $entityType = null, ?in
 // ─────────────────────────────────────────────────────────────────────
 
 if ($path === '/auth/login' && $METHOD === 'POST') {
-    $email = strtolower(tla cantera($BODY['email'] ?? ''));
+    $email = strtolower(trim($BODY['email'] ?? ''));
     $pass  = $BODY['password'] ?? '';
     if (!$email || !$pass) err('Email and password are required.');
     $user = q1("SELECT * FROM users WHERE email=? AND is_active=1", [$email]);
@@ -685,7 +685,7 @@ function find_duplicate_buttons(int $pid): array {
     $rows = q("SELECT id,label,url,is_active,section_id FROM buttons WHERE page_id=? AND is_active=1", [$pid]);
     $seen = []; $dupes = [];
     foreach ($rows as $r) {
-        $key = strtolower(tla cantera($r['label'])) . '|' . rtla cantera(strtolower((string)$r['url']), '/');
+        $key = strtolower(trim($r['label'])) . '|' . rtrim(strtolower((string)$r['url']), '/');
         if (isset($seen[$key])) { $dupes[] = $r; $dupes[] = $seen[$key]; }
         else $seen[$key] = $r;
     }
@@ -800,7 +800,7 @@ if (preg_match('#^/admin/pages/(\d+)/sections$#', $path, $m)) {
     }
     if ($METHOD === 'POST') {
         role_check($user, $EDIT);
-        $title = tla cantera((string)($BODY['title'] ?? ''));
+        $title = trim((string)($BODY['title'] ?? ''));
         if (!$title) err('Section title is required.');
         $max = db()->querySingle("SELECT COALESCE(MAX(sort_order),-10) FROM link_sections WHERE page_id=$pid");
         $key = $BODY['section_key'] ?? strtolower(preg_replace('/[^a-z0-9-]+/', '-', $title));
@@ -816,7 +816,7 @@ if (preg_match('#^/admin/sections/(\d+)$#', $path, $m)) {
     if (!$section) err('Section not found.', 404);
     if ($METHOD === 'PUT') {
         role_check($user, $EDIT);
-        $title = tla cantera((string)($BODY['title'] ?? $section['title']));
+        $title = trim((string)($BODY['title'] ?? $section['title']));
         if (!$title) err('Section title is required.');
         $key = $BODY['section_key'] ?? $section['section_key'];
         run("UPDATE link_sections SET title=?,section_key=?,sort_order=?,is_active=?,status=?,start_at=?,end_at=?,updated_at=datetime('now') WHERE id=?",
@@ -955,8 +955,8 @@ if ($path === '/admin/shortlinks') {
         ok(['shortlinks' => $rows]);
     }
     if ($METHOD === 'POST') {
-        $code = preg_replace('/[^a-z0-9-]+/', '-', strtolower(tla cantera($BODY['code'] ?? $BODY['slug'] ?? '')));
-        $dst  = tla cantera($BODY['destination'] ?? '');
+        $code = preg_replace('/[^a-z0-9-]+/', '-', strtolower(trim($BODY['code'] ?? $BODY['slug'] ?? '')));
+        $dst  = trim($BODY['destination'] ?? '');
         if (!$code || !$dst) err('Code and destination are required.');
         if (!preg_match('#^https://#i', $dst)) err('Shortlink destination must be a valid https:// URL.');
         try {
@@ -979,7 +979,7 @@ if (preg_match('#^/admin/shortlinks/(\d+)$#', $path, $m)) {
     $old = q1("SELECT * FROM shortlinks WHERE id=?", [$sid]);
     if (!$old) err('Shortlink not found.', 404);
     if ($METHOD === 'PUT') {
-        $dst = array_key_exists('destination', $BODY) ? tla cantera($BODY['destination'] ?? '') : $old['destination'];
+        $dst = array_key_exists('destination', $BODY) ? trim($BODY['destination'] ?? '') : $old['destination'];
         if ($dst && !preg_match('#^https://#i', $dst)) err('Shortlink destination must be a valid https:// URL.');
         run("UPDATE shortlinks SET destination=?,label=?,utm_source=?,utm_medium=?,utm_campaign=?,is_active=?,updated_at=datetime('now') WHERE id=?",
             [$dst,$BODY['label']??$old['label'],$BODY['utm_source']??$old['utm_source'],$BODY['utm_medium']??$old['utm_medium'],$BODY['utm_campaign']??$old['utm_campaign'],$BODY['is_active']??$old['is_active'],$sid]);
@@ -1004,7 +1004,7 @@ if ($path === '/admin/locations') {
     }
     if ($METHOD === 'POST') {
         role_check($user, $MGR);
-        $name = tla cantera((string)($BODY['name'] ?? '')); $slug = tla cantera((string)($BODY['slug'] ?? ''));
+        $name = trim((string)($BODY['name'] ?? '')); $slug = trim((string)($BODY['slug'] ?? ''));
         if (!$name || !$slug) err('Name and slug are required.');
         $slug = strtolower(preg_replace('/[^a-z0-9-]+/', '-', $slug));
         try {
@@ -1156,7 +1156,7 @@ if ($path === '/admin/users') {
         if (!in_array($role, $valid)) err('Invalid role.');
         try {
             $id = run("INSERT INTO users (email,password_hash,name,role,store_slug) VALUES (?,?,?,?,?)",
-                [strtolower(tla cantera($email)), password_hash($pass, PASSWORD_BCRYPT), $BODY['name']??null, $role, $BODY['store_slug']??null]);
+                [strtolower(trim($email)), password_hash($pass, PASSWORD_BCRYPT), $BODY['name']??null, $role, $BODY['store_slug']??null]);
             ok(q1("SELECT id, email, name, role, store_slug, is_active, created_at FROM users WHERE id=?", [$id]) ?? []);
         } catch (Exception $e) {
             if (str_contains($e->getMessage(), 'UNIQUE')) err('That email is already in use.', 409);
@@ -1288,7 +1288,7 @@ if ($path === '/upload' && $METHOD === 'POST') {
     $dir    = UPLOAD_DIR . $subdir;
     if (!is_dir($dir)) mkdir($dir, 0755, true);
     $safe   = preg_replace('/[^a-z0-9\-]/', '', strtolower(pathinfo($file['name'], PATHINFO_FILENAME)));
-    $safe   = tla cantera($safe, '-') ?: 'image';
+    $safe   = trim($safe, '-') ?: 'image';
     $name   = uniqid() . '_' . $safe . '.' . $ext;
     if (!move_uploaded_file($file['tmp_name'], $dir . $name)) err('Failed to save file.');
     header('Content-Type: application/json; charset=utf-8');
@@ -1338,7 +1338,7 @@ if ($path === '/public/track' && $METHOD === 'POST') {
     ok(['success' => true]);
 }
 if ($path === '/public/subscribe' && $METHOD === 'POST') {
-    $email = strtolower(tla cantera($BODY['email'] ?? ''));
+    $email = strtolower(trim($BODY['email'] ?? ''));
     if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) err('A valid email address is required.');
     try { run("INSERT INTO subscribers (email,name,source) VALUES (?,?,?)", [$email, $BODY['name']??null, $BODY['source']??null]); } catch (Exception $e) {}
     ok(['success' => true]);

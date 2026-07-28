@@ -1293,7 +1293,7 @@
             "settings": {
               "site_name": "Bakudan Ramen",
               "site_url": "https://bakudanramen.com",
-              "theme_pla canteraary": "#dc2626",
+              "theme_primary": "#dc2626",
               "theme_bg": "#0f172a",
               "footer_text": "\u00a9 Bakudan Ramen. All rights reserved.",
               "show_subscriber_form": "0",

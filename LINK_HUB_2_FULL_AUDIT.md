@@ -133,7 +133,7 @@ inactive → 404 | staff_only → 403 | password_protected → 401 + lock gate |
 page_noindex() true for unlisted/staff_only/password_protected/allow_indexing=0 ✅
 
 ### Design Preservation
-Black background ✅ | Red pla canteraary cards ✅ | Dark secondary cards ✅ | Logo ✅ | Typography ✅ | Featured star ✅ | Section spacing ✅ | Footer ✅
+Black background ✅ | Red primary cards ✅ | Dark secondary cards ✅ | Logo ✅ | Typography ✅ | Featured star ✅ | Section spacing ✅ | Footer ✅
 
 ### XSS Prevention
 escapeHtml() for all user content ✅ | textContent for safe dynamic content ✅

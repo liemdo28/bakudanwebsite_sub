@@ -203,7 +203,7 @@ Harmless test artifacts from this session's live verification remain in producti
 1. A test button "Call La Cantera" on the real Customer Link Hub page (functions correctly — dials La Cantera — but is test content, not a real menu item).
 2. A draft, unpublished page "Test Template Page" (`/links/test-template-page-qa`, now also assigned a `store_slug` of "la-cantera" as part of the §12 test) and a template "Standard Location Hub Test", created to verify the Template Library end-to-end. Its original "QA scope button test" button and the A/B test variants created against it (§14) are already soft-deleted (Trash) as part of this session's own cleanup — no action needed unless you want to permanently purge Trash.
 3. One test campaign, "QA Test Campaign" — now shows status **Ended** (this is correct and expected: it was deliberately set to an expired date and then used to verify the real Automations feature in §13 — the "Ended" status is proof the automation worked, not an error).
-4. One test user account, `qa-storemanager-thela cantera@bakudanramen.com` (role: Store Manager, assigned to La Cantera), created to verify location-scoping enforcement (§12). Its test password was used only for this session's automated verification and should be considered compromised — **please delete this account** rather than reuse it.
+4. One test user account, `qa-storemanager-therim@bakudanramen.com` (role: Store Manager, assigned to La Cantera), created to verify location-scoping enforcement (§12). Its test password was used only for this session's automated verification and should be considered compromised — **please delete this account** rather than reuse it.
 5. One test notice, "QA test notice — Tier 3 verification" (currently live on the public Customer Link Hub page — harmless but should be removed).
 6. One test form, "QA Test Feedback Form", with one real test submission ("Your Name: QA Tester").
 7. One real uploaded test photo, `AhiTunaSalad.jpg`, registered in the Media Library (the file itself is a real product photo already in your project folder — this did not create any new/fake image, just registered an existing one to test the upload pipeline).
@@ -222,7 +222,7 @@ None of these are harmful to real customers, but items 1, 3, 5, 6, 7, 9 are cosm
 - A real Users management UI (previously just a placeholder stub saying "requires direct database access") — Add/Edit/Deactivate/Delete, with a Location picker that appears when the Store Manager role is selected.
 - A "Location Scope" field added to the Page Settings tab, so any page can be tied to one of the three locations after creation (previously only settable at page-creation time).
 
-**Verification (real, not simulated):** created a genuine test user (`qa-storemanager-thela cantera@bakudanramen.com`, role Store Manager, assigned to La Cantera) through the live Admin UI, logged in via the real `/auth/login` endpoint to get a real JWT, then made real authenticated API calls:
+**Verification (real, not simulated):** created a genuine test user (`qa-storemanager-therim@bakudanramen.com`, role Store Manager, assigned to La Cantera) through the live Admin UI, logged in via the real `/auth/login` endpoint to get a real JWT, then made real authenticated API calls:
 
 | Action | Target | Expected | Actual |
 |---|---|---|---|

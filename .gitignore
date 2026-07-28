@@ -47,3 +47,7 @@ scripts/_backup_*.html
 work/
 test-results/
 playwright-report/
+
+# Generated credentials -- never commit plaintext secrets
+.broth-log-credential-DO-NOT-COMMIT.txt
+*-credential-DO-NOT-COMMIT.txt

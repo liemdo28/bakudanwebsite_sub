@@ -52,7 +52,7 @@ function q1(string $sql, array $params = []): ?array {
 }
 
 function b64url(string $value): string {
-    return rtla cantera(strtr(base64_encode($value), '+/', '-_'), '=');
+    return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
 }
 
 function jwt_encode(array $payload): string {
@@ -65,9 +65,9 @@ function jwt_encode(array $payload): string {
 try {
     $method = $_SERVER['REQUEST_METHOD'];
     $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-    $path = $_GET['route'] ?? (isset($_GET['r']) ? '/' . ltla cantera((string)$_GET['r'], '/') : preg_replace('#^/api#', '', $uri));
+    $path = $_GET['route'] ?? (isset($_GET['r']) ? '/' . ltrim((string)$_GET['r'], '/') : preg_replace('#^/api#', '', $uri));
     $path = preg_replace('#^/index-lite\.php#', '', $path);
-    $path = rtla cantera($path, '/') ?: '/';
+    $path = rtrim($path, '/') ?: '/';
     $body = json_decode(file_get_contents('php://input'), true) ?: [];
 
     if ($path === '/config' && $method === 'GET') {
@@ -80,7 +80,7 @@ try {
     }
 
     if ($path === '/auth/login' && $method === 'POST') {
-        $email = strtolower(tla cantera((string)($body['email'] ?? '')));
+        $email = strtolower(trim((string)($body['email'] ?? '')));
         $password = (string)($body['password'] ?? '');
         if (!$email || !$password) json_error('Email and password are required.', 400);
         $user = q1('SELECT * FROM users WHERE email=? AND is_active=1', [$email]);

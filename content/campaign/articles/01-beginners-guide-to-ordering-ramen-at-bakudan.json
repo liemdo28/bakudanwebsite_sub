@@ -1,0 +1,27 @@
+{
+  "seq": 1,
+  "id": "campaign-2026-08-03-beginners-guide-to-ordering-ramen-at-bakudan",
+  "slug": "beginners-guide-to-ordering-ramen-at-bakudan",
+  "seo_title": "Beginner's Guide to Ordering Ramen at Bakudan | Bakudan Ramen",
+  "h1": "Beginner's Guide to Ordering Ramen at Bakudan",
+  "meta_description": "New to Bakudan Ramen? Here's how to read the menu, pick a broth, and order with confidence at our Bandera, Stone Oak, or La Cantera locations in San Antonio.",
+  "primary_keyword": "how to order ramen at Bakudan",
+  "supporting_keywords": ["Bakudan Ramen menu guide", "ramen ordering San Antonio", "first time ordering ramen"],
+  "intent": "informational, pre-purchase",
+  "audience": "First-time Bakudan customers, ramen newcomers",
+  "location_focus": ["all"],
+  "funnel_stage": "consideration",
+  "date_published": "2026-08-03",
+  "date_modified": "2026-08-03",
+  "image": "images/campaign/beginners-guide-to-ordering-ramen-at-bakudan-hero.webp",
+  "image_alt": "An overhead spread of Bakudan Ramen dishes including a ramen bowl with soft-boiled egg, gyoza, shrimp tempura, and takoyaki",
+  "cta_url": "order.html",
+  "cta_text": "Order Online From Your Nearest Location",
+  "evergreen_links": [
+    { "href": "menu.html", "text": "View the full Bakudan menu" },
+    { "href": "locations.html", "text": "Find your nearest Bakudan location" },
+    { "href": "happy-hour.html", "text": "See our daily happy hour menu" }
+  ],
+  "related_campaign_slugs": ["how-to-build-your-perfect-bowl-toppings-add-ons", "bakudan-starters-guide"],
+  "body_html": "                <p>Walking into a ramen shop for the first time can feel like a lot to take in — broths, noodle thickness, toppings, spice add-ons. At Bakudan Ramen, the menu is built to be approachable once you know the shape of it. Here's how to order with confidence at any of our three San Antonio locations: Bandera, Stone Oak, or La Cantera.</p>\n\n                <h2>Start With the Broth</h2>\n                <p>Every bowl on our Ramen menu is built around a broth base, and that's the first real decision you'll make. If you want something rich and savory, <strong>Garlic Tonkotsu</strong> is our pork broth built on a tonkotsu base with pork chashu, fried garlic chips, and a seasoned egg. If you'd rather start milder, <strong>Bakudan Chicken</strong> uses a shio (salt) base with chicken chashu and spinach — a good entry point if you're not sure how bold you want to go on your first visit. Prefer something tangy and bright instead of rich? <strong>Cilantro Lime Chicken</strong> combines a shoyu and shio base with cilantro, lime, and togarashi for a lighter, fresher profile.</p>\n\n                <h2>If You Want Heat, Say So</h2>\n                <p>Our <strong>Spicy Umami Miso</strong> and <strong>Spicy Shoyu</strong> bowls both bring real heat — Spicy Umami Miso layers chili oil and paste into a pork miso base, while Spicy Shoyu builds heat around a chicken shoyu base with chili threads and togarashi. If you already know you like spice, either is a safe bet. If you're unsure, it's completely normal to start with a milder bowl this visit and go bolder next time.</p>\n\n                <h2>Vegetarian and Kids Options</h2>\n                <p>If you're ordering for someone who doesn't eat meat, our <strong>Vegetarian</strong> ramen uses an oat milk and garlic oil base with tofu, spinach, cabbage, and garlic chips — no animal broth involved. Bringing kids along? The <strong>Kids Ramen</strong> is a simplified chicken broth bowl with chicken chashu, corn, and thin noodles, priced for a smaller appetite.</p>\n\n                <h2>Don't Skip the Starters</h2>\n                <p>Ramen is the main event, but our Starters menu is worth ordering alongside it, not just before it — most tables split a couple while waiting. Gyoza, Chicken Karaage, Takoyaki, and Edamame are all easy to share. If you want to try a few different flavors in one visit, starters are the easiest way to do that without committing a whole bowl to it.</p>\n\n                <h2>How to Actually Order</h2>\n                <p>Every Bakudan location — Bandera, Stone Oak, and La Cantera — takes orders in person for dine-in, or online through Toast for pickup and delivery. If you're ordering online, head to our <a href=\"order.html\">order page</a>, pick your nearest location, and you'll be routed to that location's Toast ordering page. Delivery areas, fees, and estimated times are all managed directly by Toast at checkout.</p>\n\n                <h2>One Order, No Wrong Choice</h2>\n                <p>There's no single \"correct\" way to order at Bakudan. If you like rich and savory, start with Garlic Tonkotsu. If you want something lighter, try Cilantro Lime Chicken or the Vegetarian bowl. If you're bringing the whole table, order a mix of broths and split a couple of starters — that's genuinely how most regulars do it.</p>"
+}

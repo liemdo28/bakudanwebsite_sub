@@ -51,3 +51,8 @@ playwright-report/
 # Generated credentials -- never commit plaintext secrets
 .broth-log-credential-DO-NOT-COMMIT.txt
 *-credential-DO-NOT-COMMIT.txt
+
+# Apache credential files -- live only on the server, outside the docroot,
+# never in git. Local copies here are for reference/redeploy only.
+.htpasswd-broth-log
+.htpasswd*

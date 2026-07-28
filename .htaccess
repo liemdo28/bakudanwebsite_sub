@@ -50,3 +50,12 @@ RewriteRule ^broth-log/?$ /broth-log.html [L]
 RewriteRule ^gift-cards?/?$   /order              [R=301,L]
 RewriteRule ^loyalty/?$       /order              [R=301,L]
 RewriteRule ^drinks/?$        /menu.html          [R=301,L]
+
+# Legacy WordPress-hack spam-injection URLs (?k=...&mod=...&uri=*.php) are stale
+# in Google's index from a prior, now-decommissioned WordPress instance -- no
+# WordPress files exist on this server. The query string alone doesn't change
+# which file gets served, so these were quietly 200-ing to the homepage (a soft
+# 404 signal to search engines). Hard 410 instead, so the index entries drop.
+RewriteCond %{QUERY_STRING} (^|&)mod=[0-9a-f]+(&|$)
+RewriteCond %{QUERY_STRING} (^|&)uri=[a-z0-9_-]+\.php
+RewriteRule ^$ - [G,L]

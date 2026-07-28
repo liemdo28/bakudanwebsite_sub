@@ -22,6 +22,30 @@ RewriteCond %{THE_REQUEST} \s/+broth-log\.html[\s?]
 RewriteRule ^broth-log\.html$ /broth-log [R=301,L]
 RewriteRule ^broth-log/?$ /broth-log.html [L]
 
+# Broth Log contains internal food-safety data (employee names, live compliance
+# readings) and its JS pulls from Google Sheets by ID -- gate every asset the
+# dashboard needs, not just the HTML page, so an unauthenticated request never
+# reaches the Sheet IDs. Same AuthName on all three so the browser reuses one
+# prompt. Credentials in .htpasswd-broth-log (bcrypt, not committed in plaintext).
+<Files "broth-log.html">
+    AuthType Basic
+    AuthName "Bakudan Staff - Broth Log"
+    AuthUserFile /home/hoale24new/bakudanramen.com/.htpasswd-broth-log
+    Require valid-user
+</Files>
+<Files "broth-log-dashboard.js">
+    AuthType Basic
+    AuthName "Bakudan Staff - Broth Log"
+    AuthUserFile /home/hoale24new/bakudanramen.com/.htpasswd-broth-log
+    Require valid-user
+</Files>
+<Files "broth-log.css">
+    AuthType Basic
+    AuthName "Bakudan Staff - Broth Log"
+    AuthUserFile /home/hoale24new/bakudanramen.com/.htpasswd-broth-log
+    Require valid-user
+</Files>
+
 # Missing pages — redirect to nearest equivalent
 RewriteRule ^gift-cards?/?$   /order              [R=301,L]
 RewriteRule ^loyalty/?$       /order              [R=301,L]

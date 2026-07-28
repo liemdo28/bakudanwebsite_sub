@@ -1,0 +1,26 @@
+{
+  "seq": 20,
+  "id": "campaign-2026-09-10-takeout-friendly-bowls",
+  "slug": "takeout-friendly-bowls-which-travels-best",
+  "seo_title": "Takeout-Friendly Bowls: Which Bakudan Ramen Travels Best",
+  "h1": "Takeout-Friendly Bowls: Which Bakudan Ramen Travels Best",
+  "meta_description": "Not all ramen bowls hold up the same for takeout. Here's which Bakudan Ramen bowls are the better call if you're ordering to go.",
+  "primary_keyword": "best ramen for takeout",
+  "supporting_keywords": ["Bakudan Ramen to go", "ramen delivery San Antonio"],
+  "intent": "commercial, pre-purchase decision",
+  "audience": "People deciding what to order before pickup or delivery",
+  "location_focus": ["all"],
+  "funnel_stage": "decision",
+  "date_published": "2026-09-10",
+  "date_modified": "2026-09-10",
+  "image": "images/campaign/takeout-friendly-bowls-which-travels-best-hero.webp",
+  "image_alt": "Bakudan Ramen takeout packaging",
+  "cta_url": "order.html",
+  "cta_text": "Order for Pickup or Delivery",
+  "evergreen_links": [
+    { "href": "order.html", "text": "Order online via Toast" },
+    { "href": "menu.html", "text": "See the full menu" }
+  ],
+  "related_campaign_slugs": ["stone-oak-lunch-break", "how-to-build-your-perfect-bowl-toppings-add-ons"],
+  "body_html": "                <p>Ramen is built to be eaten right after it's assembled — noodles keep cooking in hot broth, and crispy toppings lose their texture the longer they sit. That doesn't mean takeout is a bad idea, but some bowls hold up better than others between the kitchen and your table.</p>\n\n                <h2>What Changes in Transit</h2>\n                <p>The main things that change on the way home are noodle texture (they keep absorbing broth and softening) and anything fried (fried garlic chips, fried onion, tempura) losing crispness. Broth itself travels fine — it's the noodles and fried toppings that are most affected by time.</p>\n\n                <h2>Bowls With Fewer Fried Toppings Travel Better</h2>\n                <p>Bakudan Chicken and Cilantro Lime Chicken don't lean on fried toppings the way Garlic Tonkotsu does with its fried garlic chips and fried onion — so there's less texture to lose on the ride home. If travel time is a real factor, either is a safer takeout order than a bowl built around crispy toppings.</p>\n\n                <h2>If You Want Garlic Tonkotsu Anyway</h2>\n                <p>You don't have to avoid it for takeout — plenty of people order it anyway and just accept that the fried garlic chips won't be as crisp by the time they eat it. The broth and chashu are still going to taste the same; it's specifically the texture of the fried toppings that softens.</p>\n\n                <h2>Starters Travel More Predictably</h2>\n                <p>Edamame, Gyoza, and Katsu Bun hold up better for takeout than the fried starters like Takoyaki or the wings, which are best eaten hot and lose more in transit.</p>\n\n                <h2>For How to Reheat What You Bring Home</h2>\n                <p>This article is about what to order for takeout in the first place — for guidance on reheating leftovers once you're home, that's a separate topic from choosing your order.</p>"
+}

@@ -1,0 +1,26 @@
+{
+  "seq": 23,
+  "id": "campaign-2026-09-16-full-bar-guide",
+  "slug": "bakudans-full-bar-guide-stone-oak-la-cantera",
+  "seo_title": "Bakudan's Full Bar Guide | Cocktails, Beer & Wine at Stone Oak & La Cantera",
+  "h1": "Bakudan's Full Bar Guide: Cocktails, Beer & Wine at Stone Oak and La Cantera",
+  "meta_description": "A reference guide to the full bar program at Bakudan Ramen's Stone Oak and La Cantera locations — cocktails, saké, wine, and beer.",
+  "primary_keyword": "Bakudan Ramen cocktail menu",
+  "supporting_keywords": ["Bakudan Stone Oak bar", "Bakudan La Cantera drinks"],
+  "intent": "informational, commercial",
+  "audience": "Diners at Stone Oak or La Cantera interested in the full drink menu",
+  "location_focus": ["stone_oak", "la_cantera"],
+  "funnel_stage": "consideration",
+  "date_published": "2026-09-16",
+  "date_modified": "2026-09-16",
+  "image": "images/campaign/bakudans-full-bar-guide-stone-oak-la-cantera-hero.webp",
+  "image_alt": "A bottle of Cabernet Sauvignon wine at Bakudan Ramen",
+  "cta_url": "menu.html",
+  "cta_text": "See the Full Drink Menu",
+  "evergreen_links": [
+    { "href": "menu.html", "text": "View the full menu" },
+    { "href": "happy-hour.html", "text": "See happy hour pricing" }
+  ],
+  "related_campaign_slugs": ["beginners-guide-to-sake-at-bakudan", "non-alcoholic-pairings-at-bakudan"],
+  "body_html": "                <p>Stone Oak and La Cantera are the two Bakudan locations with a full bar program — cocktails, wine, and beer, on top of the same saké options available everywhere. Bandera runs a saké-focused bar instead. Here's what the full program actually includes at these two locations.</p>\n\n                <h2>Cocktails</h2>\n                <p>Both Stone Oak and La Cantera carry a full cocktail list, available any time the location is open — not limited to happy hour, though happy hour (daily 3–6 PM) does bring specific pricing on cocktails at both locations.</p>\n\n                <h2>Wine</h2>\n                <p>A wine list is available at both locations alongside the cocktail menu, for anyone who'd rather order a glass than a mixed drink.</p>\n\n                <h2>Beer</h2>\n                <p>Both draft and bottled or canned beer options are on the menu at Stone Oak and La Cantera, in addition to the cocktail and wine lists.</p>\n\n                <h2>Saké Is Still Here Too</h2>\n                <p>Even though Stone Oak and La Cantera aren't built around saké the way Bandera is, they still carry a saké list — it's just one part of a broader bar program rather than the centerpiece.</p>\n\n                <h2>How This Differs From Bandera</h2>\n                <p>Bandera doesn't run this full cocktail, wine, and beer program — it's built around a dedicated saké bar instead, with saké cocktails and saké sangria pitchers as the focus. If a full bar list matters to your plans, Stone Oak or La Cantera is where to go; if saké specifically is the draw, Bandera is set up around that instead.</p>"
+}

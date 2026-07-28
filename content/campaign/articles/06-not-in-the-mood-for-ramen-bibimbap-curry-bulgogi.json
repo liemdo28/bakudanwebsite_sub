@@ -1,0 +1,41 @@
+{
+  "seq": 6,
+  "id": "campaign-2026-08-13-not-in-the-mood-for-ramen",
+  "slug": "not-in-the-mood-for-ramen-bibimbap-curry-bulgogi",
+  "seo_title": "Not in the Mood for Ramen? Try Bakudan's Bibimbap & Curry Rice",
+  "h1": "Not in the Mood for Ramen? Bibimbap, Curry Rice & Bulgogi at Bakudan",
+  "meta_description": "Bakudan Ramen's menu isn't just ramen. Here's what's on the Not Ramen section — Bibimbap Stone Pot, Chicken Katsu Curry Rice, Bulgogi Bowl, and Bakudan Salad.",
+  "primary_keyword": "Bakudan menu beyond ramen",
+  "supporting_keywords": [
+    "bibimbap San Antonio",
+    "bulgogi bowl San Antonio",
+    "chicken katsu curry rice"
+  ],
+  "intent": "informational, commercial",
+  "audience": "Regulars looking for variety, non-ramen eaters in a group",
+  "location_focus": [
+    "all"
+  ],
+  "funnel_stage": "consideration",
+  "date_published": "2026-08-13",
+  "date_modified": "2026-08-13",
+  "image": "images/campaign/not-in-the-mood-for-ramen-bibimbap-curry-bulgogi-hero.webp",
+  "image_alt": "Bibimbap Stone Pot dish at Bakudan Ramen",
+  "cta_url": "menu.html",
+  "cta_text": "See the Full Menu",
+  "evergreen_links": [
+    {
+      "href": "menu.html",
+      "text": "Browse the full menu"
+    },
+    {
+      "href": "order.html",
+      "text": "Order online"
+    }
+  ],
+  "related_campaign_slugs": [
+    "ordering-for-a-mixed-group",
+    "vegetarian-at-bakudan-beyond-the-vegetarian-ramen"
+  ],
+  "body_html": "                <p>Bakudan is known for ramen, but the menu has a whole section that isn't ramen at all — labeled, straightforwardly, \"Not Ramen.\" If you're eating here regularly, or you're at the table with someone who doesn't want a bowl of noodles that night, this is where to look.</p>\n\n                <h2>Bibimbap Stone Pot — $10.99</h2>\n                <p>Choice of rice or noodles, with broccoli, cauliflower, bell peppers, carrots, garlic, green onion, an egg yolk, and a house-made BBQ sauce. It's served hot in a stone pot, which keeps it cooking a little as you eat it — closer to a Korean-style bibimbap than anything on the ramen menu.</p>\n\n                <h2>Chicken Katsu Tokyo Curry Rice — $14.99</h2>\n                <p>Deep-fried panko-breaded chicken with curry sauce, served over steamed rice with a side salad. If you want something that reads more like a full plated meal than a bowl, this is the closest thing on the menu to that.</p>\n\n                <h2>Bulgogi Bowl — $12.99</h2>\n                <p>Thinly sliced marinated beef steak over steamed rice, with broccoli, carrots, green onion, and sesame seeds. This is the option if you want beef specifically — nothing on the ramen side of the menu centers on beef the way this does.</p>\n\n                <h2>Bakudan Salad — $10.99</h2>\n                <p>Spring mix, red onion, carrots, cucumber, avocado, and egg with a sesame dressing. It's the lightest option in this section, and a reasonable choice if you want something at the table that isn't a hot entrée at all.</p>\n\n                <h2>Ordering for a Group</h2>\n                <p>None of these require you to skip ramen entirely — it's common to have some of the table order ramen and others order from this section, especially if you're a regular who wants variety or you're hosting someone who just isn't in the mood for noodles that night.</p>"
+}

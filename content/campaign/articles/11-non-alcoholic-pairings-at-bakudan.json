@@ -1,0 +1,26 @@
+{
+  "seq": 11,
+  "id": "campaign-2026-08-23-non-alcoholic-pairings",
+  "slug": "non-alcoholic-pairings-at-bakudan",
+  "seo_title": "Non-Alcoholic Pairings at Bakudan Ramen | Mocktails & More",
+  "h1": "Non-Alcoholic Pairings at Bakudan: Mocktails, Sodas & DD-Friendly Options",
+  "meta_description": "Not drinking tonight? Here's what to order at Bakudan Ramen if you want a non-alcoholic pairing with your bowl.",
+  "primary_keyword": "non-alcoholic drinks San Antonio ramen",
+  "supporting_keywords": ["Bakudan mocktails", "designated driver friendly restaurant San Antonio"],
+  "intent": "informational, commercial",
+  "audience": "Designated drivers, non-drinkers, families",
+  "location_focus": ["all"],
+  "funnel_stage": "consideration",
+  "date_published": "2026-08-23",
+  "date_modified": "2026-08-23",
+  "image": "images/campaign/non-alcoholic-pairings-at-bakudan-hero.webp",
+  "image_alt": "A beverage glass on a table at Bakudan Ramen",
+  "cta_url": "menu.html",
+  "cta_text": "See the Drink Menu",
+  "evergreen_links": [
+    { "href": "menu.html", "text": "View the full menu" },
+    { "href": "happy-hour.html", "text": "See our happy hour menu" }
+  ],
+  "related_campaign_slugs": ["family-friendly-ramen-night-kids-ramen", "bakudans-full-bar-guide-stone-oak-la-cantera"],
+  "body_html": "                <p>Bakudan's cocktail and saké programs get most of the attention, but there's no reason a non-drinker, a designated driver, or a parent at the table needs to sit out. The menu includes mocktails, soda, and other non-alcoholic beverages at every location.</p>\n\n                <h2>Mocktails</h2>\n                <p>Bakudan carries a mocktail selection priced at $6, available across the menu — a real option if you want something built like a cocktail without the alcohol, rather than defaulting to a plain soda.</p>\n\n                <h2>Sodas and Other Beverages</h2>\n                <p>Standard soda and beverage options are also available at every location for anyone who just wants something simple alongside their bowl.</p>\n\n                <h2>Where This Matters Most</h2>\n                <p>This is especially relevant at Stone Oak and La Cantera, where the drink menu leans heavily into a full cocktail and wine program — having a real non-alcoholic option means the person not drinking still has something to order that isn't an afterthought. Bandera's saké-focused bar has the same consideration built in.</p>\n\n                <h2>Ordering for a Mixed Table</h2>\n                <p>If your table has a mix of people drinking and not drinking, there's nothing unusual about splitting orders between the cocktail or saké menu and the mocktail or soda list — it's a normal way groups order here, not a special accommodation.</p>"
+}

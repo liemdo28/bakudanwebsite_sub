@@ -1,0 +1,36 @@
+{
+  "seq": 30,
+  "id": "campaign-2026-09-30-a-locals-faq",
+  "slug": "a-locals-faq-about-bakudan-ramen",
+  "seo_title": "A Local's FAQ: Common Questions About Bakudan Ramen",
+  "h1": "A Local's FAQ: The Most-Asked Questions About Bakudan Ramen",
+  "meta_description": "Answers to the most common questions about Bakudan Ramen — locations, hours, ordering, happy hour, and menu options — all verified against current info.",
+  "primary_keyword": "Bakudan Ramen FAQ",
+  "supporting_keywords": ["Bakudan Ramen hours", "Bakudan Ramen locations questions"],
+  "intent": "informational, FAQ",
+  "audience": "Anyone with a quick logistical question before visiting",
+  "location_focus": ["all"],
+  "funnel_stage": "consideration",
+  "date_published": "2026-09-30",
+  "date_modified": "2026-09-30",
+  "image": "images/campaign/a-locals-faq-about-bakudan-ramen-hero.webp",
+  "image_alt": "Bakudan Ramen brand table setting",
+  "cta_url": "order.html",
+  "cta_text": "Order From Bakudan",
+  "evergreen_links": [
+    { "href": "locations.html", "text": "See all locations" },
+    { "href": "menu.html", "text": "View the full menu" }
+  ],
+  "related_campaign_slugs": ["bakudans-three-locations-compared", "beginners-guide-to-ordering-ramen-at-bakudan"],
+  "faq": [
+    { "question": "How many Bakudan Ramen locations are there?", "answer": "Three, all in San Antonio: Bandera Road, Stone Oak, and La Cantera." },
+    { "question": "What are Bakudan Ramen's hours?", "answer": "Monday–Thursday 11:00 AM–8:30 PM, Friday–Saturday 11:00 AM–9:00 PM, and Sunday 11:00 AM–8:00 PM, the same at all three locations." },
+    { "question": "Is the menu the same at every location?", "answer": "The ramen, starters, and food menu are the same everywhere. What differs is the drink program: Stone Oak and La Cantera have a full cocktail and wine list, while Bandera has a dedicated saké bar instead." },
+    { "question": "When is happy hour?", "answer": "Daily from 3–6 PM at all three locations, though what's included varies — Stone Oak and La Cantera run cocktail-focused happy hour pricing, while Bandera's is saké-focused." },
+    { "question": "How do I order online?", "answer": "Through the order page, which routes you to your chosen location's ordering system on Toast for pickup or delivery. Delivery areas, fees, and estimated times are managed by Toast." },
+    { "question": "Is there a vegetarian option?", "answer": "Yes — the Vegetarian ramen bowl, built on an oat milk and garlic oil base with tofu, spinach, and cabbage, with no animal broth." },
+    { "question": "Is there a kids' menu?", "answer": "Yes — Kids Ramen is $8.50, a simplified chicken broth bowl with chicken chashu, corn, and thin noodles." },
+    { "question": "Which location opened first?", "answer": "La Cantera, in May 2019. Stone Oak followed in October 2022, and Bandera Road opened in February 2023." }
+  ],
+  "body_html": "                <p>These are the questions that come up most often about visiting Bakudan Ramen — locations, hours, ordering, and the menu. Everything below is answered directly, without padding.</p>\n\n                <h2>A Note on What's Not Covered Here</h2>\n                <p>This FAQ sticks to what's verified and current: locations, hours, ordering, and menu basics. If you have a question about something more specific — gift cards, catering, or dietary restrictions beyond what's listed on the vegetarian and kids' menu items — the most reliable answer is to call your nearest location directly, since that's not something covered in general marketing content.</p>"
+}

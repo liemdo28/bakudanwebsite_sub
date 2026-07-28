@@ -2,7 +2,7 @@
   {
     "seq": 1,
     "slug": "beginners-guide-to-ordering-ramen-at-bakudan",
-    "publish_at": "2026-08-03T14:00:00Z",
+    "publish_at": "2026-07-28T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "locations.html",
@@ -12,7 +12,7 @@
   {
     "seq": 2,
     "slug": "bakudans-three-locations-compared",
-    "publish_at": "2026-08-05T14:00:00Z",
+    "publish_at": "2026-07-30T14:00:00Z",
     "resolved_links_at_publish": [
       "locations.html",
       "happy-hour.html",
@@ -22,7 +22,7 @@
   {
     "seq": 3,
     "slug": "bandera-road-sake-happy-hour",
-    "publish_at": "2026-08-07T14:00:00Z",
+    "publish_at": "2026-08-01T14:00:00Z",
     "resolved_links_at_publish": [
       "happy-hour.html",
       "locations/bandera.html",
@@ -32,7 +32,7 @@
   {
     "seq": 4,
     "slug": "beginners-guide-to-sake-at-bakudan",
-    "publish_at": "2026-08-09T14:00:00Z",
+    "publish_at": "2026-08-03T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "locations/bandera.html",
@@ -42,7 +42,7 @@
   {
     "seq": 5,
     "slug": "family-friendly-ramen-night-kids-ramen",
-    "publish_at": "2026-08-11T14:00:00Z",
+    "publish_at": "2026-08-05T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "locations.html"
@@ -51,7 +51,7 @@
   {
     "seq": 6,
     "slug": "not-in-the-mood-for-ramen-bibimbap-curry-bulgogi",
-    "publish_at": "2026-08-13T14:00:00Z",
+    "publish_at": "2026-08-07T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "order.html"
@@ -60,7 +60,7 @@
   {
     "seq": 7,
     "slug": "how-to-build-your-perfect-bowl-toppings-add-ons",
-    "publish_at": "2026-08-15T14:00:00Z",
+    "publish_at": "2026-08-09T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "beginners-guide-to-ordering-ramen-at-bakudan.html"
@@ -69,7 +69,7 @@
   {
     "seq": 8,
     "slug": "bakudan-starters-guide",
-    "publish_at": "2026-08-17T14:00:00Z",
+    "publish_at": "2026-08-11T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html"
     ]
@@ -77,7 +77,7 @@
   {
     "seq": 9,
     "slug": "why-ramen-still-makes-sense-in-the-san-antonio-heat",
-    "publish_at": "2026-08-19T14:00:00Z",
+    "publish_at": "2026-08-13T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html"
     ]
@@ -85,7 +85,7 @@
   {
     "seq": 10,
     "slug": "cold-snap-comfort-building-a-warmer-bowl",
-    "publish_at": "2026-08-21T14:00:00Z",
+    "publish_at": "2026-08-15T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "how-to-build-your-perfect-bowl-toppings-add-ons.html"
@@ -94,7 +94,7 @@
   {
     "seq": 11,
     "slug": "non-alcoholic-pairings-at-bakudan",
-    "publish_at": "2026-08-23T14:00:00Z",
+    "publish_at": "2026-08-17T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "happy-hour.html",
@@ -104,7 +104,7 @@
   {
     "seq": 12,
     "slug": "our-san-antonio-ramen-story",
-    "publish_at": "2026-08-25T14:00:00Z",
+    "publish_at": "2026-08-19T14:00:00Z",
     "resolved_links_at_publish": [
       "about.html",
       "locations.html",
@@ -114,7 +114,7 @@
   {
     "seq": 13,
     "slug": "stone-oak-lunch-break",
-    "publish_at": "2026-08-27T14:00:00Z",
+    "publish_at": "2026-08-21T14:00:00Z",
     "resolved_links_at_publish": [
       "locations/stone-oak.html",
       "order.html"
@@ -123,7 +123,7 @@
   {
     "seq": 14,
     "slug": "visiting-san-antonio-bakudan-near-six-flags-fiesta-texas",
-    "publish_at": "2026-08-29T14:00:00Z",
+    "publish_at": "2026-08-23T14:00:00Z",
     "resolved_links_at_publish": [
       "locations/la-cantera.html"
     ]
@@ -131,7 +131,7 @@
   {
     "seq": 15,
     "slug": "dessert-after-ramen-mochi-ice-cream",
-    "publish_at": "2026-08-31T14:00:00Z",
+    "publish_at": "2026-08-25T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "family-friendly-ramen-night-kids-ramen.html"
@@ -140,7 +140,7 @@
   {
     "seq": 16,
     "slug": "which-bakudan-broth-is-right-for-you-tonight",
-    "publish_at": "2026-09-02T14:00:00Z",
+    "publish_at": "2026-08-27T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "how-to-build-your-perfect-bowl-toppings-add-ons.html"
@@ -149,7 +149,7 @@
   {
     "seq": 17,
     "slug": "group-dining-at-bakudan",
-    "publish_at": "2026-09-04T14:00:00Z",
+    "publish_at": "2026-08-29T14:00:00Z",
     "resolved_links_at_publish": [
       "locations.html",
       "menu.html",
@@ -159,7 +159,7 @@
   {
     "seq": 18,
     "slug": "date-night-beyond-dinner-palladium-la-cantera",
-    "publish_at": "2026-09-06T14:00:00Z",
+    "publish_at": "2026-08-31T14:00:00Z",
     "resolved_links_at_publish": [
       "locations/la-cantera.html",
       "happy-hour.html",
@@ -169,7 +169,7 @@
   {
     "seq": 19,
     "slug": "ramen-and-karaage-fried-chicken",
-    "publish_at": "2026-09-08T14:00:00Z",
+    "publish_at": "2026-09-02T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "bakudan-starters-guide.html"
@@ -178,7 +178,7 @@
   {
     "seq": 20,
     "slug": "takeout-friendly-bowls-which-travels-best",
-    "publish_at": "2026-09-10T14:00:00Z",
+    "publish_at": "2026-09-04T14:00:00Z",
     "resolved_links_at_publish": [
       "order.html",
       "menu.html",
@@ -189,7 +189,7 @@
   {
     "seq": 21,
     "slug": "solo-ramen-night",
-    "publish_at": "2026-09-12T14:00:00Z",
+    "publish_at": "2026-09-06T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "which-bakudan-broth-is-right-for-you-tonight.html"
@@ -198,7 +198,7 @@
   {
     "seq": 22,
     "slug": "spice-level-101-how-hot-are-bakudans-spicy-bowls",
-    "publish_at": "2026-09-14T14:00:00Z",
+    "publish_at": "2026-09-08T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "how-to-build-your-perfect-bowl-toppings-add-ons.html",
@@ -208,7 +208,7 @@
   {
     "seq": 23,
     "slug": "bakudans-full-bar-guide-stone-oak-la-cantera",
-    "publish_at": "2026-09-16T14:00:00Z",
+    "publish_at": "2026-09-10T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "happy-hour.html",
@@ -219,7 +219,7 @@
   {
     "seq": 24,
     "slug": "vegetarian-at-bakudan-beyond-the-vegetarian-ramen",
-    "publish_at": "2026-09-18T14:00:00Z",
+    "publish_at": "2026-09-12T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "not-in-the-mood-for-ramen-bibimbap-curry-bulgogi.html"
@@ -228,7 +228,7 @@
   {
     "seq": 25,
     "slug": "the-bakudan-difference-six-and-a-half-hour-broth",
-    "publish_at": "2026-09-20T14:00:00Z",
+    "publish_at": "2026-09-14T14:00:00Z",
     "resolved_links_at_publish": [
       "about.html",
       "menu.html",
@@ -239,7 +239,7 @@
   {
     "seq": 26,
     "slug": "ramen-topping-glossary-for-first-timers",
-    "publish_at": "2026-09-22T14:00:00Z",
+    "publish_at": "2026-09-16T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "beginners-guide-to-ordering-ramen-at-bakudan.html",
@@ -249,7 +249,7 @@
   {
     "seq": 27,
     "slug": "weekend-timing-tips-beat-the-rush",
-    "publish_at": "2026-09-24T14:00:00Z",
+    "publish_at": "2026-09-18T14:00:00Z",
     "resolved_links_at_publish": [
       "locations.html",
       "order.html",
@@ -260,7 +260,7 @@
   {
     "seq": 28,
     "slug": "hosting-out-of-town-family-in-san-antonio",
-    "publish_at": "2026-09-26T14:00:00Z",
+    "publish_at": "2026-09-20T14:00:00Z",
     "resolved_links_at_publish": [
       "locations.html",
       "menu.html",
@@ -271,7 +271,7 @@
   {
     "seq": 29,
     "slug": "ordering-for-a-mixed-group",
-    "publish_at": "2026-09-28T14:00:00Z",
+    "publish_at": "2026-09-22T14:00:00Z",
     "resolved_links_at_publish": [
       "menu.html",
       "vegetarian-at-bakudan-beyond-the-vegetarian-ramen.html",
@@ -282,7 +282,7 @@
   {
     "seq": 30,
     "slug": "a-locals-faq-about-bakudan-ramen",
-    "publish_at": "2026-09-30T14:00:00Z",
+    "publish_at": "2026-09-24T14:00:00Z",
     "resolved_links_at_publish": [
       "locations.html",
       "menu.html",

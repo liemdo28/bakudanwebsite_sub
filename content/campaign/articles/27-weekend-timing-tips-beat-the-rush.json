@@ -6,21 +6,35 @@
   "h1": "Weekend Timing Tips: Why an Early Visit Beats the Rush",
   "meta_description": "Planning a weekend visit to Bakudan Ramen? Here's how hours and timing work across all three San Antonio locations.",
   "primary_keyword": "Bakudan Ramen weekend hours",
-  "supporting_keywords": ["best time to go to Bakudan Ramen", "avoid ramen restaurant wait"],
+  "supporting_keywords": [
+    "best time to go to Bakudan Ramen",
+    "avoid ramen restaurant wait"
+  ],
   "intent": "informational, practical",
   "audience": "Weekend diners planning a visit",
-  "location_focus": ["all"],
+  "location_focus": [
+    "all"
+  ],
   "funnel_stage": "consideration",
-  "date_published": "2026-09-24",
-  "date_modified": "2026-09-24",
+  "date_published": "2026-09-18",
+  "date_modified": "2026-09-18",
   "image": "images/campaign/weekend-timing-tips-beat-the-rush-hero.webp",
   "image_alt": "A table spread of ramen and side dishes at Bakudan Ramen",
   "cta_url": "locations.html",
   "cta_text": "Check Hours by Location",
   "evergreen_links": [
-    { "href": "locations.html", "text": "See hours by location" },
-    { "href": "order.html", "text": "Order ahead online" }
+    {
+      "href": "locations.html",
+      "text": "See hours by location"
+    },
+    {
+      "href": "order.html",
+      "text": "Order ahead online"
+    }
   ],
-  "related_campaign_slugs": ["stone-oak-lunch-break", "group-dining-at-bakudan"],
+  "related_campaign_slugs": [
+    "stone-oak-lunch-break",
+    "group-dining-at-bakudan"
+  ],
   "body_html": "                <p>Weekend hours at Bakudan run a little longer than weekdays, and that extra time gives you more room to plan around when it's actually busiest.</p>\n\n                <h2>Friday and Saturday Hours</h2>\n                <p>All three locations are open 11:00 AM–9:00 PM on Friday and Saturday, an hour later than the 8:30 PM weekday close. Sunday hours run 11:00 AM–8:00 PM, matching Monday through Thursday.</p>\n\n                <h2>Earlier Tends to Be Easier</h2>\n                <p>An 11:00 AM opening means an early lunch is a realistic option on a weekend, and generally an earlier visit — whether that's lunch or an early dinner — is a more relaxed time to go than the middle of a Friday or Saturday evening, when weekend dinner traffic tends to peak at most restaurants.</p>\n\n                <h2>Ordering Ahead Helps Regardless of Timing</h2>\n                <p>If you can't avoid a busier window, ordering ahead through Toast for pickup is a way to skip an in-person wait even during a location's busiest stretch.</p>\n\n                <h2>Happy Hour Still Applies on Weekends</h2>\n                <p>The daily 3–6 PM happy hour runs every day, including weekends, so an early-evening visit before the dinner rush can also line up with happy hour pricing depending on the location.</p>\n\n                <h2>No Guarantees, Just Better Odds</h2>\n                <p>None of this guarantees a specific wait time — that depends on the night and the location. But earlier timing and ordering ahead are the two most practical levers you actually have control over.</p>"
 }

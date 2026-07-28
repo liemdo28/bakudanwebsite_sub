@@ -6,20 +6,31 @@
   "h1": "Spice Level 101: How Hot Are Bakudan's Spicy Bowls, Really?",
   "meta_description": "Deciding whether to order a spicy bowl at Bakudan Ramen? Here's a practical, comparative guide to Spicy Umami Miso, Spicy Shoyu, and Spice Bombs.",
   "primary_keyword": "how spicy is Bakudan ramen",
-  "supporting_keywords": ["spicy umami miso vs spicy shoyu", "spice bombs Bakudan"],
+  "supporting_keywords": [
+    "spicy umami miso vs spicy shoyu",
+    "spice bombs Bakudan"
+  ],
   "intent": "commercial, decision-making",
   "audience": "People unsure how much heat to order",
-  "location_focus": ["all"],
+  "location_focus": [
+    "all"
+  ],
   "funnel_stage": "decision",
-  "date_published": "2026-09-14",
-  "date_modified": "2026-09-14",
+  "date_published": "2026-09-08",
+  "date_modified": "2026-09-08",
   "image": "images/campaign/spice-level-101-how-hot-are-bakudans-spicy-bowls-hero.webp",
   "image_alt": "A bowl of Spicy Umami Miso ramen at Bakudan Ramen",
   "cta_url": "order.html",
   "cta_text": "Order Your Spice Level",
   "evergreen_links": [
-    { "href": "menu.html", "text": "See the full menu" }
+    {
+      "href": "menu.html",
+      "text": "See the full menu"
+    }
   ],
-  "related_campaign_slugs": ["how-to-build-your-perfect-bowl-toppings-add-ons", "which-bakudan-broth-is-right-for-you-tonight"],
+  "related_campaign_slugs": [
+    "how-to-build-your-perfect-bowl-toppings-add-ons",
+    "which-bakudan-broth-is-right-for-you-tonight"
+  ],
   "body_html": "                <p>\"How spicy is it\" is one of the most common questions before ordering a spicy bowl anywhere, and it's a fair one — spice tolerance varies a lot person to person, and menu descriptions don't always translate into what you'll actually experience. Here's a practical comparison across Bakudan's heat-forward options.</p>\n\n                <h2>Spicy Umami Miso</h2>\n                <p>Built on a rich pork broth with a miso base, chili oil, and chili paste. The richness of the pork and miso base carries some of the heat, so it reads as bold and warming rather than sharp.</p>\n\n                <h2>Spicy Shoyu</h2>\n                <p>A chicken shoyu base with chili threads and togarashi. This one leans lighter overall than Spicy Umami Miso since it's chicken-broth-based rather than pork, but the chili threads and togarashi still bring real heat on top of that lighter base.</p>\n\n                <h2>If Neither Sounds Right</h2>\n                <p>Every bowl on the Ramen menu — including the milder ones like Bakudan Chicken or Vegetarian — can take a Spice Bomb, priced at $0.75 each. That means you don't have to choose between a mild broth and heat; you can start mild and add exactly as much as you want.</p>\n\n                <h2>If You're Not Sure Where to Start</h2>\n                <p>Ordering a milder bowl and adding one Spice Bomb is a lower-risk way to test your tolerance than jumping straight into Spicy Umami Miso or Spicy Shoyu at full intensity. You can always order those bowls outright on a future visit once you know where your tolerance actually sits.</p>\n\n                <h2>There's No Penalty for Going Mild</h2>\n                <p>Plenty of regulars order Bakudan Chicken or Cilantro Lime Chicken every time and never touch the spicy bowls or a Spice Bomb. Heat isn't a measure of how \"serious\" your order is — it's just a preference.</p>"
 }

@@ -6,21 +6,35 @@
   "h1": "The Bakudan Difference: What a 6½-Hour Broth Actually Means",
   "meta_description": "Bakudan Ramen simmers its broth 6.5 to 7 hours. Here's what that time investment actually means for the bowl in front of you.",
   "primary_keyword": "slow simmered ramen broth San Antonio",
-  "supporting_keywords": ["Bakudan Ramen broth process", "how long ramen broth simmers"],
+  "supporting_keywords": [
+    "Bakudan Ramen broth process",
+    "how long ramen broth simmers"
+  ],
   "intent": "informational, educational, brand/trust",
   "audience": "Curious diners, people evaluating quality/authenticity",
-  "location_focus": ["all"],
+  "location_focus": [
+    "all"
+  ],
   "funnel_stage": "awareness",
-  "date_published": "2026-09-20",
-  "date_modified": "2026-09-20",
+  "date_published": "2026-09-14",
+  "date_modified": "2026-09-14",
   "image": "images/campaign/the-bakudan-difference-six-and-a-half-hour-broth-hero.webp",
   "image_alt": "A Garlic Tonkotsu ramen bowl at Bakudan Ramen",
   "cta_url": "order.html",
   "cta_text": "Taste the Difference",
   "evergreen_links": [
-    { "href": "about.html", "text": "Read our full story" },
-    { "href": "menu.html", "text": "See the full menu" }
+    {
+      "href": "about.html",
+      "text": "Read our full story"
+    },
+    {
+      "href": "menu.html",
+      "text": "See the full menu"
+    }
   ],
-  "related_campaign_slugs": ["our-san-antonio-ramen-story", "which-bakudan-broth-is-right-for-you-tonight"],
+  "related_campaign_slugs": [
+    "our-san-antonio-ramen-story",
+    "which-bakudan-broth-is-right-for-you-tonight"
+  ],
   "body_html": "                <p>Bakudan simmers its broth for 6.5 to 7 hours. That number gets mentioned on the About page, but it's worth actually explaining what that time is doing, rather than just repeating it as a marketing detail.</p>\n\n                <h2>Why Time Matters for Broth</h2>\n                <p>A short-simmered broth and a long-simmered broth made from the same basic ingredients don't taste the same. Longer simmering time extracts more from bones and aromatics — more body, more depth — which is a big part of why tonkotsu-style broths in particular are associated with hours-long cook times rather than something you can rush.</p>\n\n                <h2>What This Means for a Bowl Like Garlic Tonkotsu</h2>\n                <p>Garlic Tonkotsu is Bakudan's richest, most tonkotsu-forward bowl, and it's the clearest example of where that long simmer time actually shows up in the finished dish — the broth carries more weight and depth than a quicker-cooked version would.</p>\n\n                <h2>It's Not Unique to One Bowl</h2>\n                <p>The same broth-making process underlies the menu broadly, not just the richest bowl. Even lighter options like Cilantro Lime Chicken or Bakudan Chicken start from the same foundational approach to building broth, even though the final flavor profile is different bowl to bowl.</p>\n\n                <h2>Where the Recipe Came From</h2>\n                <p>The broth recipe traces back to 2018, developed by a ramen consultant who continues to travel to Japan regularly. That's the origin point for the process still used today, across all three locations.</p>\n\n                <h2>What This Doesn't Mean</h2>\n                <p>A long simmer time is one specific, verifiable fact about how the broth is made — it's not a claim about award recognition, specific ingredient sourcing details, or a broader \"authenticity\" label beyond what's actually documented. The honest version of this story is simpler: it takes hours to make, and that time is part of why it tastes the way it does.</p>"
 }

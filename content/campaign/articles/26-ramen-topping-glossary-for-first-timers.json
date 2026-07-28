@@ -6,20 +6,32 @@
   "h1": "A Ramen Topping Glossary for First-Timers (Chashu, Kikurage, Nori & More)",
   "meta_description": "Not sure what's in your bowl? A plain-English glossary of the ramen toppings and terms you'll see on Bakudan Ramen's menu.",
   "primary_keyword": "ramen menu terms explained",
-  "supporting_keywords": ["what is chashu", "what is kikurage", "ramen toppings glossary"],
+  "supporting_keywords": [
+    "what is chashu",
+    "what is kikurage",
+    "ramen toppings glossary"
+  ],
   "intent": "informational, educational, glossary/reference",
   "audience": "First-timers confused by menu terminology",
-  "location_focus": ["all"],
+  "location_focus": [
+    "all"
+  ],
   "funnel_stage": "awareness",
-  "date_published": "2026-09-22",
-  "date_modified": "2026-09-22",
+  "date_published": "2026-09-16",
+  "date_modified": "2026-09-16",
   "image": "images/campaign/ramen-topping-glossary-for-first-timers-hero.webp",
   "image_alt": "A bowl of Cilantro Lime Chicken ramen at Bakudan Ramen",
   "cta_url": "menu.html",
   "cta_text": "See the Full Menu",
   "evergreen_links": [
-    { "href": "menu.html", "text": "View the full menu" }
+    {
+      "href": "menu.html",
+      "text": "View the full menu"
+    }
   ],
-  "related_campaign_slugs": ["beginners-guide-to-ordering-ramen-at-bakudan", "how-to-build-your-perfect-bowl-toppings-add-ons"],
+  "related_campaign_slugs": [
+    "beginners-guide-to-ordering-ramen-at-bakudan",
+    "how-to-build-your-perfect-bowl-toppings-add-ons"
+  ],
   "body_html": "                <p>Bakudan's menu descriptions list out every topping in a bowl, which is useful once you know what the words mean and confusing if you don't. Here's a plain-English reference for the terms that show up most often.</p>\n\n                <h2>Chashu</h2>\n                <p>Braised, sliced meat — usually pork, though Bakudan also uses chicken chashu on several bowls. It's slow-cooked until tender and is one of the most common toppings across the menu.</p>\n\n                <h2>Kikurage</h2>\n                <p>A type of mushroom, sometimes called wood ear or cloud ear mushroom, with a slightly crunchy, chewy texture. It appears on bowls like Garlic Tonkotsu and Cilantro Lime Chicken.</p>\n\n                <h2>Shio, Shoyu, Tonkotsu, and Miso</h2>\n                <p>These are broth bases, not toppings. Shio means salt-based; shoyu means soy-sauce-based; tonkotsu refers to a pork-bone broth; miso means the broth is built around fermented soybean paste. Bakudan's bowls are often built on a combination — Cilantro Lime Chicken, for example, uses both a shoyu and shio base together.</p>\n\n                <h2>Nori</h2>\n                <p>Dried seaweed sheets, usually served folded on the side or edge of the bowl. It's the same seaweed used in sushi, just served differently here.</p>\n\n                <h2>Togarashi</h2>\n                <p>A Japanese seven-spice chili blend, used as a seasoning rather than a wet sauce. It shows up on bowls like Cilantro Lime Chicken and Spicy Shoyu as part of building heat and flavor.</p>\n\n                <h2>Seasoned Egg</h2>\n                <p>A soft-boiled egg marinated before serving, usually halved so the yolk is visible in the bowl. It's a standard ramen topping, not specific to any one Bakudan bowl.</p>\n\n                <h2>Enoki Mushrooms</h2>\n                <p>Long, thin, white mushrooms, distinct in appearance from kikurage. They appear on Spicy Shoyu specifically.</p>\n\n                <h2>Why This Matters When You Order</h2>\n                <p>Once you know what these terms mean, the menu descriptions actually tell you what you're getting rather than reading like a list of unfamiliar words. If a description still doesn't make sense, it's completely normal to ask your server to explain a specific bowl before you order.</p>"
 }

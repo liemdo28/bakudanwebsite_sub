@@ -6,20 +6,30 @@
   "h1": "Dessert After Ramen: Why Mochi Ice Cream Is the Perfect Finish",
   "meta_description": "Bakudan Ramen's dessert menu is small and simple: Mochi Ice Cream. Here's what it is and why it works after a hot bowl of ramen.",
   "primary_keyword": "mochi ice cream San Antonio",
-  "supporting_keywords": ["Bakudan Ramen dessert", "mochi after ramen"],
+  "supporting_keywords": [
+    "Bakudan Ramen dessert",
+    "mochi after ramen"
+  ],
   "intent": "informational, commercial",
   "audience": "Diners looking to finish the meal",
-  "location_focus": ["all"],
+  "location_focus": [
+    "all"
+  ],
   "funnel_stage": "consideration",
-  "date_published": "2026-08-31",
-  "date_modified": "2026-08-31",
+  "date_published": "2026-08-25",
+  "date_modified": "2026-08-25",
   "image": "images/campaign/dessert-after-ramen-mochi-ice-cream-hero.webp",
   "image_alt": "Mochi ice cream dessert",
   "cta_url": "menu.html",
   "cta_text": "See the Full Menu",
   "evergreen_links": [
-    { "href": "menu.html", "text": "View the full menu" }
+    {
+      "href": "menu.html",
+      "text": "View the full menu"
+    }
   ],
-  "related_campaign_slugs": ["family-friendly-ramen-night-kids-ramen"],
+  "related_campaign_slugs": [
+    "family-friendly-ramen-night-kids-ramen"
+  ],
   "body_html": "                <p>Bakudan's dessert menu isn't extensive — it's one item, Mochi Ice Cream, and that's by design. After a hot, rich bowl of ramen, a small, cold dessert makes more sense than something heavy.</p>\n\n                <h2>What's Actually on the Plate</h2>\n                <p>Mochi Ice Cream is $5.50, and you choose two flavors from vanilla, strawberry, or green tea. It's a small-format dessert — ice cream wrapped in a soft mochi rice dough shell — meant to be a light finish, not a second course.</p>\n\n                <h2>Why It Works After Ramen Specifically</h2>\n                <p>A bowl of ramen, especially something rich like Garlic Tonkotsu, is filling on its own. A small cold dessert closes out the meal without adding more heavy food on top of it — which is part of why it's the one dessert item on the menu rather than a longer list.</p>\n\n                <h2>Picking Flavors</h2>\n                <p>Green tea is the closest flavor to something distinctly Japanese if that's what you're after; vanilla and strawberry are more familiar, safer choices if you're ordering for someone who isn't sure. Since you get to pick two, there's no need to commit to just one.</p>\n\n                <h2>Ordering It</h2>\n                <p>Mochi Ice Cream is available at all three locations and can be added to any online order alongside your ramen, or ordered at the table.</p>"
 }

@@ -25,20 +25,27 @@ def fresh_state():
 def test_due_selection_respects_publish_at():
     state = fresh_state()
     manifest = sch.load_manifest()
+    first_publish_at = datetime.datetime.strptime(
+        manifest['articles'][0]['publish_at'], '%Y-%m-%dT%H:%M:%SZ'
+    ).replace(tzinfo=datetime.timezone.utc)
+    second_publish_at = datetime.datetime.strptime(
+        manifest['articles'][1]['publish_at'], '%Y-%m-%dT%H:%M:%SZ'
+    ).replace(tzinfo=datetime.timezone.utc)
 
     # Before the campaign starts: nothing due.
-    before_start = datetime.datetime(2026, 8, 1, tzinfo=datetime.timezone.utc)
+    before_start = first_publish_at - datetime.timedelta(hours=1)
     due = sch.select_due(state, manifest, now=before_start)
     assert due == [], f'expected nothing due before campaign start, got {[a["slug"] for a in due]}'
 
     # After article #1's publish_at but before #2's: exactly #1 is due.
-    mid_window = datetime.datetime(2026, 8, 4, tzinfo=datetime.timezone.utc)
+    mid_window = first_publish_at + datetime.timedelta(hours=1)
+    assert mid_window < second_publish_at
     due = sch.select_due(state, manifest, now=mid_window)
     assert [a['seq'] for a in due] == [1], f'expected only seq 1 due, got {[a["seq"] for a in due]}'
 
     # Far in the future: everything with status=approved is due (scheduler only
     # ever actually publishes one per run -- see run()).
-    far_future = datetime.datetime(2026, 12, 1, tzinfo=datetime.timezone.utc)
+    far_future = first_publish_at + datetime.timedelta(days=365)
     due = sch.select_due(state, manifest, now=far_future)
     assert len(due) == 30, f'expected all 30 due far in the future, got {len(due)}'
 

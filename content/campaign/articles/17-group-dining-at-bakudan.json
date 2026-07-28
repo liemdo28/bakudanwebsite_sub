@@ -6,21 +6,35 @@
   "h1": "Group Dining at Bakudan: What to Know Before You Bring the Whole Crew",
   "meta_description": "Planning to bring a group to Bakudan Ramen? Here's what to know about the menu, ordering, and what actually works for a bigger table.",
   "primary_keyword": "group dining San Antonio ramen",
-  "supporting_keywords": ["Bakudan Ramen large group", "ramen restaurant for groups"],
+  "supporting_keywords": [
+    "Bakudan Ramen large group",
+    "ramen restaurant for groups"
+  ],
   "intent": "informational, commercial",
   "audience": "People planning a group outing",
-  "location_focus": ["all"],
+  "location_focus": [
+    "all"
+  ],
   "funnel_stage": "consideration",
-  "date_published": "2026-09-04",
-  "date_modified": "2026-09-04",
+  "date_published": "2026-08-29",
+  "date_modified": "2026-08-29",
   "image": "images/campaign/group-dining-at-bakudan-hero.webp",
   "image_alt": "A shared drink and appetizer spread at Bakudan Ramen",
   "cta_url": "locations.html",
   "cta_text": "Find Your Nearest Location",
   "evergreen_links": [
-    { "href": "locations.html", "text": "See all locations" },
-    { "href": "menu.html", "text": "View the full menu" }
+    {
+      "href": "locations.html",
+      "text": "See all locations"
+    },
+    {
+      "href": "menu.html",
+      "text": "View the full menu"
+    }
   ],
-  "related_campaign_slugs": ["ordering-for-a-mixed-group", "bakudan-starters-guide"],
+  "related_campaign_slugs": [
+    "ordering-for-a-mixed-group",
+    "bakudan-starters-guide"
+  ],
   "body_html": "                <p>Bakudan works for group visits, but it helps to know how the menu and ordering actually accommodate a bigger table before you show up.</p>\n\n                <h2>The Menu Has Range</h2>\n                <p>With nine ramen bowls, a Not Ramen section (bibimbap, curry rice, bulgogi, salad), and ten starters, a group with different tastes — someone who wants heat, someone who doesn't eat meat, someone who'd rather have rice than noodles — can all order something they actually want without anyone settling.</p>\n\n                <h2>Starters Are Built for Sharing</h2>\n                <p>Ordering two or three starters for the table — Gyoza, Edamame, Chicken Karaage — while everyone's individual ramen bowls come out is a normal way groups eat here, not a workaround. See our full starters guide if you want the complete rundown before you go.</p>\n\n                <h2>If You're Ordering Drinks Too</h2>\n                <p>Stone Oak and La Cantera run full cocktail and wine programs, which tends to work well for a group that wants a real drink menu. Bandera's saké bar is a different kind of group experience if saké sangria pitchers are more what your group has in mind.</p>\n\n                <h2>Call Ahead for Larger Groups</h2>\n                <p>If you're bringing a larger group, it's worth calling your preferred location ahead of time to ask about accommodating your party size — that's the most reliable way to know what a specific location can do for a group your size on a given night.</p>\n\n                <h2>Timing Matters More Than Anything Else</h2>\n                <p>Since all three locations open at 11:00 AM, an earlier lunch or early dinner tends to be easier to seat as a group than peak dinner hours. If your group has flexibility on timing, that's the simplest way to make a group visit smoother.</p>"
 }

@@ -6,21 +6,35 @@
   "h1": "Hosting Out-of-Town Family in San Antonio? Where Bakudan Fits Your Itinerary",
   "meta_description": "Planning where to take visiting family in San Antonio? Here's how Bakudan Ramen's three locations fit into different parts of the city.",
   "primary_keyword": "where to take visiting family San Antonio",
-  "supporting_keywords": ["San Antonio restaurant for out of town guests", "Bakudan Ramen visitors"],
+  "supporting_keywords": [
+    "San Antonio restaurant for out of town guests",
+    "Bakudan Ramen visitors"
+  ],
   "intent": "informational, commercial, host-planning",
   "audience": "San Antonio residents planning around visiting family/friends",
-  "location_focus": ["all"],
+  "location_focus": [
+    "all"
+  ],
   "funnel_stage": "consideration",
-  "date_published": "2026-09-26",
-  "date_modified": "2026-09-26",
+  "date_published": "2026-09-20",
+  "date_modified": "2026-09-20",
   "image": "images/campaign/hosting-out-of-town-family-in-san-antonio-hero.webp",
   "image_alt": "A table and drink scene at Bakudan Ramen",
   "cta_url": "locations.html",
   "cta_text": "Find the Closest Location",
   "evergreen_links": [
-    { "href": "locations.html", "text": "See all three locations" },
-    { "href": "menu.html", "text": "Preview the menu with your guests" }
+    {
+      "href": "locations.html",
+      "text": "See all three locations"
+    },
+    {
+      "href": "menu.html",
+      "text": "Preview the menu with your guests"
+    }
   ],
-  "related_campaign_slugs": ["visiting-san-antonio-bakudan-near-six-flags-fiesta-texas", "group-dining-at-bakudan"],
+  "related_campaign_slugs": [
+    "visiting-san-antonio-bakudan-near-six-flags-fiesta-texas",
+    "group-dining-at-bakudan"
+  ],
   "body_html": "                <p>If you're a San Antonio local trying to figure out where to take visiting family or friends, \"somewhere they haven't had before\" is usually part of the ask — and Bakudan works well for that without being a hard sell, since the menu has enough range for guests who aren't sure about ramen and guests who already love it.</p>\n\n                <h2>Pick Based on Where You're Already Headed</h2>\n                <p>If your itinerary already has you near La Cantera — the Shops, the Palladium, or Six Flags Fiesta Texas — that location is a convenient stop without adding a separate trip. If you're staying or spending time on the north side near 281, Stone Oak is the closer option. Bandera Road works if that's the part of town your visit is centered around.</p>\n\n                <h2>If Your Guests Haven't Had Ramen Before</h2>\n                <p>Start them with something approachable rather than the spiciest option on the menu — Bakudan Chicken or Cilantro Lime Chicken are both easier entry points than Spicy Umami Miso. You can always suggest they try something bolder on a future visit once they know they like it.</p>\n\n                <h2>If Drinks Are Part of the Visit</h2>\n                <p>Stone Oak and La Cantera both have a full cocktail and wine program if your guests want a drink with dinner. Bandera's saké bar is a distinctive option if you want to give out-of-town guests something they may not have tried before.</p>\n\n                <h2>Ordering for a Group With Different Comfort Levels</h2>\n                <p>Between the ramen menu, the Not Ramen section (bibimbap, curry rice, bulgogi), and the starters, there's enough range that guests who want to play it safe and guests who want to try something new can both order what actually works for them at the same table.</p>"
 }

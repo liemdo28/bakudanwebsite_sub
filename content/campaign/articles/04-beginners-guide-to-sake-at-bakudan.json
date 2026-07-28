@@ -6,21 +6,37 @@
   "h1": "A Beginner's Guide to Saké at Bakudan",
   "meta_description": "New to saké? Here's how to think about ordering it at Bakudan Ramen, including our dedicated saké bar at the Bandera Road location.",
   "primary_keyword": "sake guide San Antonio",
-  "supporting_keywords": ["Bakudan sake menu", "beginner sake ordering", "sake with ramen"],
+  "supporting_keywords": [
+    "Bakudan sake menu",
+    "beginner sake ordering",
+    "sake with ramen"
+  ],
   "intent": "informational, educational",
   "audience": "First-time saké drinkers",
-  "location_focus": ["bandera", "all"],
+  "location_focus": [
+    "bandera",
+    "all"
+  ],
   "funnel_stage": "awareness",
-  "date_published": "2026-08-09",
-  "date_modified": "2026-08-09",
+  "date_published": "2026-08-03",
+  "date_modified": "2026-08-03",
   "image": "images/campaign/beginners-guide-to-sake-at-bakudan-hero.webp",
   "image_alt": "A bottle of Nigori saké",
   "cta_url": "order.html",
   "cta_text": "Find Your Nearest Bakudan",
   "evergreen_links": [
-    { "href": "menu.html", "text": "See the full drink menu" },
-    { "href": "locations/bandera.html", "text": "Visit our Bandera saké bar" }
+    {
+      "href": "menu.html",
+      "text": "See the full drink menu"
+    },
+    {
+      "href": "locations/bandera.html",
+      "text": "Visit our Bandera saké bar"
+    }
   ],
-  "related_campaign_slugs": ["bandera-road-sake-happy-hour", "bakudans-full-bar-guide-stone-oak-la-cantera"],
+  "related_campaign_slugs": [
+    "bandera-road-sake-happy-hour",
+    "bakudans-full-bar-guide-stone-oak-la-cantera"
+  ],
   "body_html": "                <p>Saké intimidates a lot of people who've never ordered it before — it's usually presented with more ceremony than a glass of wine or a cocktail, and the terminology isn't familiar if you didn't grow up around it. Here's a plain-English starting point for ordering it at Bakudan.</p>\n\n                <h2>Where to Actually Order It</h2>\n                <p>All three Bakudan locations carry saké, but Bandera Road is built specifically around a dedicated saké bar, with saké cocktails and saké sangria pitchers featured during happy hour (3–6 PM daily). Stone Oak and La Cantera also carry saké alongside their full cocktail and wine programs, so you're not limited to Bandera if you want to try it — Bandera is just where it's the centerpiece rather than one option among several.</p>\n\n                <h2>You Don't Need to Know the Terminology First</h2>\n                <p>You don't need to know the difference between grades or brewing styles before you order — that's true of wine and beer too, and nobody expects you to have it memorized on a first visit. If you're not sure where to start, saying so to your server is a completely normal way to order, the same as it would be at a wine bar.</p>\n\n                <h2>Nigori Is a Reasonable Starting Point</h2>\n                <p>If you want one general orientation point: nigori-style saké is cloudy rather than clear, and tends to read as sweeter and less austere than clear saké — which makes it a common recommendation for people trying saké for the first time. That's a starting point, not a rule, and it's worth asking what's currently available rather than assuming a specific bottle will be on hand.</p>\n\n                <h2>Pairing It With Ramen</h2>\n                <p>Saké works alongside ramen the way you'd expect any drink with real flavor to — it's there to complement the meal, not compete with it. If you're ordering a rich bowl like Garlic Tonkotsu, a lighter saké style can be a good counterbalance; if you're going lighter with something like Cilantro Lime Chicken, that's more flexible either way. There's no wrong combination for a first visit.</p>\n\n                <h2>Just Ask</h2>\n                <p>The most useful thing you can do on your first saké order at Bakudan is simply tell your server it's your first time and ask what they'd recommend that day. Saké selection can shift, and staff at the location you're visiting will know what's actually pouring that night.</p>"
 }

@@ -6,20 +6,32 @@
   "h1": "Bakudan Starters Guide: What to Order Before Your Ramen Arrives",
   "meta_description": "A rundown of every starter on Bakudan Ramen's menu — Gyoza, Karaage, Takoyaki, Poke Nachos, and more — and what to expect from each.",
   "primary_keyword": "Bakudan starters menu",
-  "supporting_keywords": ["gyoza San Antonio", "takoyaki San Antonio", "ramen restaurant appetizers"],
+  "supporting_keywords": [
+    "gyoza San Antonio",
+    "takoyaki San Antonio",
+    "ramen restaurant appetizers"
+  ],
   "intent": "informational, commercial",
   "audience": "Table groups deciding what to share",
-  "location_focus": ["all"],
+  "location_focus": [
+    "all"
+  ],
   "funnel_stage": "consideration",
-  "date_published": "2026-08-17",
-  "date_modified": "2026-08-17",
+  "date_published": "2026-08-11",
+  "date_modified": "2026-08-11",
   "image": "images/campaign/bakudan-starters-guide-hero.webp",
   "image_alt": "A plate of Bakudan Ramen's gyoza",
   "cta_url": "menu.html",
   "cta_text": "See the Full Starters Menu",
   "evergreen_links": [
-    { "href": "menu.html", "text": "View the full menu" }
+    {
+      "href": "menu.html",
+      "text": "View the full menu"
+    }
   ],
-  "related_campaign_slugs": ["ramen-and-karaage-fried-chicken", "ordering-for-a-mixed-group"],
+  "related_campaign_slugs": [
+    "ramen-and-karaage-fried-chicken",
+    "ordering-for-a-mixed-group"
+  ],
   "body_html": "                <p>Bakudan's Starters section has ten items, and most tables end up ordering two or three to share while the ramen is being made. Here's what's actually on it.</p>\n\n                <h2>Spicy Tuna Poke Nachos — $9.50</h2>\n                <p>The most shareable, least ramen-adjacent thing on the menu — poke over crispy wonton chips instead of a bowl.</p>\n\n                <h2>Wings: Tebasaki and Honey Sriracha — $9.50 each</h2>\n                <p>Tebasaki Wings are sweet and peppery, four pieces. Honey Sriracha Wings are spicy, sweet, and savory, also four pieces. If your table can't agree on one, splitting both is a normal move.</p>\n\n                <h2>Edamame and Bakudan Edamame — $5.50 / $6.50</h2>\n                <p>Regular Edamame is lightly salted. Bakudan Edamame is the spicy garlic version, a dollar more. Both are the lowest-commitment starter on the menu if you're still deciding what else to order.</p>\n\n                <h2>Takoyaki — $9.50</h2>\n                <p>Six octopus balls. This is the one item on the starters list that's the least like anything else here, so it's worth trying if you haven't had it, but it's a more specific flavor than the others — better as a shared bite than a solo order if you're not sure you'll like it.</p>\n\n                <h2>Shrimp Tempura — $9.50</h2>\n                <p>Six pieces, separate from the Shrimp Tempura ramen bowl on the main menu. A straightforward, easy order if you want something familiar.</p>\n\n                <h2>Gyoza — $8.99</h2>\n                <p>Six pieces. The most universally ordered starter on the menu, and the safest bet if your table wants one thing everyone will eat.</p>\n\n                <h2>Chicken Karaage — $9.50</h2>\n                <p>Fried chicken tossed in Japanese spices, six pieces. If you want fried chicken with more seasoning than the wings, this is the one.</p>\n\n                <h2>Katsu Bun — $6.00</h2>\n                <p>Fried pork cutlet, mayo, cabbage, and Bakudan's original sauce. The cheapest starter on the list and a good single-order option if you're eating solo and just want a bite before your bowl arrives.</p>"
 }

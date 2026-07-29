@@ -21,6 +21,23 @@ EXPECTED_BACKUP_FILE_SUFFIXES = ('.html', 'blog.html', 'sitemap.xml', '.webp', '
 FORBIDDEN_BACKUP_CONTENT_MARKERS = ('BAKUDAN_SFTP_PASS', 'htpasswd', '.env', 'DREAMHOST_HOST_KEY', 'PRODUCTION_PASSWORD')
 
 
+def test_workflow_run_scheduler_step_has_no_continue_on_error():
+    """
+    A failed 'Run scheduler' step must keep the job (and workflow run)
+    conclusion at 'failure', even though the subsequent artifact-upload step
+    still runs via if: always() and typically succeeds. continue-on-error on
+    the scheduler step would silently turn a failed deployment into an
+    overall 'success' -- must never be present.
+    """
+    workflow_path = os.path.join(ROOT, '.github', 'workflows', 'seo-campaign-publish.yml')
+    with open(workflow_path, encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+    run_step = next(s for s in data['jobs']['publish']['steps'] if s.get('id') == 'run')
+    assert run_step.get('continue-on-error') is None or run_step.get('continue-on-error') is False, (
+        'the scheduler step must never have continue-on-error: true'
+    )
+
+
 def test_workflow_uploads_only_the_run_specific_backup_dir():
     workflow_path = os.path.join(ROOT, '.github', 'workflows', 'seo-campaign-publish.yml')
     with open(workflow_path, encoding='utf-8') as f:
@@ -72,8 +89,20 @@ def test_run_only_writes_github_output_when_backup_dir_present():
     assert output_calls == [], f'a no-due run must never write a backup_dir output, got {output_calls}'
 
 
-def test_run_writes_github_output_only_after_real_deploy():
-    state = sch.load_state()
+def test_run_itself_never_writes_the_backup_dir_output():
+    """
+    Architecture change (see tests/campaign/test_backup_output_ordering.py):
+    the backup_dir $GITHUB_OUTPUT write now happens INSIDE deploy_scp(),
+    immediately after the backup directory is created -- not in run() after
+    publish_one() returns. That was the bug: a failure anywhere inside
+    deploy_scp() meant run() never reached its own output-writing line, and
+    the already-created backup was silently lost with the runner.
+
+    run() must therefore no longer call _write_github_output at all, even
+    when publish_one() (mocked here, so the real deploy_scp never executes)
+    reports a backup_dir in its return value -- proving run() is a pure
+    passthrough now, not a second place this logic could regress into.
+    """
     manifest = sch.load_manifest()
     entry = manifest['articles'][0]
 
@@ -88,7 +117,9 @@ def test_run_writes_github_output_only_after_real_deploy():
          mock.patch.object(sch, '_write_github_output', side_effect=fake_write_output):
         sch.run(dry_run=False)
 
-    assert ('backup_dir', '/fake/backup/dir') in output_calls
+    assert output_calls == [], (
+        f'run() must not write any $GITHUB_OUTPUT itself (that responsibility moved into deploy_scp) -- got {output_calls}'
+    )
 
 
 def test_run_does_not_write_output_for_reconcile_only_result():
@@ -132,11 +163,15 @@ def test_backup_directory_contains_only_expected_files_no_secrets():
                 f.write('<html>fake pre-deploy backup content</html>')
         fake_manifest = {
             'article_id': article['id'], 'slug': article['slug'],
+            'phase': 'completed',
             'created_at': '2026-01-01T00:00:00+00:00',
-            'files': [{'remote_path': f'/home/hoale24new/bakudanramen.com/{article["slug"]}.html',
-                       'backed_up_to': os.path.join(backup_dir, f'{article["slug"]}.html'),
-                       'checksum_sha256': 'deadbeef', 'was_new_file': False}],
-            'uploaded': [],
+            'updated_at': '2026-01-01T00:00:05+00:00',
+            # role + basename only -- NEVER the full remote path (would reveal
+            # the DreamHost account's home directory structure)
+            'files_backed_up': [{'role': 'article_html', 'basename': f'{article["slug"]}.html',
+                                  'checksum_sha256': 'deadbeef', 'was_new_file': False}],
+            'files_uploaded': [{'role': 'article_html', 'basename': f'{article["slug"]}.html'}],
+            'error': None,
         }
         sch._write_backup_manifest(backup_dir, fake_manifest)
 

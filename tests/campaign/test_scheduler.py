@@ -253,13 +253,21 @@ def test_partial_sftp_upload_raises_and_does_not_mark_published():
     assert state['articles'][article_id]['status'] == 'approved', 'a partial upload must never be marked published'
 
 
-def test_deploy_scp_backup_manifest_has_checksums():
-    """The backup manifest structure includes checksum + timestamp + remote path per file (item 5)."""
+def test_deploy_scp_backup_manifest_has_checksums_and_no_full_remote_paths():
+    """
+    The backup manifest structure includes checksum + timestamp per file, but
+    NEVER the full remote path (which would reveal the DreamHost account's
+    home directory structure) -- only a logical role + basename. See
+    tests/campaign/test_backup_output_ordering.py and
+    tests/campaign/test_backup_deploy_matrix.py for the runtime-content
+    version of this check against a real (faked-network) deploy_scp call.
+    """
     import inspect
     src = inspect.getsource(sch.deploy_scp)
     assert '_sha256' in src, 'deploy_scp must checksum backed-up files'
     assert 'created_at' in src, 'backup manifest must include a timestamp'
-    assert 'remote_path' in src, 'backup manifest must record the remote path per file'
+    assert "'role':" in src or '"role":' in src, 'backup manifest entries must use a logical role, not a full remote path'
+    assert "'basename':" in src or '"basename":' in src, 'backup manifest entries must record only a basename'
 
 
 def test_reconcile_promotes_stale_publishing_if_actually_live():

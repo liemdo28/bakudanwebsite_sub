@@ -301,14 +301,73 @@ def is_target_path_safe(path):
 
 
 def _sanitize_error(msg):
-    """Strips any configured SFTP credential/host/path value out of an error
-    message before it's ever printed or returned, in case an underlying
-    library exception happens to interpolate one of them."""
-    for var in ('BAKUDAN_SFTP_HOST', 'BAKUDAN_SFTP_USER', 'BAKUDAN_SFTP_PASS', 'BAKUDAN_REMOTE_WR'):
+    """Strips any configured SFTP credential/host/path/host-key value, and
+    this process's own local absolute workspace root, out of an error
+    message before it's ever printed, returned, or written to a manifest
+    that ends up in an uploaded artifact."""
+    for var in ('BAKUDAN_SFTP_HOST', 'BAKUDAN_SFTP_USER', 'BAKUDAN_SFTP_PASS',
+                'BAKUDAN_REMOTE_WR', 'DREAMHOST_HOST_KEY'):
         val = os.environ.get(var)
         if val:
             msg = msg.replace(val, f'[REDACTED:{var}]')
+    if ROOT:
+        msg = msg.replace(ROOT, '[REDACTED:local-workspace-root]')
     return msg
+
+
+def _categorize_error(e):
+    """Coarse, safe category for an exception -- used instead of ever
+    trusting a raw exception message not to contain something sensitive."""
+    if isinstance(e, paramiko.AuthenticationException):
+        return 'authentication_failed'
+    if isinstance(e, paramiko.SSHException):
+        return 'ssh_protocol_error'
+    if isinstance(e, FileNotFoundError):
+        return 'remote_path_not_found'
+    if isinstance(e, PermissionError):
+        return 'permission_denied'
+    if isinstance(e, (TimeoutError, ConnectionResetError, ConnectionRefusedError, ConnectionAbortedError)):
+        return 'connection_error'
+    if isinstance(e, OSError):
+        return 'os_error'
+    return f'unknown_error:{type(e).__name__}'
+
+
+def _sanitize_manifest_error(e):
+    """Structured, sanitized error record for a backup manifest: category +
+    operation-scoped sanitized message. Never the raw str(e) directly, and
+    never any of the values _sanitize_error() redacts."""
+    return {'category': _categorize_error(e), 'message': _sanitize_error(str(e))}
+
+
+def validate_backup_dir_path(relative_path):
+    """
+    Bounds-check a backup_dir path BEFORE it is ever written to $GITHUB_OUTPUT
+    or handed to the workflow's artifact-upload step. Must be: relative (not
+    absolute, not a Windows drive path), free of '..' traversal, inside
+    scripts/_deploy_backups/, and -- after resolving symlinks via realpath --
+    still physically inside that directory (defends against a symlink swapped
+    in for a backup subdirectory pointing somewhere else).
+    """
+    if not relative_path:
+        return False, 'empty path'
+    normalized_input = relative_path.replace('\\', '/')
+    if normalized_input.startswith('/') or (len(normalized_input) > 1 and normalized_input[1] == ':'):
+        return False, 'must be a relative path, not absolute'
+    if '..' in normalized_input.split('/'):
+        return False, 'contains a path traversal segment'
+    normalized = posixpath.normpath(normalized_input)
+    if not (normalized == 'scripts/_deploy_backups' or normalized.startswith('scripts/_deploy_backups/')):
+        return False, 'must be inside scripts/_deploy_backups/'
+    abs_path = os.path.realpath(os.path.join(ROOT, normalized.replace('/', os.sep)))
+    allowed_root = os.path.realpath(os.path.join(ROOT, 'scripts', '_deploy_backups'))
+    try:
+        common = os.path.commonpath([abs_path, allowed_root])
+    except ValueError:
+        return False, 'resolves to a different filesystem root, refusing'
+    if common != allowed_root:
+        return False, 'resolves outside scripts/_deploy_backups/ (possible symlink escape)'
+    return True, None
 
 
 def sftp_preflight():
@@ -382,76 +441,154 @@ def _sha256(path):
     return h.hexdigest()
 
 
+def _write_github_output(key, value):
+    """
+    Writes a step output for the GitHub Actions workflow to consume. No-op
+    outside Actions (GITHUB_OUTPUT unset), so safe to call from local/manual
+    runs too. Defined here (used by deploy_scp below) rather than only near
+    run() -- see the ordering fix in deploy_scp's docstring.
+    """
+    output_path = os.environ.get('GITHUB_OUTPUT')
+    if not output_path:
+        return
+    with open(output_path, 'a', encoding='utf-8') as f:
+        f.write(f'{key}={value}\n')
+
+
+def _new_backup_dir_relative(slug):
+    name = datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + f'-{slug}'
+    return f'scripts/_deploy_backups/{name}'
+
+
+def _write_backup_manifest(backup_dir, manifest):
+    """Atomic write (temp file + os.replace) so a hard kill mid-write can
+    never leave a truncated/corrupted manifest.json -- same pattern as
+    save_state()."""
+    manifest_path = os.path.join(backup_dir, 'manifest.json')
+    fd, tmp_path = tempfile.mkstemp(dir=backup_dir, suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+            f.write('\n')
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, manifest_path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
 def deploy_scp(article, local_files):
+    """
+    Durable-backup-first design: the backup directory is created and its
+    backup_dir output is emitted to $GITHUB_OUTPUT BEFORE any operation that
+    can still raise (connect, download, upload) -- this is the fix for the
+    bug where a failure partway through a deploy left the backup orphaned on
+    the ephemeral runner with no way for the workflow to find and upload it
+    (run() only wrote the output after publish_one() returned successfully,
+    which never happens on a failure path).
+
+    The manifest tracks explicit phases (initialized -> connecting ->
+    backing_up -> uploading -> completed, or -> failed at any point),
+    written atomically after every state change, so a partial run always
+    leaves a manifest reflecting exactly how far it got. File records use a
+    logical role + basename only -- never the full remote path (which would
+    reveal the DreamHost account's home directory structure).
+
+    try/except/finally wraps the entire SFTP lifecycle so sftp.close() and
+    ssh.close() always run best-effort, even on failure.
+    """
     config = get_sftp_config()
     remote_wr = config['remote_wr']
 
-    ssh = connect_ssh(config)
-    sftp = ssh.open_sftp()
-
-    remote_files = [
-        (local_files[0], remote_wr + f'/{article["slug"]}.html'),
-        (local_files[1], remote_wr + '/blog.html'),
-        (local_files[2], remote_wr + '/sitemap.xml'),
-        (os.path.join(ROOT, article['image']), remote_wr + '/' + article['image']),
-    ]
-
-    backup_dir = os.path.join(ROOT, 'scripts', '_deploy_backups',
-                               datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + f'-{article["slug"]}')
+    backup_dir_relative = _new_backup_dir_relative(article['slug'])
+    ok, reason = validate_backup_dir_path(backup_dir_relative)
+    if not ok:
+        raise RuntimeError(f'generated backup_dir failed its own safety validation: {reason}')
+    backup_dir = os.path.join(ROOT, backup_dir_relative.replace('/', os.sep))
     os.makedirs(backup_dir, exist_ok=True)
 
-    backup_manifest = {'article_id': article['id'], 'slug': article['slug'],
-                        'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        'files': []}
+    manifest = {
+        'article_id': article['id'], 'slug': article['slug'],
+        'phase': 'initialized',
+        'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'files_backed_up': [],
+        'files_uploaded': [],
+        'error': None,
+    }
+    _write_backup_manifest(backup_dir, manifest)
 
-    for local_path, remote_path in remote_files:
-        backup_local_path = os.path.join(backup_dir, os.path.basename(remote_path))
-        try:
-            sftp.get(remote_path, backup_local_path)
-            backup_manifest['files'].append({
-                'remote_path': remote_path,
-                'backed_up_to': backup_local_path,
-                'checksum_sha256': _sha256(backup_local_path),
-                'was_new_file': False,
-            })
-        except FileNotFoundError:
-            backup_manifest['files'].append({
-                'remote_path': remote_path, 'backed_up_to': None,
-                'checksum_sha256': None, 'was_new_file': True,
-            })
+    # THE FIX: emit the output the instant the directory + manifest exist,
+    # before connect/download/upload get a chance to raise. Always a
+    # relative path inside scripts/_deploy_backups/ (validated above).
+    _write_github_output('backup_dir', backup_dir_relative)
 
-    uploaded = []
+    remote_files = [
+        ('article_html', local_files[0], remote_wr + f'/{article["slug"]}.html'),
+        ('blog_index', local_files[1], remote_wr + '/blog.html'),
+        ('sitemap', local_files[2], remote_wr + '/sitemap.xml'),
+        ('hero_image', os.path.join(ROOT, article['image']), remote_wr + '/' + article['image']),
+    ]
+
+    def touch(phase=None):
+        if phase:
+            manifest['phase'] = phase
+        manifest['updated_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _write_backup_manifest(backup_dir, manifest)
+
+    ssh = None
+    sftp = None
     try:
-        for local_path, remote_path in remote_files:
+        touch('connecting')
+        ssh = connect_ssh(config)
+        sftp = ssh.open_sftp()
+
+        touch('backing_up')
+        for role, local_path, remote_path in remote_files:
+            backup_local_path = os.path.join(backup_dir, f'{role}-{os.path.basename(remote_path)}')
+            try:
+                sftp.get(remote_path, backup_local_path)
+                manifest['files_backed_up'].append({
+                    'role': role, 'basename': os.path.basename(remote_path),
+                    'checksum_sha256': _sha256(backup_local_path), 'was_new_file': False,
+                })
+            except FileNotFoundError:
+                manifest['files_backed_up'].append({
+                    'role': role, 'basename': os.path.basename(remote_path), 'was_new_file': True,
+                })
+            touch()
+
+        touch('uploading')
+        for role, local_path, remote_path in remote_files:
             remote_dir = remote_path.rsplit('/', 1)[0]
             try:
                 sftp.stat(remote_dir)
             except FileNotFoundError:
                 sftp.mkdir(remote_dir)
             sftp.put(local_path, remote_path)
-            uploaded.append(remote_path)
+            manifest['files_uploaded'].append({'role': role, 'basename': os.path.basename(remote_path)})
+            touch()
+
+        touch('completed')
     except Exception as e:
-        backup_manifest['upload_error'] = str(e)
-        backup_manifest['uploaded_before_failure'] = uploaded
-        _write_backup_manifest(backup_dir, backup_manifest)
-        sftp.close()
-        ssh.close()
+        manifest['error'] = _sanitize_manifest_error(e)
+        touch('failed')
         raise
     finally:
-        pass
+        if sftp is not None:
+            try:
+                sftp.close()
+            except Exception:
+                pass
+        if ssh is not None:
+            try:
+                ssh.close()
+            except Exception:
+                pass
 
-    sftp.close()
-    ssh.close()
-
-    backup_manifest['uploaded'] = uploaded
-    _write_backup_manifest(backup_dir, backup_manifest)
-    return {'backup_dir': backup_dir, 'manifest': backup_manifest}
-
-
-def _write_backup_manifest(backup_dir, manifest):
-    with open(os.path.join(backup_dir, 'manifest.json'), 'w', encoding='utf-8') as f:
-        json.dump(manifest, f, indent=2, ensure_ascii=False)
-        f.write('\n')
+    return {'backup_dir': backup_dir, 'backup_dir_relative': backup_dir_relative, 'manifest': manifest}
 
 
 def verify_live(article, retries=3, delay_seconds=5):
@@ -631,21 +768,6 @@ def reconcile_stale_publishing(state, manifest, now=None):
     return reconciled
 
 
-def _write_github_output(key, value):
-    """
-    Writes a step output for the GitHub Actions workflow to consume (e.g. the
-    backup_dir path, so the artifact-upload step can scope to exactly that
-    directory instead of the whole scripts/_deploy_backups/ tree). No-op
-    outside Actions (GITHUB_OUTPUT unset), so this is safe to call from local/
-    manual runs too.
-    """
-    output_path = os.environ.get('GITHUB_OUTPUT')
-    if not output_path:
-        return
-    with open(output_path, 'a', encoding='utf-8') as f:
-        f.write(f'{key}={value}\n')
-
-
 def run(dry_run=False):
     """Recurring-automation entrypoint (used by the GitHub Actions workflow).
     Respects the automation_enabled kill-switch -- does nothing while it's false."""
@@ -668,15 +790,14 @@ def run(dry_run=False):
     entry = due[0]  # publish at most one per run, never a batch
     print(f'due: seq {entry["seq"]} ({entry["slug"]})')
 
+    # NOTE: the backup_dir $GITHUB_OUTPUT write happens INSIDE deploy_scp(),
+    # immediately after the backup directory is created -- not here. Doing it
+    # here (only after publish_one() returns) was the bug: a failure anywhere
+    # in deploy_scp() means this line is never reached at all, and the
+    # already-created backup is silently lost with the runner. See
+    # deploy_scp()'s docstring and tests/campaign/test_backup_output_ordering.py.
     result = publish_one(entry, state, manifest, dry_run=dry_run)
     print(json.dumps(result, indent=2, default=str))
-
-    # Only ever set when an actual SFTP deploy happened (never on a pure
-    # reconciliation or a no-due run) -- the workflow's artifact-upload step
-    # is conditioned on this output being non-empty, so no-due/preflight runs
-    # never produce a fake/empty artifact.
-    if result.get('backup_dir'):
-        _write_github_output('backup_dir', result['backup_dir'])
 
 
 def run_one_manual(seq, dry_run=False):
@@ -697,10 +818,10 @@ def run_one_manual(seq, dry_run=False):
         raise ValueError(f'seq {seq} has status {rec["status"]!r}, expected approved/scheduled -- refusing to publish')
 
     print(f'MANUAL CONTROLLED PUBLISH: seq {entry["seq"]} ({entry["slug"]}), dry_run={dry_run}')
+    # See the note in run() above -- backup_dir output is emitted from
+    # inside deploy_scp(), not here.
     result = publish_one(entry, state, manifest, dry_run=dry_run)
     print(json.dumps(result, indent=2, default=str))
-    if result.get('backup_dir'):
-        _write_github_output('backup_dir', result['backup_dir'])
     return result
 
 

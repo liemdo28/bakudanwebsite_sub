@@ -14,6 +14,8 @@ ROOT_RELATIVE_SCRIPTS = [
     'tests/campaign/test_sftp_preflight.py',
     'tests/campaign/test_backup_artifact_scope.py',
     'tests/campaign/test_fresh_checkout_reconciliation.py',
+    'tests/campaign/test_backup_output_ordering.py',
+    'tests/campaign/test_backup_deploy_matrix.py',
     'tests/campaign/test_no_secrets.py',
 ]
 

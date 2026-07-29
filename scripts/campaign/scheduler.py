@@ -33,10 +33,12 @@ key, SFTP error, partial upload, or live-verification mismatch all leave the
 article NOT published (never a false-positive "published" status), and never
 force-push or overwrite a human commit.
 """
+import base64
 import datetime
 import hashlib
 import json
 import os
+import posixpath
 import re
 import sys
 import tempfile
@@ -239,6 +241,137 @@ def connect_ssh(config):
     ssh.connect(config['host'], port=config['port'], username=config['user'],
                 password=config['password'], timeout=30)
     return ssh
+
+
+def host_key_fingerprints():
+    """
+    Sanitized SHA256 fingerprint(s) of the currently PINNED host key(s) --
+    safe to print (a fingerprint is not a secret; publishing it is the whole
+    point of host-key verification). Never returns the raw key blob.
+
+    IMPORTANT HONESTY NOTE: DREAMHOST_HOST_KEY was populated via
+    `ssh-keyscan`, which is trust-on-first-use (TOFU) -- this function
+    reports what is currently pinned and being enforced by RejectPolicy, it
+    does NOT prove that value is authentic. Treat it as "pinned, not
+    independently verified" unless someone has separately cross-checked it
+    against DreamHost's own panel/support or a fingerprint the site owner
+    confirmed through a channel other than this same SSH connection.
+    """
+    host_key_data = _require_env('DREAMHOST_HOST_KEY')
+    fingerprints = []
+    for line in host_key_data.strip().splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        _host, key_type, key_b64 = parts[0], parts[1], parts[2]
+        key_bytes = base64.b64decode(key_b64)
+        digest = hashlib.sha256(key_bytes).digest()
+        fp = 'SHA256:' + base64.b64encode(digest).decode().rstrip('=')
+        fingerprints.append({'key_type': key_type, 'fingerprint': fp})
+    return fingerprints
+
+
+_DANGEROUS_TARGET_PATHS = {'/', '/etc', '/bin', '/usr', '/root', '/var', '/sbin', '/boot', '/dev', '/proc', '/sys', '/home'}
+
+
+def is_target_path_safe(path):
+    """
+    Bounds-check the configured remote target directory. Refuses root,
+    known system directories, anything containing a literal '..' segment,
+    or anything too shallow to plausibly be a specific site's document root
+    (e.g. just '/home' rather than '/home/<user>/<site>'). This does not
+    guarantee the path is *correct*, only that it isn't obviously dangerous.
+
+    Uses posixpath explicitly, NOT os.path -- the target is always a remote
+    Unix/SFTP path regardless of what OS this script runs on, and os.path
+    resolves to ntpath (backslash semantics) on Windows, which silently
+    breaks this check when developing/testing locally on Windows.
+    """
+    if not path or not path.startswith('/'):
+        return False, 'not an absolute path'
+    if '..' in path.split('/'):
+        return False, 'contains a path traversal segment'
+    normalized = posixpath.normpath(path)
+    if normalized in _DANGEROUS_TARGET_PATHS:
+        return False, 'resolves to a system directory, refusing'
+    depth = len([p for p in normalized.split('/') if p])
+    if depth < 3:
+        return False, 'target directory is too shallow to be a bounded site directory'
+    return True, None
+
+
+def _sanitize_error(msg):
+    """Strips any configured SFTP credential/host/path value out of an error
+    message before it's ever printed or returned, in case an underlying
+    library exception happens to interpolate one of them."""
+    for var in ('BAKUDAN_SFTP_HOST', 'BAKUDAN_SFTP_USER', 'BAKUDAN_SFTP_PASS', 'BAKUDAN_REMOTE_WR'):
+        val = os.environ.get(var)
+        if val:
+            msg = msg.replace(val, f'[REDACTED:{var}]')
+    return msg
+
+
+def sftp_preflight():
+    """
+    Fully read-only diagnostic. Connects with the exact same connect_ssh()
+    and RejectPolicy() used by a real deploy, verifies the host key,
+    confirms the target directory exists and passes is_target_path_safe(),
+    and reads ONLY metadata (size, mtime) for blog.html and sitemap.xml --
+    never their content. NEVER calls sftp.put / sftp.mkdir / sftp.rename /
+    sftp.remove / sftp.rmdir anywhere in this function (locked by
+    tests/campaign/test_sftp_preflight.py's source-inspection check).
+
+    Returns a fully sanitized dict: no secrets, no raw host-key blob, no raw
+    remote path strings -- only booleans, fingerprints (safe), sizes, and
+    ISO timestamps.
+    """
+    result = {
+        'connected': False,
+        'host_key_verified': False,
+        'host_key_fingerprints': [],
+        'target_dir_within_safe_bounds': False,
+        'target_dir_exists': False,
+        'blog_html': None,
+        'sitemap_xml': None,
+        'mutating_operations_performed': False,  # structurally guaranteed -- see docstring
+        'error': None,
+    }
+    try:
+        result['host_key_fingerprints'] = host_key_fingerprints()
+        config = get_sftp_config()
+
+        path_ok, path_reason = is_target_path_safe(config['remote_wr'])
+        result['target_dir_within_safe_bounds'] = path_ok
+        if not path_ok:
+            result['error'] = f'target directory failed safety check: {path_reason}'
+            return result
+
+        ssh = connect_ssh(config)
+        result['connected'] = True
+        result['host_key_verified'] = True  # connect_ssh raises via RejectPolicy otherwise
+
+        sftp = ssh.open_sftp()
+        try:
+            sftp.stat(config['remote_wr'])
+            result['target_dir_exists'] = True
+
+            for fname, key in (('blog.html', 'blog_html'), ('sitemap.xml', 'sitemap_xml')):
+                try:
+                    st = sftp.stat(config['remote_wr'] + '/' + fname)
+                    result[key] = {
+                        'exists': True,
+                        'size_bytes': st.st_size,
+                        'mtime_utc': datetime.datetime.fromtimestamp(
+                            st.st_mtime, tz=datetime.timezone.utc).isoformat(),
+                    }
+                except FileNotFoundError:
+                    result[key] = {'exists': False}
+        finally:
+            sftp.close()
+            ssh.close()
+    except Exception as e:
+        result['error'] = _sanitize_error(str(e))
+    return result
 
 
 def _sha256(path):
@@ -450,7 +583,7 @@ def publish_one(entry, state, manifest, dry_run=False):
         # status stays 'publishing' -- reconcile_stale_publishing() (or the
         # next run's check_already_live() at the top of this function) will
         # retry/investigate; never advances to 'published' on a failed check.
-        return {'published': False, 'checks': checks}
+        return {'published': False, 'checks': checks, 'backup_dir': deploy_result['backup_dir']}
 
     rec['status'] = 'published'
     _log(state, article_id, 'published', checks=checks)
@@ -465,7 +598,7 @@ def publish_one(entry, state, manifest, dry_run=False):
     git_result = commit_and_push(article, new_image_uploaded=True,
                                   commit_message=f'chore(campaign): publish {article["slug"]}')
     return {'published': True, 'reconciled': False, 'redeployed': True,
-            'checks': checks, 'git': git_result}
+            'checks': checks, 'git': git_result, 'backup_dir': deploy_result['backup_dir']}
 
 
 def reconcile_stale_publishing(state, manifest, now=None):
@@ -498,6 +631,21 @@ def reconcile_stale_publishing(state, manifest, now=None):
     return reconciled
 
 
+def _write_github_output(key, value):
+    """
+    Writes a step output for the GitHub Actions workflow to consume (e.g. the
+    backup_dir path, so the artifact-upload step can scope to exactly that
+    directory instead of the whole scripts/_deploy_backups/ tree). No-op
+    outside Actions (GITHUB_OUTPUT unset), so this is safe to call from local/
+    manual runs too.
+    """
+    output_path = os.environ.get('GITHUB_OUTPUT')
+    if not output_path:
+        return
+    with open(output_path, 'a', encoding='utf-8') as f:
+        f.write(f'{key}={value}\n')
+
+
 def run(dry_run=False):
     """Recurring-automation entrypoint (used by the GitHub Actions workflow).
     Respects the automation_enabled kill-switch -- does nothing while it's false."""
@@ -523,6 +671,13 @@ def run(dry_run=False):
     result = publish_one(entry, state, manifest, dry_run=dry_run)
     print(json.dumps(result, indent=2, default=str))
 
+    # Only ever set when an actual SFTP deploy happened (never on a pure
+    # reconciliation or a no-due run) -- the workflow's artifact-upload step
+    # is conditioned on this output being non-empty, so no-due/preflight runs
+    # never produce a fake/empty artifact.
+    if result.get('backup_dir'):
+        _write_github_output('backup_dir', result['backup_dir'])
+
 
 def run_one_manual(seq, dry_run=False):
     """
@@ -544,11 +699,19 @@ def run_one_manual(seq, dry_run=False):
     print(f'MANUAL CONTROLLED PUBLISH: seq {entry["seq"]} ({entry["slug"]}), dry_run={dry_run}')
     result = publish_one(entry, state, manifest, dry_run=dry_run)
     print(json.dumps(result, indent=2, default=str))
+    if result.get('backup_dir'):
+        _write_github_output('backup_dir', result['backup_dir'])
     return result
 
 
 if __name__ == '__main__':
-    if '--publish-one' in sys.argv:
+    if '--sftp-preflight' in sys.argv:
+        preflight_result = sftp_preflight()
+        print(json.dumps(preflight_result, indent=2, default=str))
+        ok = preflight_result.get('connected') and preflight_result.get('host_key_verified') \
+            and preflight_result.get('target_dir_exists') and not preflight_result.get('error')
+        sys.exit(0 if ok else 1)
+    elif '--publish-one' in sys.argv:
         idx = sys.argv.index('--publish-one')
         seq_arg = int(sys.argv[idx + 1])
         run_one_manual(seq_arg, dry_run='--dry-run' in sys.argv)

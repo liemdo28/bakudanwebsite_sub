@@ -64,16 +64,19 @@ jobs:
           DREAMHOST_HOST_KEY: ${{ secrets.DREAMHOST_HOST_KEY }}
         run: python scripts/campaign/scheduler.py
 
-      # Durable backup evidence: scheduler.py writes scripts/_deploy_backups/
-      # (gitignored, never committed) with a manifest.json per run containing
-      # remote path + timestamp + sha256 checksum for every file it replaced.
-      # Upload it as a build artifact so it survives after this ephemeral
-      # runner is destroyed, instead of relying on the runner's local disk.
+      # Durable backup evidence: scheduler.py only sets the backup_dir output
+      # when it actually performed an SFTP deploy this run (never on a
+      # no-due run, never on a pure reconcile-already-live run). Scoped to
+      # that ONE run's directory -- never the whole scripts/_deploy_backups/
+      # tree, which can accumulate old runs' backups on a persistent
+      # self-hosted runner or a reused workspace. if-no-files-found: error
+      # here because if backup_dir was set, the files MUST exist -- a miss
+      # is a real bug, not a benign "nothing to upload" case.
       - name: Upload deploy backup evidence
-        if: always()
+        if: always() && steps.run.outputs.backup_dir != ''
         uses: actions/upload-artifact@v4
         with:
           name: campaign-deploy-backup-${{ github.run_id }}
-          path: scripts/_deploy_backups/
+          path: ${{ steps.run.outputs.backup_dir }}
           retention-days: 90
-          if-no-files-found: ignore
+          if-no-files-found: error

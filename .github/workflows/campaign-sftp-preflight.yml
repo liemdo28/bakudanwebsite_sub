@@ -1,0 +1,48 @@
+name: Campaign SFTP preflight (read-only diagnostic)
+
+# Manual-only, read-only diagnostic. Connects to the real DreamHost SFTP
+# endpoint using the exact same connect_ssh()/RejectPolicy() strict
+# host-key verification as a real deploy, confirms the target directory
+# exists and is within a safe bound, and reads ONLY metadata (size, mtime)
+# for blog.html and sitemap.xml -- never their content.
+#
+# scripts/campaign/scheduler.py's sftp_preflight() NEVER calls put/mkdir/
+# rename/remove/rmdir (locked by tests/campaign/test_sftp_preflight.py's
+# source-inspection check). This workflow cannot deploy, publish, or
+# modify anything -- it exists specifically to answer "does the SFTP
+# connection actually work" without relying on a "no due articles" run,
+# which exits before ever connecting and proves nothing about connectivity.
+#
+# Output is a sanitized JSON dict: booleans, host-key fingerprints (not
+# secret), file sizes/timestamps -- never credentials, the raw host-key
+# blob, or the raw remote path.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install paramiko
+
+      - name: Run read-only SFTP preflight
+        env:
+          BAKUDAN_SFTP_HOST: ${{ secrets.PRODUCTION_HOST }}
+          BAKUDAN_SFTP_PORT: ${{ secrets.PRODUCTION_PORT }}
+          BAKUDAN_SFTP_USER: ${{ secrets.PRODUCTION_USERNAME }}
+          BAKUDAN_SFTP_PASS: ${{ secrets.PRODUCTION_PASSWORD }}
+          BAKUDAN_REMOTE_WR: ${{ secrets.PRODUCTION_TARGET_DIR }}
+          DREAMHOST_HOST_KEY: ${{ secrets.DREAMHOST_HOST_KEY }}
+        run: python scripts/campaign/scheduler.py --sftp-preflight

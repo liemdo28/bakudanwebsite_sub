@@ -30,8 +30,31 @@
       ]
     },
     "campaign-2026-08-05-bakudans-three-locations-compared": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-07-30T14:51:46.540079+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-07-30T14:51:49.288821+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260730-145146-bakudans-three-locations-compared"
+        },
+        {
+          "event": "published",
+          "at": "2026-07-30T14:51:49.829512+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-08-07-bandera-road-sake-happy-hour": {
       "status": "approved",

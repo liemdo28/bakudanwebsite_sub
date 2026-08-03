@@ -84,8 +84,31 @@
       ]
     },
     "campaign-2026-08-09-beginners-guide-to-sake-at-bakudan": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-08-03T18:16:21.067370+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-08-03T18:16:26.001418+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260803-181621-beginners-guide-to-sake-at-bakudan"
+        },
+        {
+          "event": "published",
+          "at": "2026-08-03T18:16:26.299160+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-08-11-family-friendly-ramen-night": {
       "status": "approved",

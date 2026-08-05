@@ -111,8 +111,31 @@
       ]
     },
     "campaign-2026-08-11-family-friendly-ramen-night": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-08-05T14:22:22.815388+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-08-05T14:22:26.129275+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260805-142222-family-friendly-ramen-night-kids-ramen"
+        },
+        {
+          "event": "published",
+          "at": "2026-08-05T14:22:26.404943+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-08-13-not-in-the-mood-for-ramen": {
       "status": "approved",

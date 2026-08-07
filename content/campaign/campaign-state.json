@@ -138,8 +138,31 @@
       ]
     },
     "campaign-2026-08-13-not-in-the-mood-for-ramen": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-08-07T14:14:19.252931+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-08-07T14:14:23.986320+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260807-141419-not-in-the-mood-for-ramen-bibimbap-curry-bulgogi"
+        },
+        {
+          "event": "published",
+          "at": "2026-08-07T14:14:24.829760+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-08-15-how-to-build-your-perfect-bowl": {
       "status": "approved",

@@ -165,8 +165,31 @@
       ]
     },
     "campaign-2026-08-15-how-to-build-your-perfect-bowl": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-08-09T14:31:58.727074+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-08-09T14:32:01.635987+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260809-143158-how-to-build-your-perfect-bowl-toppings-add-ons"
+        },
+        {
+          "event": "published",
+          "at": "2026-08-09T14:32:02.146458+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-08-17-bakudan-starters-guide": {
       "status": "approved",

@@ -192,8 +192,31 @@
       ]
     },
     "campaign-2026-08-17-bakudan-starters-guide": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-08-11T14:21:50.005343+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-08-11T14:21:51.663756+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260811-142150-bakudan-starters-guide"
+        },
+        {
+          "event": "published",
+          "at": "2026-08-11T14:21:51.945804+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-08-19-ramen-in-the-san-antonio-heat": {
       "status": "approved",

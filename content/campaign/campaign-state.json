@@ -219,8 +219,31 @@
       ]
     },
     "campaign-2026-08-19-ramen-in-the-san-antonio-heat": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-08-13T15:00:10.451163+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-08-13T15:00:12.128338+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260813-150010-why-ramen-still-makes-sense-in-the-san-antonio-heat"
+        },
+        {
+          "event": "published",
+          "at": "2026-08-13T15:00:12.394409+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-08-21-cold-snap-comfort-bowl": {
       "status": "approved",

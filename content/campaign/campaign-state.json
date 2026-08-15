@@ -246,8 +246,31 @@
       ]
     },
     "campaign-2026-08-21-cold-snap-comfort-bowl": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-08-15T14:19:43.303164+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-08-15T14:19:46.070714+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260815-141943-cold-snap-comfort-building-a-warmer-bowl"
+        },
+        {
+          "event": "published",
+          "at": "2026-08-15T14:19:46.507141+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-08-23-non-alcoholic-pairings": {
       "status": "approved",

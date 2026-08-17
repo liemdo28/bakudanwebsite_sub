@@ -273,8 +273,31 @@
       ]
     },
     "campaign-2026-08-23-non-alcoholic-pairings": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-08-17T14:25:01.886036+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-08-17T14:25:07.688200+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260817-142502-non-alcoholic-pairings-at-bakudan"
+        },
+        {
+          "event": "published",
+          "at": "2026-08-17T14:25:08.391772+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-08-25-our-san-antonio-ramen-story": {
       "status": "approved",

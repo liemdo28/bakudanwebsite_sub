@@ -376,6 +376,56 @@ function broth_log_copilot_station_dictionary(): array {
     ];
 }
 
+const BROTH_LOG_COPILOT_MONTH_WORDS = [
+    'january' => 1, 'jan' => 1,
+    'february' => 2, 'feb' => 2,
+    'march' => 3, 'mar' => 3,
+    'april' => 4, 'apr' => 4,
+    'may' => 5,
+    'june' => 6, 'jun' => 6,
+    'july' => 7, 'jul' => 7,
+    'august' => 8, 'aug' => 8,
+    'september' => 9, 'sept' => 9, 'sep' => 9,
+    'october' => 10, 'oct' => 10,
+    'november' => 11, 'nov' => 11,
+    'december' => 12, 'dec' => 12,
+];
+
+// Deterministic explicit-date extraction: ISO (YYYY-MM-DD) or English "Month Day" / "Day Month".
+// Never guesses a missing year forward/backward and never accepts an invalid calendar date or a
+// future business date - those are surfaced as an explicit error instead of silently falling back.
+function broth_log_copilot_extract_explicit_date(string $normalizedText, DateTimeImmutable $now): array {
+    $todayStr = broth_log_business_date($now);
+
+    if (preg_match('/\b(\d{4})-(\d{2})-(\d{2})\b/', $normalizedText, $m)) {
+        [$year, $month, $day] = [(int)$m[1], (int)$m[2], (int)$m[3]];
+        if (!checkdate($month, $day, $year)) return ['matched' => true, 'date' => null, 'error' => 'invalid_date'];
+        $date = sprintf('%04d-%02d-%02d', $year, $month, $day);
+        if ($date > $todayStr) return ['matched' => true, 'date' => null, 'error' => 'future_date'];
+        return ['matched' => true, 'date' => $date, 'error' => null];
+    }
+
+    $monthPattern = implode('|', array_keys(BROTH_LOG_COPILOT_MONTH_WORDS));
+    $month = null;
+    $day = null;
+    if (preg_match('/\b(' . $monthPattern . ')\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/', $normalizedText, $m)) {
+        $month = BROTH_LOG_COPILOT_MONTH_WORDS[$m[1]];
+        $day = (int)$m[2];
+    } elseif (preg_match('/\b(\d{1,2})(?:st|nd|rd|th)?\s+(' . $monthPattern . ')\.?\b/', $normalizedText, $m)) {
+        $day = (int)$m[1];
+        $month = BROTH_LOG_COPILOT_MONTH_WORDS[$m[2]];
+    }
+    if ($month !== null) {
+        $year = (int)broth_log_business_now($now)->format('Y');
+        if (!checkdate($month, $day, $year)) return ['matched' => true, 'date' => null, 'error' => 'invalid_date'];
+        $date = sprintf('%04d-%02d-%02d', $year, $month, $day);
+        if ($date > $todayStr) return ['matched' => true, 'date' => null, 'error' => 'future_date'];
+        return ['matched' => true, 'date' => $date, 'error' => null];
+    }
+
+    return ['matched' => false, 'date' => null, 'error' => null];
+}
+
 function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImmutable $now = null): array {
     $preferred = $user['preferred_language'] ?? null;
     $lang = broth_log_copilot_detect_language($text, $preferred);
@@ -394,7 +444,15 @@ function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImm
     preg_match('/\b(B[123])\b/i', $text, $bm);
     $branch = isset($bm[1]) ? strtoupper($bm[1]) : null;
     $date = null;
-    if (str_contains($n, 'yesterday') || str_contains($n, 'ayer') || str_contains($n, 'hom qua')) {
+    $dateError = null;
+    $explicitDate = broth_log_copilot_extract_explicit_date($n, $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')));
+    if ($explicitDate['matched']) {
+        if ($explicitDate['error']) {
+            $dateError = $explicitDate['error'];
+        } else {
+            $date = $explicitDate['date'];
+        }
+    } elseif (str_contains($n, 'yesterday') || str_contains($n, 'ayer') || str_contains($n, 'hom qua')) {
         $date = broth_log_business_now($now)->modify('-1 day')->format('Y-m-d');
     } elseif (str_contains($n, 'today') || str_contains($n, 'hoy') || str_contains($n, 'hom nay') || $intent === 'today_summary') {
         $date = broth_log_business_date($now);
@@ -420,6 +478,7 @@ function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImm
         'intent' => $intent,
         'branch' => $branch,
         'business_date' => $date,
+        'date_error' => $dateError,
         'date_range' => $date ? 'today' : null,
         'shift' => str_contains($n, 'morning') || str_contains($n, 'manana') || str_contains($n, 'ca sang') ? 'AM' : null,
         'station' => $station,
@@ -807,6 +866,8 @@ function broth_log_copilot_notify_incident(string $incidentId, ?DateTimeImmutabl
 
 const BROTH_LOG_COPILOT_I18N = [
     'clarification_branch' => ['en' => 'Which store should I check: B1, B2, or B3?', 'es' => 'Que tienda debo revisar: B1, B2 o B3?', 'vi' => 'Toi nen kiem tra chi nhanh nao: B1, B2, hay B3?'],
+    'invalid_date' => ['en' => 'That date does not look valid. Try an ISO date like 2026-07-19 or a month and day like July 19.', 'es' => 'Esa fecha no parece valida. Intenta una fecha ISO como 2026-07-19 o un mes y dia como July 19.', 'vi' => 'Ngay do khong hop le. Hay thu dinh dang ISO nhu 2026-07-19 hoac thang va ngay nhu July 19.'],
+    'future_date' => ['en' => 'I cannot look up a future date.', 'es' => 'No puedo consultar una fecha futura.', 'vi' => 'Toi khong the tra cuu ngay trong tuong lai.'],
     'forbidden_branch' => ['en' => 'I cannot access that store for this account.', 'es' => 'No puedo acceder a esa tienda con esta cuenta.', 'vi' => 'Toi khong the truy cap chi nhanh do voi tai khoan nay.'],
     'unknown_intent' => ['en' => 'I did not understand that yet. Try: Today B1, critical B1, missing B1, or open B1.', 'es' => 'Aun no entendi eso. Intenta: Today B1, critical B1, missing B1, o open B1.', 'vi' => 'Toi chua hieu yeu cau do. Hay thu: Today B1, critical B1, missing B1, hoac open B1.'],
     'ack_resolve_need_incident' => ['en' => 'Use the signed incident buttons or include an incident id so I can apply this safely.', 'es' => 'Usa los botones firmados del incidente o incluye un ID de incidente para poder aplicarlo de forma segura.', 'vi' => 'Hay dung nut xac nhan cua su co hoac ghi kem ma so su co de toi ap dung an toan.'],
@@ -899,6 +960,9 @@ function broth_log_copilot_format_response(array $parsed, array $user): string {
     if (in_array($intent, ['ack', 'resolve'], true)) return broth_log_copilot_tr('ack_resolve_need_incident', $lang);
     if (!in_array($intent, ['today_summary', 'critical_issues', 'open_issues', 'missing_logs', 'temperature_lookup', 'sop_comparison'], true)) {
         return broth_log_copilot_tr('unknown_intent', $lang);
+    }
+    if (!empty($parsed['date_error'])) {
+        return broth_log_copilot_tr($parsed['date_error'] === 'future_date' ? 'future_date' : 'invalid_date', $lang);
     }
 
     $response = broth_log_copilot_query_response($parsed, $user);

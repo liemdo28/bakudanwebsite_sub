@@ -383,6 +383,71 @@ try {
     $refParsed = broth_log_copilot_parse('/resolve #bl-1234567890-20260820120000-abcdef 38F closed door and moved product', $b1User, new DateTimeImmutable('2026-08-20 00:00:00 UTC'));
     expect_eq($refParsed['temperature_f'], 38.0, 'incident-reference digits are not misread as the recheck temperature');
 
+    // --- Explicit business-date parsing (deterministic, no LLM) ---
+    $fixedNow = new DateTimeImmutable('2026-08-20 18:00:00 UTC'); // business date 2026-08-20 in America/Chicago
+
+    $isoParsed = broth_log_copilot_parse('B1 2026-07-19 critical issues', $b1User, $fixedNow);
+    expect_eq($isoParsed['business_date'], '2026-07-19', 'ISO date is parsed exactly');
+    expect_true($isoParsed['date_error'] === null, 'ISO date produces no date error');
+
+    $monthDayParsed = broth_log_copilot_parse('B1 July 19 critical issues', $b1User, $fixedNow);
+    expect_eq($monthDayParsed['business_date'], '2026-07-19', 'English "Month Day" is parsed exactly');
+
+    $dayMonthParsed = broth_log_copilot_parse('B1 19 July critical issues', $b1User, $fixedNow);
+    expect_eq($dayMonthParsed['business_date'], '2026-07-19', 'English "Day Month" order is also parsed exactly');
+
+    $abbrevParsed = broth_log_copilot_parse('B1 Jul 19 open issues', $b1User, $fixedNow);
+    expect_eq($abbrevParsed['business_date'], '2026-07-19', 'Month abbreviation is parsed exactly');
+
+    $invalidCalendar = broth_log_copilot_parse('B1 February 30 critical issues', $b1User, $fixedNow);
+    expect_true($invalidCalendar['date_error'] === 'invalid_date', 'invalid calendar date (Feb 30) is rejected, not guessed');
+    expect_true($invalidCalendar['business_date'] === null, 'invalid calendar date does not silently resolve to a date');
+
+    $invalidIso = broth_log_copilot_parse('B1 2026-13-40 today', $b1User, $fixedNow);
+    expect_true($invalidIso['date_error'] === 'invalid_date', 'invalid ISO date (month 13) is rejected, not guessed');
+
+    $futureParsed = broth_log_copilot_parse('B1 December 25 critical issues', $b1User, $fixedNow);
+    expect_true($futureParsed['date_error'] === 'future_date', 'a date after business-today is rejected as a future date');
+    expect_true($futureParsed['business_date'] === null, 'future date does not silently resolve to a date');
+
+    $todayParsed = broth_log_copilot_parse('B1 today', $b1User, $fixedNow);
+    expect_eq($todayParsed['business_date'], '2026-08-20', 'plain "today" still resolves correctly (no regression)');
+    $yesterdayParsed = broth_log_copilot_parse('B1 yesterday', $b1User, $fixedNow);
+    expect_eq($yesterdayParsed['business_date'], '2026-08-19', 'plain "yesterday" still resolves correctly (no regression)');
+
+    foreach (['en' => 'That date does not look valid', 'es' => 'Esa fecha no parece valida', 'vi' => 'Ngay do khong hop le'] as $lang => $expectedPrefix) {
+        $msg = broth_log_copilot_format_response(['intent' => 'critical_issues', 'language' => $lang, 'branch' => 'B1', 'business_date' => null, 'date_error' => 'invalid_date'], $b1User);
+        expect_true(str_contains($msg, $expectedPrefix), "invalid date rejection [$lang] is localized");
+    }
+    foreach (['en' => 'I cannot look up a future date', 'es' => 'No puedo consultar una fecha futura', 'vi' => 'Toi khong the tra cuu ngay trong tuong lai'] as $lang => $expectedPrefix) {
+        $msg = broth_log_copilot_format_response(['intent' => 'today_summary', 'language' => $lang, 'branch' => 'B1', 'business_date' => null, 'date_error' => 'future_date'], $b1User);
+        expect_true(str_contains($msg, $expectedPrefix), "future date rejection [$lang] is localized");
+    }
+
+    // Explicit date wired into per-intent filtering against a real, previously-verified historical
+    // B1 date (2026-07-19: logs=1, critical=1, open=3, missing=0, confirmed via live sheet inspection).
+    // Synthetic fixture only - no data was written to the real Broth Log sheet.
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array {
+        if ($branch !== 'B1') return [];
+        return [[
+            'id' => 'rec-jul19', 'branch' => 'B1', 'businessDate' => '2026-07-19', 'businessTime' => '07:30', 'employeeName' => 'Tester',
+            'readings' => [
+                ['key' => 'lineFreezer', 'label' => 'Line Freezer', 'category' => 'freezer', 'temperature' => 12.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => 'Alert MOD'],
+                ['key' => 'prepAreaCooler', 'label' => 'Prep Area Cooler', 'category' => 'cold', 'temperature' => 39.0, 'unit' => 'F', 'severity' => 'safe', 'target' => '<= 40F', 'correctiveAction' => ''],
+            ],
+            'issues' => [
+                ['key' => 'lineFreezer', 'label' => 'Line Freezer', 'category' => 'freezer', 'temperature' => 12.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => 'Alert MOD', 'status' => 'Open'],
+            ],
+        ]];
+    };
+    $histCritical = broth_log_copilot_format_response(['intent' => 'critical_issues', 'language' => 'en', 'branch' => 'B1', 'business_date' => '2026-07-19', 'date_error' => null, 'station' => null], $b1User);
+    expect_true(str_contains($histCritical, 'Line Freezer') && str_contains($histCritical, '12F'), 'explicit-date critical_issues query returns the real historical critical reading');
+    $histTemp = broth_log_copilot_format_response(['intent' => 'temperature_lookup', 'language' => 'en', 'branch' => 'B1', 'business_date' => '2026-07-19', 'date_error' => null, 'station' => 'lineFreezer'], $b1User);
+    expect_eq($histTemp, 'Line Freezer at B1 2026-07-19: 12F (target <= 0F).', 'explicit-date temperature_lookup returns the requested station for the requested historical date');
+    $histForbidden = broth_log_copilot_format_response(['intent' => 'critical_issues', 'language' => 'en', 'branch' => 'B2', 'business_date' => '2026-07-19', 'date_error' => null], $b1User);
+    expect_true(str_contains($histForbidden, 'I cannot access that store'), 'explicit-date query still enforces branch isolation (B1 tester cannot read B2 for any date)');
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {
     @unlink(TEST_DB_PATH);

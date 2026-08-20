@@ -270,7 +270,7 @@ button {
 .bd-primary-filters,
 .bd-advanced-grid {
     display: grid;
-    grid-template-columns: auto minmax(130px, .8fr) minmax(130px, .8fr) minmax(180px, 1.4fr);
+    grid-template-columns: auto auto minmax(130px, .8fr) minmax(130px, .8fr) minmax(180px, 1.4fr);
     gap: 8px;
 }
 
@@ -310,6 +310,185 @@ button {
     background: var(--red);
     border-color: var(--red);
     color: #fff;
+}
+
+.bd-issues-only.active,
+.bd-today-actions .bd-btn.active {
+    border-color: rgba(233,166,58,.65);
+    background: rgba(233,166,58,.16);
+    color: #ffd48a;
+}
+
+.bd-today-ops {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 16px;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--panel), transparent 0%), color-mix(in srgb, var(--panel), #000 7%));
+    box-shadow: var(--shadow);
+}
+
+.bd-today-ops.critical {
+    border-color: rgba(255,91,91,.48);
+    background: color-mix(in srgb, var(--panel), var(--danger) 9%);
+}
+
+.bd-today-ops.warning {
+    border-color: rgba(233,166,58,.48);
+    background: color-mix(in srgb, var(--panel), #e9a63a 8%);
+}
+
+.bd-today-ops.ok {
+    border-color: rgba(87,183,122,.42);
+    background: color-mix(in srgb, var(--panel), var(--green) 6%);
+}
+
+.bd-today-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.bd-eyebrow {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: .75rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.bd-today-hero h2 {
+    margin: 0;
+    font-size: 1.55rem;
+    line-height: 1.15;
+}
+
+.bd-today-hero p {
+    margin: 8px 0 0;
+    color: var(--muted);
+}
+
+.bd-today-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.bd-today-actions a {
+    text-decoration: none;
+}
+
+.bd-today-counts {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.bd-today-count {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(255,255,255,.025);
+}
+
+.bd-today-count span {
+    display: block;
+    color: var(--muted);
+    font-size: .76rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.bd-today-count strong {
+    display: block;
+    margin-top: 5px;
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+.bd-today-count.critical strong { color: var(--danger); }
+.bd-today-count.warning strong { color: #f2c94c; }
+.bd-today-count.safe strong { color: var(--green); }
+.bd-today-count.missing strong { color: var(--muted); }
+
+.bd-today-issue-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.bd-today-issue {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(0,0,0,.12);
+}
+
+.bd-today-issue.critical {
+    border-color: rgba(255,91,91,.45);
+}
+
+.bd-today-issue.high,
+.bd-today-issue.warning,
+.bd-today-issue.warn {
+    border-color: rgba(233,166,58,.42);
+}
+
+.bd-today-issue-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.bd-today-issue-head strong {
+    min-width: 0;
+    font-size: 1rem;
+    line-height: 1.25;
+}
+
+.bd-today-issue dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.bd-today-issue dt {
+    color: var(--muted);
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.bd-today-issue dd {
+    margin: 3px 0 0;
+    font-weight: 700;
+}
+
+.bd-today-issue p {
+    margin: 0 0 10px;
+    color: var(--text);
+}
+
+.bd-today-empty {
+    display: grid;
+    gap: 4px;
+    padding: 14px;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    color: var(--muted);
+}
+
+.bd-today-empty strong {
+    color: var(--text);
 }
 
 .bd-grid {
@@ -992,6 +1171,28 @@ button {
     }
     .bd-primary-filters,
     .bd-advanced-grid {
+        grid-template-columns: 1fr;
+    }
+    .bd-today-ops {
+        padding: 12px;
+    }
+    .bd-today-hero,
+    .bd-today-actions,
+    .bd-today-issue-head {
+        display: grid;
+        grid-template-columns: 1fr;
+        justify-content: stretch;
+    }
+    .bd-today-actions .bd-btn {
+        width: 100%;
+        justify-content: center;
+    }
+    .bd-today-hero h2 {
+        font-size: 1.2rem;
+    }
+    .bd-today-counts,
+    .bd-today-issue-grid,
+    .bd-today-issue dl {
         grid-template-columns: 1fr;
     }
     .bd-filters input,

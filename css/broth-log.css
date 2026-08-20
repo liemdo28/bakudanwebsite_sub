@@ -49,7 +49,7 @@ button {
 .bd-shell {
     min-height: 100vh;
     display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
 }
 
 .bd-sidebar {
@@ -125,6 +125,8 @@ button {
 
 .bd-main {
     min-width: 0;
+    width: min(1180px, 100%);
+    margin: 0 auto;
     padding: 22px;
 }
 
@@ -139,7 +141,7 @@ button {
 .bd-title h1 {
     margin: 0;
     font-family: var(--font-display);
-    font-size: clamp(2.3rem, 5vw, 4.8rem);
+    font-size: 3.8rem;
     line-height: .88;
 }
 
@@ -183,6 +185,52 @@ button {
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 8px;
+}
+
+.bd-action-menu,
+.bd-system-info {
+    position: relative;
+}
+
+.bd-action-menu summary,
+.bd-system-info summary {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+}
+
+.bd-action-menu > div {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 20;
+    display: grid;
+    gap: 6px;
+    min-width: 150px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+}
+
+.bd-action-menu .bd-btn {
+    width: 100%;
+}
+
+.bd-system-info {
+    margin-top: 16px;
+    color: var(--muted);
+}
+
+.bd-system-info[open] {
+    padding-top: 8px;
 }
 
 .bd-btn,
@@ -270,8 +318,23 @@ button {
 .bd-primary-filters,
 .bd-advanced-grid {
     display: grid;
-    grid-template-columns: auto auto minmax(130px, .8fr) minmax(130px, .8fr) minmax(180px, 1.4fr);
+    grid-template-columns: auto minmax(170px, 220px) auto;
     gap: 8px;
+    align-items: end;
+}
+
+.bd-date-picker {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.bd-date-picker span {
+    color: var(--muted);
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
 }
 
 .bd-advanced-filters {
@@ -345,6 +408,11 @@ button {
     background: color-mix(in srgb, var(--panel), var(--green) 6%);
 }
 
+.bd-today-ops.future,
+.bd-today-ops.empty {
+    box-shadow: none;
+}
+
 .bd-today-hero {
     display: flex;
     align-items: flex-start;
@@ -369,6 +437,11 @@ button {
 
 .bd-today-hero p {
     margin: 8px 0 0;
+    color: var(--muted);
+}
+
+.bd-reviewed-count {
+    margin: 0;
     color: var(--muted);
 }
 
@@ -459,6 +532,72 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     margin: 12px 0;
+}
+
+.bd-section-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.bd-section-head h2 {
+    margin: 0;
+}
+
+.bd-section-head span {
+    color: var(--muted);
+    font-size: .86rem;
+}
+
+.bd-daily-records {
+    margin-top: 16px;
+}
+
+.bd-daily-table {
+    display: grid;
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+}
+
+.bd-daily-row {
+    display: grid;
+    grid-template-columns: 92px minmax(180px, 1.25fr) minmax(110px, .75fr) minmax(94px, .65fr) minmax(86px, .55fr) minmax(90px, .6fr) minmax(190px, 1.35fr);
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    background: color-mix(in srgb, var(--panel), var(--panel-2) 48%);
+    font-size: .86rem;
+}
+
+.bd-daily-row strong {
+    font-size: .96rem;
+}
+
+.bd-daily-row b {
+    font-size: 1.08rem;
+}
+
+.bd-daily-header {
+    color: var(--muted);
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    background: var(--panel);
+}
+
+.bd-daily-row.warning,
+.bd-daily-row.high,
+.bd-daily-row.missing {
+    background: color-mix(in srgb, var(--panel), #e9a63a 9%);
+}
+
+.bd-daily-row.critical {
+    background: color-mix(in srgb, var(--panel), var(--danger) 12%);
 }
 
 .bd-today-issue dt {
@@ -1156,6 +1295,9 @@ button {
 
 @media (max-width: 720px) {
     .bd-main { padding: 14px; }
+    .bd-title h1 {
+        font-size: 2.35rem;
+    }
     .bd-topbar,
     .bd-kpis,
     .bd-two,
@@ -1172,6 +1314,19 @@ button {
     .bd-primary-filters,
     .bd-advanced-grid {
         grid-template-columns: 1fr;
+    }
+    .bd-date-picker {
+        width: 100%;
+    }
+    .bd-title p {
+        margin-top: 2px;
+    }
+    .bd-actions {
+        order: 3;
+    }
+    .bd-action-menu summary,
+    .bd-icon-btn {
+        min-height: 36px;
     }
     .bd-today-ops {
         padding: 12px;
@@ -1228,6 +1383,44 @@ button {
     }
     .bd-action-strip span {
         white-space: normal;
+    }
+    .bd-section-head {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+    .bd-action-menu {
+        width: auto;
+    }
+    .bd-action-menu > div {
+        position: static;
+        margin-top: 6px;
+    }
+    .bd-daily-header {
+        display: none;
+    }
+    .bd-daily-table {
+        border: 0;
+        gap: 10px;
+        overflow: visible;
+    }
+    .bd-daily-row {
+        grid-template-columns: 1fr;
+        gap: 5px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        align-items: start;
+    }
+    .bd-daily-row span:nth-child(1)::before { content: "Time: "; color: var(--muted); font-weight: 700; }
+    .bd-daily-row span:nth-child(3)::before { content: "Employee: "; color: var(--muted); font-weight: 700; }
+    .bd-daily-row b::before { content: "Entered: "; color: var(--muted); font-weight: 700; font-size: .86rem; }
+    .bd-daily-row span:nth-child(5)::before { content: "Target: "; color: var(--muted); font-weight: 700; }
+    .bd-daily-row span:nth-child(7)::before { content: "Action: "; color: var(--muted); font-weight: 700; }
+    .bd-daily-row strong {
+        font-size: 1.08rem;
+    }
+    .bd-daily-row b {
+        font-size: 1.45rem;
+        line-height: 1.1;
     }
     .bd-deviation-track {
         min-width: 0;

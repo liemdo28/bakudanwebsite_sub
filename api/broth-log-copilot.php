@@ -18,6 +18,10 @@ function broth_log_copilot_env(string $key, string $default = ''): string {
     return is_string($value) && $value !== '' ? trim($value) : $default;
 }
 
+function broth_log_copilot_is_staging(): bool {
+    return strtolower(broth_log_copilot_env('BROTH_LOG_COPILOT_ENV', 'production')) === 'staging';
+}
+
 function broth_log_copilot_migrate(SQLite3 $db): void {
     $db->exec("
     CREATE TABLE IF NOT EXISTS broth_log_authorized_users (
@@ -54,6 +58,9 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         received_at TEXT NOT NULL DEFAULT (datetime('now')),
         processed_at TEXT,
         status TEXT NOT NULL DEFAULT 'queued',
+        outbound_status TEXT,
+        outbound_error TEXT,
+        outbound_sent_at TEXT,
         last_error TEXT
     );
     CREATE TABLE IF NOT EXISTS broth_log_conversation_context (
@@ -119,6 +126,9 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         "ALTER TABLE broth_log_incidents ADD COLUMN active_key TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_expires_at TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_token TEXT",
+        "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_status TEXT",
+        "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_error TEXT",
+        "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_sent_at TEXT",
     ] as $sql) {
         try { $db->exec($sql); } catch (Throwable $e) {}
     }
@@ -216,6 +226,75 @@ function broth_log_copilot_redact_credential_text(string $text): string {
         $text = preg_replace($pattern, $replacement, $text) ?? '';
     }
     return $text;
+}
+
+function broth_log_copilot_sanitize_error(string $message): string {
+    foreach ([
+        broth_log_copilot_env('TELEGRAM_BOT_TOKEN'),
+        broth_log_copilot_env('TELEGRAM_CHAT_ID'),
+        broth_log_copilot_env('TELEGRAM_INCOMING_SECRET'),
+        broth_log_copilot_env('TELEGRAM_CALLBACK_SECRET'),
+        broth_log_copilot_env('TELEGRAM_WEBHOOK_SECRET'),
+    ] as $secret) {
+        if ($secret !== '') $message = str_replace($secret, '[redacted]', $message);
+    }
+    return substr(broth_log_copilot_redact_credential_text($message), 0, 500);
+}
+
+function broth_log_copilot_apply_outbound_policy(string $message): string {
+    $message = trim($message);
+    if (broth_log_copilot_is_staging() && !preg_match('/^TEST\b/i', $message)) {
+        return 'TEST - ' . $message;
+    }
+    return $message;
+}
+
+function broth_log_copilot_send_telegram_message(string $chatId, string $message, ?array $replyMarkup = null): array {
+    $chatId = trim($chatId);
+    if ($chatId === '') return ['sent' => false, 'reason' => 'missing_chat_id'];
+    $token = broth_log_copilot_env('TELEGRAM_BOT_TOKEN');
+    if ($token === '') return ['sent' => false, 'reason' => 'missing_token'];
+    $message = broth_log_copilot_apply_outbound_policy($message);
+    $payload = [
+        'chat_id' => $chatId,
+        'text' => $message,
+        'disable_web_page_preview' => true,
+    ];
+    if ($replyMarkup !== null) $payload['reply_markup'] = $replyMarkup;
+
+    $transport = $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] ?? null;
+    if (is_callable($transport)) {
+        try {
+            $result = $transport('sendMessage', $payload, $token);
+            return is_array($result) ? $result : ['sent' => (bool)$result, 'mock' => true];
+        } catch (Throwable $e) {
+            return ['sent' => false, 'reason' => 'transport_exception', 'error' => broth_log_copilot_sanitize_error($e->getMessage())];
+        }
+    }
+    if (in_array(strtolower(broth_log_copilot_env('BROTH_LOG_COPILOT_TELEGRAM_MOCK', 'false')), ['1','true','yes','on'], true)) {
+        return ['sent' => true, 'mock' => true, 'message' => $message, 'chat_id_configured' => true];
+    }
+
+    $url = 'https://api.telegram.org/bot' . $token . '/sendMessage';
+    $body = json_encode($payload);
+    $ctx = stream_context_create(['http' => [
+        'method' => 'POST',
+        'timeout' => 6,
+        'ignore_errors' => true,
+        'header' => "Content-Type: application/json\r\n",
+        'content' => $body,
+    ]]);
+    $raw = @file_get_contents($url, false, $ctx);
+    $statusLine = $http_response_header[0] ?? '';
+    $httpCode = preg_match('#\s(\d{3})\s#', $statusLine, $m) ? (int)$m[1] : 0;
+    if ($raw === false || $httpCode < 200 || $httpCode >= 300) {
+        return ['sent' => false, 'reason' => 'telegram_api_error', 'http_code' => $httpCode];
+    }
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded) || empty($decoded['ok'])) {
+        return ['sent' => false, 'reason' => 'telegram_rejected', 'http_code' => $httpCode, 'error' => broth_log_copilot_sanitize_error($raw)];
+    }
+    return ['sent' => true, 'http_code' => $httpCode];
 }
 
 function broth_log_copilot_authorized_user(string $telegramUserId): ?array {
@@ -541,6 +620,33 @@ function broth_log_copilot_query_response(array $parsed, array $user): array {
     return ['records' => $records, 'summary' => $summary, 'branch' => $branch, 'businessDate' => $date];
 }
 
+function broth_log_copilot_format_response(array $parsed, array $user): string {
+    $lang = $parsed['language'] ?? ($user['preferred_language'] ?? 'en');
+    if (($parsed['intent'] ?? '') === 'help') {
+        return match ($lang) {
+            'es' => 'Puedo revisar Today, critical issues, missing logs y open issues para tus tiendas autorizadas.',
+            'vi' => 'Toi co the xem Today, critical issues, missing logs va open issues cho chi nhanh ban duoc cap quyen.',
+            default => 'I can check Today, critical issues, missing logs, and open issues for your authorized stores.',
+        };
+    }
+    if (in_array($parsed['intent'] ?? '', ['ack','resolve'], true)) {
+        return 'Use the signed incident buttons or include an incident id so I can apply this safely.';
+    }
+    if (in_array($parsed['intent'] ?? '', ['today_summary','critical_issues','open_issues','missing_logs','temperature_lookup','sop_comparison'], true)) {
+        $response = broth_log_copilot_query_response($parsed, $user);
+        if (!empty($response['forbidden'])) return (string)$response['message'];
+        if (!empty($response['needs_clarification'])) return (string)$response['message'];
+        $summary = $response['summary'] ?? [];
+        $branch = $response['branch'] ?? ($parsed['branch'] ?? 'Store');
+        $date = $response['businessDate'] ?? ($parsed['business_date'] ?? broth_log_business_date());
+        $total = (int)($summary['total'] ?? 0);
+        $critical = (int)($summary['critical'] ?? 0);
+        $missing = (int)($summary['missing'] ?? 0);
+        return "$branch $date: $total log(s), $critical critical, $missing missing.";
+    }
+    return 'I did not understand that yet. Try: Today B1, critical B1, missing B1, or open B1.';
+}
+
 function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $now = null): array {
     if (!broth_log_copilot_enabled()) return [];
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
@@ -559,8 +665,16 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
             $telegramUserId,
             json_encode(['last_parse' => $parsed, 'chat_id' => $row['chat_id']]),
         ]);
-        run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
-        $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $parsed['intent'], 'language' => $parsed['language']];
+        $message = broth_log_copilot_format_response($parsed, $user);
+        $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $message);
+        if (!empty($send['sent'])) {
+            run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+            $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $parsed['intent'], 'language' => $parsed['language'], 'outbound' => 'sent'];
+            continue;
+        }
+        $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
+        run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
+        $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $parsed['intent'], 'language' => $parsed['language'], 'outbound' => 'failed', 'reason' => $reason];
     }
     return $processed;
 }

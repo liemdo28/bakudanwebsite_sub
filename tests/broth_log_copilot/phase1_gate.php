@@ -73,6 +73,8 @@ try {
 
     putenv('TELEGRAM_COPILOT_ENABLED' . '=true');
     putenv('TELEGRAM_CALLBACK_SECRET=unit-callback-secret');
+    putenv('TELEGRAM_BOT_TOKEN=unit-test-token');
+    putenv('BROTH_LOG_COPILOT_ENV=staging');
     broth_log_copilot_migrate(db());
     db()->exec('DROP INDEX IF EXISTS idx_broth_log_incidents_open');
     broth_log_copilot_migrate(db());
@@ -86,11 +88,49 @@ try {
     expect_true(broth_log_copilot_authorized_user('username-only') === null, 'username-only lookup is denied');
     expect_true(broth_log_copilot_query_response(['branch' => 'B2', 'business_date' => '2026-08-20'], $user)['forbidden'] ?? false, 'cross-branch query is rejected before data fetch');
 
+    $sentMessages = [];
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+    $outbound = broth_log_copilot_send_telegram_message('999', 'hello from staging');
+    expect_true($outbound['sent'], 'outbound helper sends through mock transport');
+    expect_eq($sentMessages[0]['method'], 'sendMessage', 'outbound helper uses sendMessage method');
+    expect_eq((string)$sentMessages[0]['payload']['chat_id'], '999', 'outbound helper sends to explicit chat');
+    expect_true(str_starts_with($sentMessages[0]['payload']['text'], 'TEST'), 'staging outbound helper applies TEST prefix');
+    expect_true(!str_contains(json_encode($outbound), 'unit-test-token'), 'outbound result does not leak token');
+    putenv('BROTH_LOG_COPILOT_ENV=production');
+    broth_log_copilot_send_telegram_message('999', 'hello from production');
+    expect_true(!str_starts_with($sentMessages[1]['payload']['text'], 'TEST'), 'non-staging outbound omits TEST prefix');
+    putenv('BROTH_LOG_COPILOT_ENV=staging');
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (): array {
+        return ['sent' => false, 'reason' => 'telegram_api_error token=123456:ABCdefGhijkLMNOPqrstUVwxYZ'];
+    };
+    $failedUpdate = [
+        'update_id' => 1009,
+        'message' => [
+            'text' => '/help B1',
+            'from' => ['id' => 101],
+            'chat' => ['id' => 999],
+            'message_id' => 76,
+        ],
+    ];
+    expect_true(broth_log_copilot_enqueue_webhook($failedUpdate)['queued'], 'worker reply failure test enqueues inbox row');
+    $failedProcessed = broth_log_copilot_process_inbox(1, new DateTimeImmutable('2026-08-20 00:00:00 UTC'));
+    $failedInbox = q1("SELECT status,outbound_status,outbound_error FROM broth_log_bot_inbox WHERE update_id='1009'");
+    expect_eq($failedProcessed[0]['status'] ?? '', 'send_failed', 'failed outbound does not appear processed');
+    expect_eq($failedInbox['outbound_status'] ?? '', 'failed', 'failed outbound status is recorded');
+    expect_true(str_contains((string)$failedInbox['outbound_error'], '[redacted-token]'), 'failed outbound error is redacted');
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+
     $fakeToken = '1234567890:' . 'ABCdefGhijkLMNOPqrstUVwxYZ';
     $update = [
         'update_id' => 1010,
         'message' => [
-            'text' => 'token ' . $fakeToken . ' B1 today 38F corrected by closing lid',
+            'text' => '/help token ' . $fakeToken . ' B1 today 38F corrected by closing lid',
             'from' => ['id' => 101],
             'chat' => ['id' => 999, 'title' => 'Ops token ' . $fakeToken],
             'message_id' => 77,
@@ -105,7 +145,11 @@ try {
     expect_true(!str_contains((string)$inbox['payload_json'], 'raw-photo-file-id'), 'payload JSON excludes raw Telegram update data');
     expect_true(str_contains((string)$inbox['message_text'], '[redacted-token]'), 'message text redacts token-shaped text');
     expect_true(str_contains((string)$inbox['message_text'], 'B1 today 38F corrected by closing lid'), 'ordinary Broth Log content is preserved');
+    $sentBeforeWorker = count($sentMessages);
     expect_eq(count(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:00:00 UTC'))), 1, 'worker processes authorized inbox');
+    $processedInbox = q1("SELECT status,outbound_status FROM broth_log_bot_inbox WHERE update_id='1010'");
+    expect_eq($processedInbox['outbound_status'] ?? '', 'sent', 'worker records successful outbound reply');
+    expect_eq(count($sentMessages), $sentBeforeWorker + 1, 'worker sends exactly one outbound reply for inbox row');
 
     $captionUpdate = [
         'update_id' => 1011,

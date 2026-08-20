@@ -94,6 +94,16 @@ def test_raw_message_and_context_retention_are_configured():
     assert "reason' => 'disabled'" in copilot
 
 
+def test_worker_loads_env_before_resolving_db_path_and_has_outbound():
+    worker = text('scripts/broth-log-telegram-bot-worker.php')
+    copilot = text('api/broth-log-copilot.php')
+    assert worker.index('load_private_env_file_worker(PRIVATE_TELEGRAM_ENV_PATH);') < worker.index("define('DB_PATH'")
+    assert 'BROTH_LOG_COPILOT_ENV' in copilot
+    assert 'function broth_log_copilot_send_telegram_message' in copilot
+    assert "outbound_status='sent'" in copilot
+    assert "status='send_failed'" in copilot
+
+
 def test_no_secret_values_or_production_activation_in_new_files():
     paths = [
         'api/broth-log-core.php',

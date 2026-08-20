@@ -7,7 +7,6 @@ if (PHP_SAPI !== 'cli') {
 }
 
 const PRIVATE_TELEGRAM_ENV_PATH = '/home/hoale24new/bakudan-app/config/broth-log-telegram.env';
-define('DB_PATH', getenv('BAKUDAN_DB_PATH') ?: '/home/hoale24new/bakudan-app/data/bakudan.db');
 
 function load_private_env_file_worker(string $path): void {
     $override = getenv('BAKUDAN_TELEGRAM_ENV_FILE');
@@ -32,6 +31,7 @@ function load_private_env_file_worker(string $path): void {
 }
 
 load_private_env_file_worker(PRIVATE_TELEGRAM_ENV_PATH);
+define('DB_PATH', getenv('BAKUDAN_DB_PATH') ?: '/home/hoale24new/bakudan-app/data/bakudan.db');
 require_once __DIR__ . '/../api/broth-log-copilot.php';
 
 function db(): SQLite3 {
@@ -101,7 +101,9 @@ try {
         'results' => $dryRun ? array_map(fn($a) => ['action' => $a['action'], 'incident_id' => $a['incident']['incident_id']], $due) : $results,
     ], JSON_PRETTY_PRINT) . PHP_EOL;
 } catch (Throwable $e) {
-    $message = preg_replace('/[0-9]{8,12}:AA[A-Za-z0-9_-]{20,}/', '[redacted-token]', $e->getMessage()) ?: 'worker failed';
+    $message = function_exists('broth_log_copilot_sanitize_error')
+        ? broth_log_copilot_sanitize_error($e->getMessage())
+        : (preg_replace('/\b[0-9]{5,16}:[A-Za-z0-9_-]{20,}\b/', '[redacted-token]', $e->getMessage()) ?: 'worker failed');
     fwrite(STDERR, $message . PHP_EOL);
     exit(1);
 }

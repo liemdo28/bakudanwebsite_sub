@@ -8,6 +8,30 @@
 declare(strict_types=1);
 
 // ── Config ────────────────────────────────────────────────────────────
+define('PRIVATE_TELEGRAM_ENV_PATH', getenv('BAKUDAN_TELEGRAM_ENV_FILE') ?: '/home/hoale24new/bakudan-app/config/broth-log-telegram.env');
+
+function load_private_env_file(string $path): void {
+    if ($path === '' || !is_readable($path)) return;
+    $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if (!is_array($lines)) return;
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] === '#') continue;
+        if (!preg_match('/^([A-Z][A-Z0-9_]*)=(.*)$/', $line, $m)) continue;
+        $key = $m[1];
+        $value = trim($m[2]);
+        if ((str_starts_with($value, '"') && str_ends_with($value, '"')) || (str_starts_with($value, "'") && str_ends_with($value, "'"))) {
+            $value = substr($value, 1, -1);
+        }
+        if (getenv($key) === false) {
+            putenv("$key=$value");
+            $_ENV[$key] = $value;
+        }
+    }
+}
+
+load_private_env_file(PRIVATE_TELEGRAM_ENV_PATH);
+
 define('DB_PATH',      '/home/hoale24new/bakudan-app/data/bakudan.db');
 define('UPLOAD_DIR',   '/home/hoale24new/bakudanramen.com/uploads/blogs/');
 define('UPLOAD_URL',   '/uploads/blogs/');

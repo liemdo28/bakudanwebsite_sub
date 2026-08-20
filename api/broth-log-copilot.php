@@ -156,13 +156,14 @@ function broth_log_copilot_extract_update(array $update): array {
     $callback = $update['callback_query'] ?? null;
     $from = $callback['from'] ?? ($message['from'] ?? []);
     $chat = $message['chat'] ?? [];
+    $text = $callback['data'] ?? ($message['text'] ?? ($message['caption'] ?? ''));
     return [
         'update_id' => (string)($update['update_id'] ?? ''),
         'telegram_user_id' => isset($from['id']) ? (string)$from['id'] : '',
         'chat_id' => isset($chat['id']) ? (string)$chat['id'] : '',
         'message_id' => isset($message['message_id']) ? (string)$message['message_id'] : '',
         'update_type' => $callback ? 'callback_query' : 'message',
-        'text' => trim((string)($callback['data'] ?? ($message['text'] ?? ''))),
+        'text' => trim((string)$text),
     ];
 }
 
@@ -198,8 +199,23 @@ function broth_log_copilot_sanitized_update_payload(array $update, array $meta):
 }
 
 function broth_log_copilot_sanitize_message(string $message): string {
-    $message = preg_replace('/[0-9]{8,12}:AA[A-Za-z0-9_-]{20,}/', '[redacted-token]', $message) ?: '';
+    $message = broth_log_copilot_redact_credential_text($message);
     return substr($message, 0, 1000);
+}
+
+function broth_log_copilot_redact_credential_text(string $text): string {
+    $patterns = [
+        // Telegram bot tokens are numeric IDs followed by a long URL-safe secret.
+        '/\b[0-9]{5,16}:[A-Za-z0-9_-]{20,}\b/' => '[redacted-token]',
+        '/\b(Bot|Bearer)\s+[A-Za-z0-9._~+\/=-]{20,}\b/i' => '$1 [redacted-token]',
+        '/\b(?:sk|rk|pk|ghp|github_pat|xox[baprs])_[A-Za-z0-9_=-]{16,}\b/' => '[redacted-token]',
+        '/\b[A-Za-z0-9._%+-]+:[A-Za-z0-9._~+\/=-]{20,}@/' => '[redacted-credential]@',
+        '/\b(?:api[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*[A-Za-z0-9._~+\/=-]{8,}\b/i' => '$1=[redacted]',
+    ];
+    foreach ($patterns as $pattern => $replacement) {
+        $text = preg_replace($pattern, $replacement, $text) ?? '';
+    }
+    return $text;
 }
 
 function broth_log_copilot_authorized_user(string $telegramUserId): ?array {

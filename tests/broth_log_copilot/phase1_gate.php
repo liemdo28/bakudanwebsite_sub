@@ -86,22 +86,59 @@ try {
     expect_true(broth_log_copilot_authorized_user('username-only') === null, 'username-only lookup is denied');
     expect_true(broth_log_copilot_query_response(['branch' => 'B2', 'business_date' => '2026-08-20'], $user)['forbidden'] ?? false, 'cross-branch query is rejected before data fetch');
 
-    $fakeToken = '1234567890:' . 'AAabcdefghijklmnopqrstuvwxyzABCD';
+    $fakeToken = '1234567890:' . 'ABCdefGhijkLMNOPqrstUVwxYZ';
     $update = [
         'update_id' => 1010,
         'message' => [
-            'text' => 'token ' . $fakeToken . ' B1 today',
+            'text' => 'token ' . $fakeToken . ' B1 today 38F corrected by closing lid',
             'from' => ['id' => 101],
-            'chat' => ['id' => 999],
+            'chat' => ['id' => 999, 'title' => 'Ops token ' . $fakeToken],
             'message_id' => 77,
+            'caption' => 'caption ' . $fakeToken,
+            'photo' => [['file_id' => 'raw-photo-file-id']],
         ],
     ];
     expect_true(broth_log_copilot_enqueue_webhook($update)['queued'], 'webhook enqueue accepts first update');
     expect_true(!broth_log_copilot_enqueue_webhook($update)['queued'], 'webhook retry duplicate update_id is suppressed');
     $inbox = q1("SELECT payload_json,message_text FROM broth_log_bot_inbox WHERE update_id='1010'");
     expect_true(!str_contains((string)$inbox['payload_json'], $fakeToken), 'payload JSON redacts token-shaped text');
+    expect_true(!str_contains((string)$inbox['payload_json'], 'raw-photo-file-id'), 'payload JSON excludes raw Telegram update data');
     expect_true(str_contains((string)$inbox['message_text'], '[redacted-token]'), 'message text redacts token-shaped text');
+    expect_true(str_contains((string)$inbox['message_text'], 'B1 today 38F corrected by closing lid'), 'ordinary Broth Log content is preserved');
     expect_eq(count(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:00:00 UTC'))), 1, 'worker processes authorized inbox');
+
+    $captionUpdate = [
+        'update_id' => 1011,
+        'message' => [
+            'caption' => 'B1 photo note token=' . $fakeToken,
+            'from' => ['id' => 101],
+            'chat' => ['id' => 999],
+            'message_id' => 78,
+            'photo' => [['file_id' => 'raw-photo-token-' . $fakeToken]],
+        ],
+    ];
+    expect_true(broth_log_copilot_enqueue_webhook($captionUpdate)['queued'], 'caption enqueue accepts supported message update');
+    $captionInbox = q1("SELECT payload_json,message_text FROM broth_log_bot_inbox WHERE update_id='1011'");
+    expect_true(!str_contains((string)$captionInbox['payload_json'], $fakeToken), 'caption payload redacts token-shaped text');
+    expect_true(str_contains((string)$captionInbox['message_text'], '[redacted-token]'), 'caption text redacts token-shaped text');
+    expect_true(str_contains((string)$captionInbox['message_text'], 'B1 photo note'), 'caption keeps ordinary operational text');
+
+    $callbackUpdate = [
+        'update_id' => 1012,
+        'callback_query' => [
+            'id' => 'callback-id-' . $fakeToken,
+            'data' => 'ack:bl-test:' . $fakeToken,
+            'from' => ['id' => 101, 'username' => 'manager_' . $fakeToken],
+            'message' => [
+                'message_id' => 79,
+                'chat' => ['id' => 999, 'title' => 'TEST ' . $fakeToken],
+            ],
+        ],
+    ];
+    expect_true(broth_log_copilot_enqueue_webhook($callbackUpdate)['queued'], 'callback enqueue accepts first callback update');
+    $callbackInbox = q1("SELECT payload_json,message_text FROM broth_log_bot_inbox WHERE update_id='1012'");
+    expect_true(!str_contains((string)$callbackInbox['payload_json'], $fakeToken), 'callback payload redacts token-shaped data');
+    expect_true(str_contains((string)$callbackInbox['message_text'], '[redacted-token]'), 'callback data redacts token-shaped text');
 
     $callback = broth_log_copilot_sign_callback('ack', 'bl-test', time() + 60);
     expect_eq(broth_log_copilot_consume_callback($callback)['incident_id'] ?? '', 'bl-test', 'callback validates and consumes once');

@@ -246,7 +246,7 @@ function broth_log_copilot_redact_credential_text(string $text): string {
         '/\b(Bot|Bearer)\s+[A-Za-z0-9._~+\/=-]{20,}\b/i' => '$1 [redacted-token]',
         '/\b(?:sk|rk|pk|ghp|github_pat|xox[baprs])_[A-Za-z0-9_=-]{16,}\b/' => '[redacted-token]',
         '/\b[A-Za-z0-9._%+-]+:[A-Za-z0-9._~+\/=-]{20,}@/' => '[redacted-credential]@',
-        '/\b(?:api[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*[A-Za-z0-9._~+\/=-]{8,}\b/i' => '$1=[redacted]',
+        '/\b(api[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*[A-Za-z0-9._~+\/=-]{8,}\b/i' => '$1=[redacted]',
     ];
     foreach ($patterns as $pattern => $replacement) {
         $text = preg_replace($pattern, $replacement, $text) ?? '';

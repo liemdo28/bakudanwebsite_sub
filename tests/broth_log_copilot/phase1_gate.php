@@ -155,6 +155,9 @@ try {
     expect_true(!str_contains((string)$inbox['payload_json'], 'raw-photo-file-id'), 'payload JSON excludes raw Telegram update data');
     expect_true(str_contains((string)$inbox['message_text'], '[redacted-token]'), 'message text redacts token-shaped text');
     expect_true(str_contains((string)$inbox['message_text'], 'B1 today 38F corrected by closing lid'), 'ordinary Broth Log content is preserved');
+    expect_true(str_contains(broth_log_copilot_redact_credential_text('leaked secret=verylongsecretvalue1234567890'), 'secret=[redacted]'), 'labeled secret redaction keeps the label');
+    expect_true(!str_contains(broth_log_copilot_redact_credential_text('leaked secret=verylongsecretvalue1234567890'), 'verylongsecretvalue1234567890'), 'labeled secret redaction removes the value');
+    expect_true(str_contains(broth_log_copilot_redact_credential_text('token: abcXYZ1234567890longenough'), 'token=[redacted]'), 'labeled token redaction keeps the label regardless of separator');
     $sentBeforeWorker = count($sentMessages);
     expect_eq(count(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:00:00 UTC'))), 1, 'worker processes authorized inbox');
     $processedInbox = q1("SELECT status,outbound_status FROM broth_log_bot_inbox WHERE update_id='1010'");

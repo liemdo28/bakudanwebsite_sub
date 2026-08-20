@@ -843,7 +843,21 @@
                 if (state.filters.dateRange === 'month' && dateKey < startOfMonth) return false;
             }
             return true;
+        }).sort((a, b) => {
+            if (state.filters.dateRange === 'today') {
+                const issueDiff = recordPriority(b) - recordPriority(a);
+                if (issueDiff) return issueDiff;
+            }
+            return (b.submittedAt || 0) - (a.submittedAt || 0);
         });
+    }
+
+    function recordPriority(row) {
+        if (row.issues.some(issue => issue.severity === 'critical')) return 4;
+        if (row.issues.some(issue => issue.severity === 'high')) return 3;
+        if (row.issues.some(issue => issue.status !== 'Closed')) return 2;
+        if (row.metrics.missingReadings) return 1;
+        return 0;
     }
 
     function selectedRecord(records) {
@@ -889,6 +903,10 @@
         return Number.isFinite(n) ? `${fmtNumber(n)}F` : 'Not recorded';
     }
 
+    function branchLabel(branch) {
+        return SHEETS[branch] ? `${branch} · ${SHEETS[branch].name.replace(/^B\d+\s*/, '')}` : branch;
+    }
+
     function fmtDate(d) {
         return d ? d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
     }
@@ -914,6 +932,7 @@
         return `
             <div class="bd-primary-filters">
                 <button class="bd-btn bd-today-btn ${state.filters.dateRange === 'today' ? 'active' : ''}" data-action="today" aria-pressed="${state.filters.dateRange === 'today'}">Today</button>
+                <button class="bd-btn bd-issues-only ${state.filters.issue === 'open' || state.filters.issue === 'critical' ? 'active' : ''}" data-action="issuesOnly" aria-pressed="${state.filters.issue === 'open' || state.filters.issue === 'critical'}">Issues only</button>
                 <select data-filter="branch" aria-label="Store">
                     ${option('current', `Current (${state.activeBranch})`, state.filters.branch)}
                     ${option('all', 'All branches', state.filters.branch)}
@@ -972,6 +991,114 @@
         `;
     }
 
+    function todayOperations(records, summary) {
+        if (state.filters.dateRange !== 'today') return '';
+        const today = businessToday();
+        const branchText = state.filters.branch === 'all' ? 'All branches' : branchLabel(state.filters.branch === 'current' ? state.activeBranch : state.filters.branch);
+        const openIssues = summary.issues.filter(issue => issue.status !== 'Closed');
+        const critical = openIssues.filter(issue => issue.severity === 'critical');
+        const warnings = openIssues.filter(issue => issue.severity !== 'critical');
+        const safeReadings = records.flatMap(row => row.readings).filter(reading => reading.severityKey === 'safe').length;
+        const latest = latestRecordLabel(records);
+        const statusClass = critical.length ? 'critical' : openIssues.length ? 'warning' : records.length ? 'ok' : 'empty';
+        const statusText = critical.length
+            ? `${critical.length} critical issue${critical.length === 1 ? '' : 's'} need action`
+            : openIssues.length
+                ? `${openIssues.length} open issue${openIssues.length === 1 ? '' : 's'} need review`
+                : records.length
+                    ? 'No critical issues detected for today'
+                    : 'No logs found for the current business day';
+        return `<section class="bd-today-ops ${statusClass}" aria-label="Current day operations status">
+            <div class="bd-today-hero">
+                <div>
+                    <span class="bd-eyebrow">Current Day · ${esc(BUSINESS_TIMEZONE)}</span>
+                    <h2>${esc(statusText)}</h2>
+                    <p>${esc(branchText)} · Business date ${esc(today)}${latest ? ` · Latest log ${esc(latest)}` : ''}</p>
+                </div>
+                <div class="bd-today-actions">
+                    <a class="bd-btn" href="${esc(currentDayUrl())}">Bookmark Today</a>
+                    <button class="bd-btn ${state.filters.issue === 'open' ? 'active' : ''}" data-action="issuesOnly">Issues only</button>
+                </div>
+            </div>
+            <div class="bd-today-counts">
+                ${todayCount('Critical', critical.length, 'critical')}
+                ${todayCount('Warning/Open', warnings.length, 'warning')}
+                ${todayCount('Safe readings', safeReadings, 'safe')}
+                ${todayCount('Missing/incomplete', summary.missing, 'missing')}
+            </div>
+            ${openIssues.length ? `<div class="bd-today-issue-grid">${topIssueCards(records, openIssues).join('')}</div>` : todayEmptyMessage(records)}
+        </section>`;
+    }
+
+    function currentDayUrl() {
+        const url = new URL(window.location.href);
+        url.pathname = '/broth-log';
+        url.searchParams.set('range', 'today');
+        if (state.showStoreSelector) url.searchParams.set('store', state.activeBranch);
+        return url.pathname + url.search;
+    }
+
+    function latestRecordLabel(records) {
+        if (!records.length) return '';
+        const latest = records.slice().sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0))[0];
+        return `${latest.branch} ${latest.businessTime || fmtDate(latest.submittedAt)} by ${latest.employeeName}`;
+    }
+
+    function todayCount(label, value, key) {
+        return `<div class="bd-today-count ${key}"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+    }
+
+    function topIssueCards(records, issues) {
+        return issues
+            .slice()
+            .sort((a, b) => issuePriority(b) - issuePriority(a))
+            .slice(0, 6)
+            .map(issue => {
+                const row = records.find(record => record.issues.includes(issue));
+                const reading = row ? row.readings.find(item => item.label === issue.station || item.sopItem === issue.sopItem) : null;
+                return `<article class="bd-today-issue ${esc(issue.severityKey || issue.severity)}">
+                    <div class="bd-today-issue-head">
+                        <strong>${esc(row ? row.branch : '')} · ${esc(issue.station)}</strong>
+                        <span class="bd-pill ${esc(issue.severityKey || issue.severity)}">${esc(issueSeverityLabel(issue))}</span>
+                    </div>
+                    <dl>
+                        <div><dt>Recorded</dt><dd>${reading ? fmtTemp(reading.temperature) : 'Not recorded'}</dd></div>
+                        <div><dt>Required</dt><dd>${esc(issue.target || (reading ? reading.targetLabel : 'No SOP target'))}</dd></div>
+                        <div><dt>Status</dt><dd>${esc(issue.status)}</dd></div>
+                        <div><dt>Time</dt><dd>${esc(row ? `${row.businessDate} ${row.businessTime || fmtDate(row.submittedAt)}` : '-')}</dd></div>
+                        <div><dt>Incident ID</dt><dd>${esc(row ? row.responseId || row.id.slice(0, 18) : '-')}</dd></div>
+                    </dl>
+                    <p><b>Corrective action:</b> ${esc(issue.resolution || (reading ? reading.correctiveActionSop : '') || 'Follow SOP and notify MOD.')}</p>
+                    ${row ? `<button class="bd-btn" data-select-record="${esc(row.id)}">View log</button>` : ''}
+                </article>`;
+            });
+    }
+
+    function issuePriority(issue) {
+        const rank = { critical: 4, high: 3, warn: 2, warning: 2, missing: 1, ok: 0 };
+        return rank[issue.severityKey || issue.severity] || 0;
+    }
+
+    function issueSeverityLabel(issue) {
+        if (issue.severityKey) return severityLabel(issue.severityKey);
+        if (issue.severity === 'warn') return 'Warning';
+        if (issue.severity === 'ok') return 'Safe';
+        return severityLabel(issue.severity);
+    }
+
+    function todayEmptyMessage(records) {
+        if (!records.length) {
+            return `<div class="bd-today-empty">
+                <strong>No current-day logs found.</strong>
+                <span>Use All dates for older history, or confirm the store submitted today's Broth Log.</span>
+            </div>`;
+        }
+        return `<div class="bd-today-empty ok">
+            <strong>No critical issues detected for today.</strong>
+            <span>${records.length} log${records.length === 1 ? '' : 's'} checked for current filters.</span>
+        </div>`;
+    }
+
     function kpi(label, value, sub) {
         return `<div class="bd-card bd-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(sub)}</small></div>`;
     }
@@ -1009,7 +1136,14 @@
     }
 
     function home(records, summary) {
+        if (state.filters.dateRange === 'today' && !records.length) {
+            return `
+                ${todayOperations(records, summary)}
+                ${kpis(summary)}
+            `;
+        }
         return `
+            ${todayOperations(records, summary)}
             ${kpis(summary)}
             ${masterDetail(records, summary)}
         `;
@@ -1426,6 +1560,11 @@
         if (action === 'allDates') {
             state.filters.dateRange = 'all';
             updateRangeUrl('all');
+            render();
+        }
+        if (action === 'issuesOnly') {
+            state.filters.issue = state.filters.issue === 'open' ? 'all' : 'open';
+            state.selectedRecordId = '';
             render();
         }
         if (action === 'reset') {

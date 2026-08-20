@@ -50,6 +50,13 @@ function expect_eq($actual, $expected, string $label): void {
     echo "PASS $label\n";
 }
 
+function find_processed(array $processed, string $updateId): ?array {
+    foreach ($processed as $row) {
+        if ((string)($row['update_id'] ?? '') === $updateId) return $row;
+    }
+    return null;
+}
+
 try {
     putenv('TELEGRAM_COPILOT_ENABLED=false');
     broth_log_copilot_migrate(db());
@@ -87,6 +94,9 @@ try {
     expect_true(broth_log_copilot_authorized_user('202') === null, 'inactive Telegram user is denied');
     expect_true(broth_log_copilot_authorized_user('username-only') === null, 'username-only lookup is denied');
     expect_true(broth_log_copilot_query_response(['branch' => 'B2', 'business_date' => '2026-08-20'], $user)['forbidden'] ?? false, 'cross-branch query is rejected before data fetch');
+    run("INSERT INTO broth_log_routing_rules (branch,stage,level,telegram_user_ids,active) VALUES (?,?,?,?,1)", ['B1', 'staging', 1, json_encode(['101'])]);
+    run("INSERT INTO broth_log_routing_rules (branch,stage,level,telegram_user_ids,active) VALUES (?,?,?,?,1)", ['B1', 'staging', 2, json_encode(['101'])]);
+    putenv('TELEGRAM_CHAT_ID=999');
 
     $sentMessages = [];
     $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
@@ -204,11 +214,82 @@ try {
     ];
     $incidentId = broth_log_copilot_create_incident($alert);
     expect_eq(broth_log_copilot_create_incident($alert), $incidentId, 'duplicate open incident returns same id');
+    $sentBeforeIncident = count($sentMessages);
+    expect_true(broth_log_copilot_notify_incident($incidentId)['sent'], 'new routed incident sends Telegram notification');
+    expect_eq(count($sentMessages), $sentBeforeIncident + 1, 'incident notification sends once');
+    $notification = $sentMessages[$sentBeforeIncident]['payload'];
+    expect_true(str_starts_with($notification['text'], 'TEST'), 'incident notification uses TEST prefix in staging');
+    expect_true(str_contains($notification['text'], 'Store: B1'), 'incident notification includes store');
+    expect_true(str_contains($notification['text'], 'Prep Area Cooler'), 'incident notification includes station');
+    expect_true(isset($notification['reply_markup']['inline_keyboard'][0][0]['callback_data']), 'incident notification includes inline ACK button');
+    $ackData = $notification['reply_markup']['inline_keyboard'][0][0]['callback_data'];
+    $resolveData = $notification['reply_markup']['inline_keyboard'][0][1]['callback_data'];
+    expect_true(strlen($ackData) <= 64, 'ACK callback payload fits Telegram limit');
+    expect_true(strlen($resolveData) <= 64, 'resolve callback payload fits Telegram limit');
+    broth_log_copilot_notify_incident($incidentId);
+    expect_eq(count($sentMessages), $sentBeforeIncident + 1, 'duplicate incident notification is suppressed');
+
+    expect_true(broth_log_copilot_enqueue_webhook([
+        'update_id' => 1020,
+        'callback_query' => [
+            'data' => $ackData,
+            'from' => ['id' => 101],
+            'message' => ['message_id' => 80, 'chat' => ['id' => 999]],
+        ],
+    ])['queued'], 'ACK callback enqueues');
+    $ackProcessed = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:01:00 UTC')), '1020');
+    expect_eq($ackProcessed['intent'] ?? '', 'ack', 'ACK callback mutates incident');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['state'] ?? '', 'acknowledged', 'ACK callback records acknowledged state');
+    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Incident acknowledged'), 'ACK callback sends confirmation');
+    expect_true(broth_log_copilot_enqueue_webhook([
+        'update_id' => 1021,
+        'callback_query' => [
+            'data' => $ackData,
+            'from' => ['id' => 101],
+            'message' => ['message_id' => 81, 'chat' => ['id' => 999]],
+        ],
+    ])['queued'], 'ACK callback replay enqueues as separate Telegram retry');
+    $replayProcessed = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:02:00 UTC')), '1021');
+    expect_eq($replayProcessed['intent'] ?? '', 'callback_rejected', 'ACK replay is rejected');
+    expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Incident acknowledged'), 'ACK replay does not send second ACK confirmation');
+
     expect_eq(broth_log_copilot_ack($incidentId, ['telegram_user_id' => '999', 'allowed_branch_list' => ['B2']])['reason'], 'forbidden', 'cross-branch ACK is rejected');
-    expect_true(broth_log_copilot_ack($incidentId, $user)['ok'], 'authorized ACK succeeds');
     expect_eq(broth_log_copilot_resolve($incidentId, $user, null, 'fixed')['reason'], 'missing_resolution_evidence', 'resolve requires recheck temperature');
     expect_eq(broth_log_copilot_resolve($incidentId, $user, 45, 'fixed')['reason'], 'recheck_still_unsafe', 'resolve rejects unsafe recheck');
-    expect_true(broth_log_copilot_resolve($incidentId, $user, 38, 'Closed door and moved product')['ok'], 'resolve accepts safe recheck with note');
+    expect_true(broth_log_copilot_enqueue_webhook([
+        'update_id' => 1022,
+        'message' => [
+            'text' => '/resolve #' . $incidentId . ' 45F closed door',
+            'from' => ['id' => 101],
+            'chat' => ['id' => 999],
+            'message_id' => 82,
+        ],
+    ])['queued'], 'invalid resolve message enqueues');
+    $invalidResolve = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:03:00 UTC')), '1022');
+    expect_eq($invalidResolve['intent'] ?? '', 'resolve_rejected', 'invalid resolve sends rejection');
+    expect_true(broth_log_copilot_enqueue_webhook([
+        'update_id' => 1023,
+        'message' => [
+            'text' => '/resolve #' . $incidentId . ' 38F closed door and moved product',
+            'from' => ['id' => 101],
+            'chat' => ['id' => 999],
+            'message_id' => 83,
+        ],
+    ])['queued'], 'valid resolve message enqueues');
+    $validResolve = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:04:00 UTC')), '1023');
+    expect_eq($validResolve['intent'] ?? '', 'resolve', 'valid resolve message succeeds');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['state'] ?? '', 'resolved', 'resolve message records resolved state');
+    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Incident resolved'), 'resolve message sends confirmation');
+    expect_true(broth_log_copilot_enqueue_webhook([
+        'update_id' => 1024,
+        'callback_query' => [
+            'data' => $resolveData,
+            'from' => ['id' => 101],
+            'message' => ['message_id' => 84, 'chat' => ['id' => 999]],
+        ],
+    ])['queued'], 'stale resolve callback enqueues');
+    $staleResolve = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:05:00 UTC')), '1024');
+    expect_eq($staleResolve['intent'] ?? '', 'callback_stale', 'stale resolve callback is rejected after resolution');
     expect_true(broth_log_copilot_create_incident($alert) !== $incidentId, 'critical-safe-critical creates a new incident after resolve');
 
     $raceId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-race']));
@@ -217,7 +298,11 @@ try {
     $due = broth_log_copilot_due_escalations($now);
     expect_true(count($due) >= 1, 'fake-clock finds due reminder');
     $target = array_values(array_filter($due, fn($d) => $d['incident']['incident_id'] === $raceId))[0];
-    expect_eq(broth_log_copilot_apply_escalation_action($target, $now)['action'], 'reminded', 'first worker applies reminder');
+    $escalationSentBefore = count($sentMessages);
+    $reminderResult = broth_log_copilot_apply_escalation_action_with_notification($target, $now);
+    expect_eq($reminderResult['action'], 'reminded', 'first worker applies reminder');
+    expect_eq($reminderResult['outbound_sent'] ?? -1, 1, 'reminder escalation sends outbound Telegram message');
+    expect_eq(count($sentMessages), $escalationSentBefore + 1, 'reminder uses outbound helper once');
     expect_eq(broth_log_copilot_apply_escalation_action($target, $now)['reason'], 'stale_action', 'second worker stale snapshot is rejected');
 
     run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', last_reminder_at='2026-08-20 00:06:00', reminder_count=3, state='notified_level_1', current_level=1 WHERE incident_id=?", [$raceId]);

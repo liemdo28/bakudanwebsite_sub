@@ -39,6 +39,8 @@ def test_migrations_cover_auth_inbox_incident_context_and_routing():
         'broth_log_incident_events',
         'broth_log_bot_rate_limits',
         'broth_log_callback_replays',
+        'broth_log_callback_actions',
+        'broth_log_outbound_deliveries',
     ]
     for table in required_tables:
         assert f'CREATE TABLE IF NOT EXISTS {table}' in copilot
@@ -79,8 +81,10 @@ def test_signed_callbacks_do_not_embed_secrets_or_large_payloads():
     assert 'TELEGRAM_CALLBACK_SECRET' in copilot
     assert 'function broth_log_copilot_validate_callback' in copilot
     assert 'function broth_log_copilot_consume_callback' in copilot
+    assert 'function broth_log_copilot_create_callback_token' in copilot
     assert 'broth_log_callback_replays' in copilot
     assert re.search(r"substr\(hash_hmac\('sha256'.*0, 16\)", copilot, re.S)
+    assert 'strlen($ackData) <= 64' in text('tests/broth_log_copilot/phase1_gate.php')
 
 
 def test_raw_message_and_context_retention_are_configured():
@@ -100,6 +104,9 @@ def test_worker_loads_env_before_resolving_db_path_and_has_outbound():
     assert worker.index('load_private_env_file_worker(PRIVATE_TELEGRAM_ENV_PATH);') < worker.index("define('DB_PATH'")
     assert 'BROTH_LOG_COPILOT_ENV' in copilot
     assert 'function broth_log_copilot_send_telegram_message' in copilot
+    assert 'function broth_log_copilot_notify_incident' in copilot
+    assert 'function broth_log_copilot_apply_escalation_action_with_notification' in copilot
+    assert 'broth_log_copilot_callback_response' in copilot
     assert "outbound_status='sent'" in copilot
     assert "status='send_failed'" in copilot
 

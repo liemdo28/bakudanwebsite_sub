@@ -121,6 +121,27 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         consumed_at TEXT NOT NULL DEFAULT (datetime('now')),
         expires_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS broth_log_callback_actions (
+        token_hash TEXT PRIMARY KEY,
+        action TEXT NOT NULL,
+        incident_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS broth_log_outbound_deliveries (
+        delivery_key TEXT PRIMARY KEY,
+        incident_id TEXT,
+        chat_id TEXT NOT NULL,
+        message_kind TEXT NOT NULL,
+        message_text TEXT NOT NULL,
+        reply_markup_json TEXT,
+        status TEXT NOT NULL DEFAULT 'queued',
+        send_attempts INTEGER NOT NULL DEFAULT 0,
+        outbound_error TEXT,
+        sent_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     ");
     foreach ([
         "ALTER TABLE broth_log_incidents ADD COLUMN active_key TEXT",
@@ -129,6 +150,9 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_status TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_error TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_sent_at TEXT",
+        "ALTER TABLE broth_log_outbound_deliveries ADD COLUMN send_attempts INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE broth_log_outbound_deliveries ADD COLUMN outbound_error TEXT",
+        "ALTER TABLE broth_log_outbound_deliveries ADD COLUMN sent_at TEXT",
     ] as $sql) {
         try { $db->exec($sql); } catch (Throwable $e) {}
     }
@@ -139,6 +163,8 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         "CREATE INDEX IF NOT EXISTS idx_broth_log_incident_events_incident ON broth_log_incident_events(incident_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_broth_log_routing_rules_active ON broth_log_routing_rules(branch, stage, level, active)",
         "CREATE INDEX IF NOT EXISTS idx_broth_log_callback_replays_expires ON broth_log_callback_replays(expires_at)",
+        "CREATE INDEX IF NOT EXISTS idx_broth_log_callback_actions_expires ON broth_log_callback_actions(expires_at)",
+        "CREATE INDEX IF NOT EXISTS idx_broth_log_outbound_deliveries_status ON broth_log_outbound_deliveries(status, created_at)",
     ] as $sql) {
         $db->exec($sql);
     }
@@ -383,7 +409,12 @@ function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImm
         }
     }
     preg_match('/(?:#|incident\s+|issue\s+)([A-Za-z0-9_-]{6,64})/i', $text, $im);
-    preg_match('/(-?\d+(?:\.\d+)?)\s*(?:f|°f|degrees)?/i', $text, $tm);
+    $temperatureText = isset($im[0]) ? str_replace($im[0], '', $text) : $text;
+    preg_match_all('/(-?\d+(?:\.\d+)?)\s*(?:°\s*)?(?:f|degrees?\s*f?)/i', $temperatureText, $temps);
+    $temperature = null;
+    if (!empty($temps[1])) {
+        $temperature = (float)end($temps[1]);
+    }
     return [
         'language' => $lang,
         'intent' => $intent,
@@ -395,7 +426,7 @@ function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImm
         'employee' => null,
         'severity' => str_contains($n, 'critical') || str_contains($n, 'critico') || str_contains($n, 'nghiem trong') ? 'critical' : null,
         'incident_id' => $im[1] ?? null,
-        'temperature_f' => isset($tm[1]) ? (float)$tm[1] : null,
+        'temperature_f' => $temperature,
         'confidence' => $intent === 'help' ? 0.6 : 0.82,
     ];
 }
@@ -419,6 +450,7 @@ function broth_log_copilot_validate_callback(string $data, ?int $now = null): ?a
 
 function broth_log_copilot_consume_callback(string $data, ?int $now = null): ?array {
     if (!broth_log_copilot_enabled()) return null;
+    if (str_starts_with($data, 'c|')) return broth_log_copilot_consume_compact_callback($data, $now);
     $validated = broth_log_copilot_validate_callback($data, $now);
     if (!$validated) return null;
     $parts = explode('|', $data);
@@ -429,6 +461,44 @@ function broth_log_copilot_consume_callback(string $data, ?int $now = null): ?ar
         gmdate('Y-m-d H:i:s', $expiresAt),
     ]);
     return db()->changes() > 0 ? $validated : null;
+}
+
+function broth_log_copilot_create_callback_token(string $action, string $incidentId, int $expiresAt): string {
+    $secret = broth_log_copilot_env('TELEGRAM_CALLBACK_SECRET', broth_log_copilot_env('TELEGRAM_INCOMING_SECRET'));
+    if ($secret === '') throw new RuntimeException('Missing callback secret');
+    $shortAction = $action === 'resolve' ? 'r' : 'a';
+    $expiry36 = base_convert((string)$expiresAt, 10, 36);
+    $nonce = bin2hex(random_bytes(6));
+    $body = implode('|', ['c', $shortAction, $expiry36, $nonce]);
+    $sig = substr(hash_hmac('sha256', $body, $secret), 0, 12);
+    $data = implode('|', [$body, $sig]);
+    run("INSERT OR REPLACE INTO broth_log_callback_actions (token_hash,action,incident_id,expires_at) VALUES (?,?,?,?)", [
+        hash('sha256', $data),
+        $action,
+        $incidentId,
+        gmdate('Y-m-d H:i:s', $expiresAt),
+    ]);
+    return $data;
+}
+
+function broth_log_copilot_consume_compact_callback(string $data, ?int $now = null): ?array {
+    $parts = explode('|', $data);
+    if (count($parts) !== 5) return null;
+    [$prefix, $shortAction, $expiry36, $nonce, $sig] = $parts;
+    if ($prefix !== 'c' || !in_array($shortAction, ['a','r'], true) || !preg_match('/^[a-z0-9]{1,10}$/', $expiry36) || !preg_match('/^[a-f0-9]{12}$/', $nonce)) return null;
+    $expiresAt = (int)base_convert($expiry36, 36, 10);
+    if ($expiresAt < ($now ?? time())) return null;
+    $secret = broth_log_copilot_env('TELEGRAM_CALLBACK_SECRET', broth_log_copilot_env('TELEGRAM_INCOMING_SECRET'));
+    if ($secret === '') return null;
+    $body = implode('|', [$prefix, $shortAction, $expiry36, $nonce]);
+    $expectedSig = substr(hash_hmac('sha256', $body, $secret), 0, 12);
+    if (!hash_equals($expectedSig, $sig)) return null;
+    $hash = hash('sha256', $data);
+    $row = q1("SELECT action,incident_id,expires_at FROM broth_log_callback_actions WHERE token_hash=?", [$hash]);
+    if (!$row) return null;
+    run("DELETE FROM broth_log_callback_replays WHERE expires_at < datetime('now')");
+    run("INSERT OR IGNORE INTO broth_log_callback_replays (callback_hash,expires_at) VALUES (?,?)", [$hash, $row['expires_at']]);
+    return db()->changes() > 0 ? ['action' => $row['action'], 'incident_id' => $row['incident_id']] : null;
 }
 
 function broth_log_copilot_create_incident(array $alert): string {
@@ -620,6 +690,99 @@ function broth_log_copilot_query_response(array $parsed, array $user): array {
     return ['records' => $records, 'summary' => $summary, 'branch' => $branch, 'businessDate' => $date];
 }
 
+function broth_log_copilot_active_route_exists(string $branch, int $level): bool {
+    $stage = broth_log_copilot_is_staging() ? 'staging' : 'pilot';
+    $row = q1("SELECT telegram_user_ids FROM broth_log_routing_rules WHERE branch=? AND stage=? AND level=? AND active=1", [strtoupper($branch), $stage, $level]);
+    if (!$row) return false;
+    $ids = json_decode((string)$row['telegram_user_ids'], true);
+    return is_array($ids) && count($ids) > 0;
+}
+
+function broth_log_copilot_route_chat_ids(string $branch, int $level): array {
+    if (!broth_log_copilot_active_route_exists($branch, $level)) return [];
+    $chatId = broth_log_copilot_env('TELEGRAM_CHAT_ID');
+    return $chatId !== '' ? [$chatId] : [];
+}
+
+function broth_log_copilot_incident_message(array $incident, string $kind): string {
+    $label = match ($kind) {
+        'ack_confirm' => 'Incident acknowledged',
+        'resolve_confirm' => 'Incident resolved',
+        'escalation' => 'Incident escalated',
+        'fallback' => 'Emergency fallback required',
+        'reminder' => 'Incident reminder',
+        default => 'Critical Broth Log incident',
+    };
+    $lines = [
+        $label,
+        'Store: ' . (string)$incident['branch'],
+        'Business: ' . trim((string)$incident['business_date'] . ' ' . (string)($incident['business_time'] ?? '')),
+        'Item: ' . (string)$incident['station_label'],
+        'Recorded: ' . (($incident['temperature_f'] ?? null) === null ? 'missing' : rtrim(rtrim((string)$incident['temperature_f'], '0'), '.') . 'F'),
+        'SOP: ' . (string)$incident['sop_target'],
+        'Severity: ' . (string)$incident['severity'],
+        'Action: ' . (string)$incident['corrective_action'],
+        'Ref: #' . (string)$incident['incident_id'],
+    ];
+    return implode("\n", array_map(fn($line) => substr($line, 0, 180), $lines));
+}
+
+function broth_log_copilot_incident_reply_markup(string $incidentId, ?DateTimeImmutable $now = null): array {
+    $expiresAt = ($now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+15 minutes')->getTimestamp();
+    $ack = broth_log_copilot_create_callback_token('ack', $incidentId, $expiresAt);
+    $resolve = broth_log_copilot_create_callback_token('resolve', $incidentId, $expiresAt);
+    return ['inline_keyboard' => [[
+        ['text' => 'ACK', 'callback_data' => $ack],
+        ['text' => 'Resolve', 'callback_data' => $resolve],
+    ]]];
+}
+
+function broth_log_copilot_send_idempotent(string $deliveryKey, ?string $incidentId, string $chatId, string $kind, string $message, ?array $replyMarkup = null): array {
+    run("INSERT OR IGNORE INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,reply_markup_json,status)
+         VALUES (?,?,?,?,?,?,?)", [
+        $deliveryKey,
+        $incidentId,
+        $chatId,
+        $kind,
+        broth_log_copilot_sanitize_message($message),
+        $replyMarkup ? json_encode($replyMarkup) : null,
+        'queued',
+    ]);
+    $row = q1("SELECT status FROM broth_log_outbound_deliveries WHERE delivery_key=?", [$deliveryKey]);
+    if (($row['status'] ?? '') === 'sent') return ['sent' => false, 'duplicate' => true, 'reason' => 'already_sent'];
+    $send = broth_log_copilot_send_telegram_message($chatId, $message, $replyMarkup);
+    if (!empty($send['sent'])) {
+        run("UPDATE broth_log_outbound_deliveries SET status='sent', send_attempts=send_attempts+1, outbound_error=NULL, sent_at=datetime('now'), updated_at=datetime('now') WHERE delivery_key=?", [$deliveryKey]);
+        return ['sent' => true];
+    }
+    $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
+    run("UPDATE broth_log_outbound_deliveries SET status='failed', send_attempts=send_attempts+1, outbound_error=?, updated_at=datetime('now') WHERE delivery_key=?", [$reason, $deliveryKey]);
+    return ['sent' => false, 'reason' => $reason];
+}
+
+function broth_log_copilot_notify_incident(string $incidentId, ?DateTimeImmutable $now = null): array {
+    if (!broth_log_copilot_enabled()) return ['sent' => false, 'reason' => 'disabled'];
+    $incident = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
+    if (!$incident || in_array($incident['state'], ['resolved','closed'], true)) return ['sent' => false, 'reason' => 'incident_not_open'];
+    $chats = broth_log_copilot_route_chat_ids((string)$incident['branch'], 1);
+    if (!$chats) return ['sent' => false, 'reason' => 'no_active_route'];
+    $results = [];
+    foreach ($chats as $chatId) {
+        $results[] = broth_log_copilot_send_idempotent(
+            'incident:' . $incidentId . ':notify:' . $chatId,
+            $incidentId,
+            $chatId,
+            'incident_notification',
+            broth_log_copilot_incident_message($incident, 'notify'),
+            broth_log_copilot_incident_reply_markup($incidentId, $now)
+        );
+    }
+    if (count(array_filter($results, fn($r) => !empty($r['sent']))) > 0) {
+        broth_log_copilot_audit($incidentId, 'telegram_notified', null, ['level' => 1]);
+    }
+    return ['sent' => count(array_filter($results, fn($r) => !empty($r['sent']))) > 0, 'results' => $results];
+}
+
 function broth_log_copilot_format_response(array $parsed, array $user): string {
     $lang = $parsed['language'] ?? ($user['preferred_language'] ?? 'en');
     if (($parsed['intent'] ?? '') === 'help') {
@@ -647,6 +810,99 @@ function broth_log_copilot_format_response(array $parsed, array $user): string {
     return 'I did not understand that yet. Try: Today B1, critical B1, missing B1, or open B1.';
 }
 
+function broth_log_copilot_incident_from_result(string $incidentId): ?array {
+    return q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
+}
+
+function broth_log_copilot_callback_response(string $callbackData, array $user, string $chatId, ?DateTimeImmutable $now = null): array {
+    $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $callback = broth_log_copilot_consume_callback($callbackData, $now->getTimestamp());
+    if (!$callback) {
+        return ['message' => 'Callback expired, already used, or invalid.', 'intent' => 'callback_rejected'];
+    }
+    $incident = broth_log_copilot_incident_from_result((string)$callback['incident_id']);
+    if (!$incident || in_array($incident['state'], ['resolved','closed'], true)) {
+        return ['message' => 'Incident is not open.', 'intent' => 'callback_stale'];
+    }
+    if (!broth_log_copilot_user_can_branch($user, (string)$incident['branch'])) {
+        return ['message' => 'I cannot apply this incident action for your account.', 'intent' => 'callback_forbidden'];
+    }
+    if ($callback['action'] === 'ack') {
+        $result = broth_log_copilot_ack((string)$incident['incident_id'], $user, $now);
+        if (!empty($result['ok'])) {
+            $fresh = broth_log_copilot_incident_from_result((string)$incident['incident_id']) ?: $incident;
+            return ['message' => broth_log_copilot_incident_message($fresh, 'ack_confirm'), 'intent' => 'ack'];
+        }
+        return ['message' => 'ACK was rejected: ' . (string)($result['reason'] ?? 'unknown'), 'intent' => 'ack_rejected'];
+    }
+    if ($callback['action'] === 'resolve') {
+        run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at)
+             VALUES (?,?,datetime('now', '+24 hours'),datetime('now'))", [
+            $user['telegram_user_id'],
+            json_encode(['pending' => 'resolve', 'incident_id' => $incident['incident_id'], 'chat_id' => $chatId]),
+        ]);
+        return ['message' => 'Resolve #' . $incident['incident_id'] . " by replying with safe recheck temp and corrective action note. Example: /resolve #" . $incident['incident_id'] . " 38F closed door and moved product.", 'intent' => 'resolve_prompt'];
+    }
+    return ['message' => 'Unsupported incident action.', 'intent' => 'callback_rejected'];
+}
+
+function broth_log_copilot_resolution_note(string $message, array $parsed): string {
+    $note = $message;
+    $note = preg_replace('#^/resolve\b#i', '', $note) ?? $note;
+    $note = preg_replace('/\b(resolve|resolved|fixed|resuelto|corregido|da xu ly|da sua)\b/i', '', $note) ?? $note;
+    if (!empty($parsed['incident_id'])) $note = str_replace((string)$parsed['incident_id'], '', $note);
+    $note = preg_replace('/#\s*/', '', $note) ?? $note;
+    $note = preg_replace('/-?\d+(?:\.\d+)?\s*(?:f|°f|degrees)?/i', '', $note, 1) ?? $note;
+    return trim(preg_replace('/\s+/', ' ', $note) ?? '');
+}
+
+function broth_log_copilot_message_action_response(string $messageText, array $parsed, array $user, string $chatId, ?DateTimeImmutable $now = null): ?array {
+    $intent = $parsed['intent'] ?? '';
+    if (!in_array($intent, ['ack','resolve'], true)) return null;
+    $incidentId = (string)($parsed['incident_id'] ?? '');
+    if ($incidentId === '') {
+        $context = q1("SELECT context_json,expires_at FROM broth_log_conversation_context WHERE telegram_user_id=? AND expires_at > datetime('now')", [$user['telegram_user_id']]);
+        $ctx = $context ? (json_decode((string)$context['context_json'], true) ?: []) : [];
+        if (($ctx['pending'] ?? '') === $intent || (($ctx['pending'] ?? '') === 'resolve' && $intent === 'resolve')) {
+            $incidentId = (string)($ctx['incident_id'] ?? '');
+        }
+    }
+    if ($incidentId === '') return ['message' => 'Include an incident reference like #bl-...', 'intent' => $intent . '_rejected'];
+    if ($intent === 'ack') {
+        $result = broth_log_copilot_ack($incidentId, $user, $now);
+        if (!empty($result['ok'])) {
+            $incident = broth_log_copilot_incident_from_result($incidentId);
+            return ['message' => broth_log_copilot_incident_message($incident ?: ['incident_id' => $incidentId], 'ack_confirm'), 'intent' => 'ack'];
+        }
+        return ['message' => 'ACK was rejected: ' . (string)($result['reason'] ?? 'unknown'), 'intent' => 'ack_rejected'];
+    }
+    $note = broth_log_copilot_resolution_note($messageText, $parsed);
+    $result = broth_log_copilot_resolve($incidentId, $user, $parsed['temperature_f'] ?? null, $note, $now);
+    if (!empty($result['ok'])) {
+        run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id=?", [$user['telegram_user_id']]);
+        $incident = broth_log_copilot_incident_from_result($incidentId);
+        return ['message' => broth_log_copilot_incident_message($incident ?: ['incident_id' => $incidentId], 'resolve_confirm'), 'intent' => 'resolve'];
+    }
+    return ['message' => 'Resolve was rejected: ' . (string)($result['reason'] ?? 'unknown') . '. Include a safe recheck temperature and corrective-action note.', 'intent' => 'resolve_rejected'];
+}
+
+function broth_log_copilot_apply_escalation_action_with_notification(array $action, ?DateTimeImmutable $now = null): array {
+    $result = broth_log_copilot_apply_escalation_action($action, $now);
+    if (empty($result['ok'])) return $result;
+    $incident = broth_log_copilot_incident_from_result((string)$result['incident_id']);
+    if (!$incident) return $result + ['outbound' => 'incident_missing'];
+    $kind = $result['action'] === 'fallback' ? 'fallback' : ($result['action'] === 'escalated' ? 'escalation' : 'reminder');
+    $level = (int)($result['level'] ?? $incident['current_level'] ?? 1);
+    $chats = broth_log_copilot_route_chat_ids((string)$incident['branch'], $level);
+    $sent = 0;
+    foreach ($chats as $chatId) {
+        $deliveryKey = 'incident:' . $incident['incident_id'] . ':' . $kind . ':' . ($incident['reminder_count'] ?? 0) . ':' . $level . ':' . $chatId;
+        $send = broth_log_copilot_send_idempotent($deliveryKey, (string)$incident['incident_id'], $chatId, $kind, broth_log_copilot_incident_message($incident, $kind), broth_log_copilot_incident_reply_markup((string)$incident['incident_id'], $now));
+        if (!empty($send['sent'])) $sent++;
+    }
+    return $result + ['outbound_sent' => $sent];
+}
+
 function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $now = null): array {
     if (!broth_log_copilot_enabled()) return [];
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
@@ -659,17 +915,31 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
             $processed[] = ['update_id' => $row['update_id'], 'status' => 'denied'];
             continue;
         }
+        if (($row['update_type'] ?? '') === 'callback_query') {
+            $response = broth_log_copilot_callback_response((string)$row['message_text'], $user, (string)$row['chat_id'], $now);
+            $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], (string)$response['message']);
+            if (!empty($send['sent'])) {
+                run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $response['intent'], 'outbound' => 'sent'];
+                continue;
+            }
+            $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
+            run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
+            $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $response['intent'], 'outbound' => 'failed', 'reason' => $reason];
+            continue;
+        }
         $parsed = broth_log_copilot_parse((string)$row['message_text'], $user, $now);
         run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at)
              VALUES (?,?,datetime('now', '+24 hours'),datetime('now'))", [
             $telegramUserId,
             json_encode(['last_parse' => $parsed, 'chat_id' => $row['chat_id']]),
         ]);
-        $message = broth_log_copilot_format_response($parsed, $user);
+        $actionResponse = broth_log_copilot_message_action_response((string)$row['message_text'], $parsed, $user, (string)$row['chat_id'], $now);
+        $message = $actionResponse ? (string)$actionResponse['message'] : broth_log_copilot_format_response($parsed, $user);
         $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $message);
         if (!empty($send['sent'])) {
             run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
-            $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $parsed['intent'], 'language' => $parsed['language'], 'outbound' => 'sent'];
+            $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $actionResponse['intent'] ?? $parsed['intent'], 'language' => $parsed['language'], 'outbound' => 'sent'];
             continue;
         }
         $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));

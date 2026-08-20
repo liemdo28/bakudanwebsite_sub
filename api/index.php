@@ -1148,6 +1148,9 @@ if ($path === '/broth-log/telegram/alerts' && $METHOD === 'POST') {
         $result = telegram_process_alert($validated);
         if (broth_log_copilot_enabled()) {
             $result['incidentId'] = broth_log_copilot_create_incident($validated);
+            if ($result['incidentId'] !== '') {
+                $result['copilotNotification'] = broth_log_copilot_notify_incident($result['incidentId']);
+            }
         }
         $results[] = $result;
     }

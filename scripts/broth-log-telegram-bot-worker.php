@@ -89,7 +89,7 @@ try {
     $results = [];
     if (!$dryRun) {
         $inbox = broth_log_copilot_process_inbox(25, $now);
-        foreach ($due as $action) $results[] = broth_log_copilot_apply_escalation_action($action, $now);
+        foreach ($due as $action) $results[] = broth_log_copilot_apply_escalation_action_with_notification($action, $now);
         run("DELETE FROM broth_log_bot_inbox WHERE received_at < datetime('now', '-" . BROTH_LOG_COPILOT_RETENTION_RAW_DAYS . " days')");
         run("DELETE FROM broth_log_conversation_context WHERE expires_at < datetime('now')");
     }

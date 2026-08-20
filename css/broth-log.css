@@ -259,7 +259,7 @@ button {
     top: 0;
     z-index: 5;
     display: grid;
-    grid-template-columns: minmax(180px, 1.6fr) repeat(5, minmax(130px, 1fr));
+    grid-template-columns: auto minmax(180px, 1.6fr) repeat(5, minmax(130px, 1fr));
     gap: 8px;
     padding: 10px;
     margin-bottom: 16px;
@@ -267,6 +267,12 @@ button {
     backdrop-filter: blur(14px);
     border: 1px solid var(--line);
     border-radius: var(--radius);
+}
+
+.bd-today-btn.active {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
 }
 
 .bd-filters input,
@@ -944,7 +950,24 @@ button {
         justify-content: flex-start;
     }
     .bd-nav {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        scroll-snap-type: x proximity;
+    }
+    .bd-nav button {
+        flex: 0 0 auto;
+        width: auto;
+        min-height: 44px;
+        white-space: nowrap;
+        scroll-snap-align: start;
+    }
+    .bd-sidebar {
+        padding: 14px;
+    }
+    .bd-brand {
+        margin-bottom: 12px;
     }
     .bd-bar {
         grid-template-columns: 92px minmax(0, 1fr) 46px;

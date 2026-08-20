@@ -25,6 +25,8 @@
         requestTimeoutMs: 18000
     };
 
+    const BUSINESS_TIME_ZONE = 'America/Chicago';
+
     const READING_FIELDS = [
         ['walkInCoolerProduce', 'Walk-In Cooler (Produce)', 'cold'],
         ['walkInFreezer', 'Walk-In Freezer', 'freezer'],
@@ -261,7 +263,7 @@
         selectedRecordId: '',
         filters: {
             query: '',
-            dateRange: 'all',
+            dateRange: getInitialDateRange(),
             branch: 'current',
             employee: 'all',
             issue: 'all',
@@ -299,6 +301,22 @@
         if (SHEETS[requested]) return requested;
         if (SHEETS[stored]) return stored;
         return 'B1';
+    }
+
+    function getInitialDateRange() {
+        const requested = new URLSearchParams(window.location.search).get('range');
+        return ['today', 'week', 'month', 'all'].includes(requested) ? requested : 'today';
+    }
+
+    function businessDateToday() {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: BUSINESS_TIME_ZONE,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).formatToParts(new Date());
+        const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+        return `${values.year}-${values.month}-${values.day}`;
     }
 
     function getStoredRefreshSeconds() {
@@ -768,8 +786,8 @@
             if (maxTemp !== null && !row.readings.some(reading => reading.temperature !== null && reading.temperature <= maxTemp)) return false;
             if (state.filters.dateRange !== 'all') {
                 const d = row.submittedAt;
+                if (state.filters.dateRange === 'today') return row.businessDate === businessDateToday();
                 if (!d) return false;
-                if (state.filters.dateRange === 'today' && d < startOfDay) return false;
                 if (state.filters.dateRange === 'week' && d < startOfWeek) return false;
                 if (state.filters.dateRange === 'month' && d < startOfMonth) return false;
             }
@@ -792,7 +810,7 @@
         const s = stats(measured.map(r => r.temperature));
         return {
             totalLogs: records.length,
-            todayLogs: records.filter(r => r.businessDate === new Date().toISOString().slice(0, 10)).length,
+            todayLogs: records.filter(r => r.businessDate === businessDateToday()).length,
             openIssues: issues.filter(i => i.status !== 'Closed').length,
             criticalAlerts: issues.filter(i => i.severity === 'critical').length,
             compliance: allReadings.length ? allReadings.filter(r => r.severity === 'ok').length / allReadings.length : 0,
@@ -843,6 +861,7 @@
         const employees = [...new Set(state.records.map(r => r.employeeName))].sort();
         const shifts = [...new Set(state.records.map(r => r.shift).filter(Boolean))].sort();
         return `
+            <button class="bd-btn bd-today-btn ${state.filters.dateRange === 'today' ? 'active' : ''}" data-action="today" aria-pressed="${state.filters.dateRange === 'today'}">Today</button>
             <input data-filter="query" type="search" placeholder="Search employee, batch, issue, status..." value="${esc(state.filters.query)}">
             <select data-filter="dateRange">
                 ${option('all', 'All dates', state.filters.dateRange)}
@@ -886,8 +905,7 @@
     function kpis(summary) {
         return `
             <div class="bd-grid bd-kpis">
-                ${kpi('Total Logs', summary.totalLogs, 'Deduplicated submissions')}
-                ${kpi("Today's Logs", summary.todayLogs, 'Based on business date')}
+                ${kpi(state.filters.dateRange === 'today' ? "Today's Logs" : 'Filtered Logs', summary.totalLogs, state.filters.dateRange === 'today' ? businessDateToday() : 'Deduplicated submissions')}
                 ${kpi('Open Issues', summary.openIssues, `${summary.criticalAlerts} critical alerts`)}
                 ${kpi('Compliance', percent(summary.compliance), `${summary.missing} missing readings`)}
                 ${kpi('Average Temp', fmtTemp(summary.avgTemp), 'All station readings')}
@@ -1123,7 +1141,7 @@
                                 <h1>${esc(SHEETS[state.activeBranch].name)}</h1>
                                 ${storeSelector()}
                             </div>
-                            <p>Centralized food-safety and broth temperature intelligence from Google Sheets.</p>
+                            <p>${state.filters.dateRange === 'today' ? `Today · ${esc(businessDateToday())} · San Antonio time` : 'Centralized food-safety and broth temperature intelligence from Google Sheets.'}</p>
                         </div>
                         <div class="bd-actions">
                             <select id="refreshSeconds" class="bd-btn" aria-label="Refresh interval">
@@ -1287,6 +1305,11 @@
         }));
         root.querySelectorAll('[data-filter]').forEach(input => input.addEventListener('input', () => {
             state.filters[input.dataset.filter] = input.value;
+            if (input.dataset.filter === 'dateRange') {
+                const url = new URL(window.location.href);
+                url.searchParams.set('range', state.filters.dateRange);
+                window.history.replaceState(null, '', url);
+            }
             if (input.dataset.filter === 'branch') syncSheets();
             else render();
         }));
@@ -1327,8 +1350,19 @@
 
     function actions(action) {
         if (action === 'sync') syncSheets({ force: true });
+        if (action === 'today') {
+            state.filters.dateRange = 'today';
+            state.selectedRecordId = '';
+            const url = new URL(window.location.href);
+            url.searchParams.set('range', 'today');
+            window.history.replaceState(null, '', url);
+            render();
+        }
         if (action === 'reset') {
-            state.filters = { query: '', dateRange: 'all', branch: 'current', employee: 'all', issue: 'all', shift: 'all', temp: 'all', tempMin: '', tempMax: '' };
+            state.filters = { query: '', dateRange: 'today', branch: 'current', employee: 'all', issue: 'all', shift: 'all', temp: 'all', tempMin: '', tempMax: '' };
+            const url = new URL(window.location.href);
+            url.searchParams.set('range', 'today');
+            window.history.replaceState(null, '', url);
             syncSheets();
         }
         if (action === 'theme') {

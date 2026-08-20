@@ -11,8 +11,7 @@
 - `TELEGRAM_ALERTS_ENABLED`: `true` to send alerts, `false` to dry-run/store status.
 - `TELEGRAM_BOT_TOKEN`: new Telegram bot token from BotFather.
 - `TELEGRAM_CHAT_ID`: target chat/channel id.
-- `TELEGRAM_TEST_SECRET`: random secret for `POST /api/broth-log/telegram/test`.
-- `TELEGRAM_CRON_SECRET`: random secret used by the cron script and alert ingestion endpoint.
+- `TELEGRAM_WEBHOOK_SECRET`: random secret for the test endpoint and cron alert ingestion.
 - `BROTH_LOG_TELEGRAM_ALERT_ENDPOINT`: optional; defaults to `https://bakudanramen.com/api/broth-log/telegram/alerts`.
 
 ## Endpoints
@@ -28,11 +27,17 @@ No endpoint returns the bot token or chat id.
 Run every 5 minutes on hosting:
 
 ```bash
-*/5 * * * * TELEGRAM_CRON_SECRET="replace-with-random-cron-secret" php /home/hoale24new/bakudanramen.com/scripts/broth-log-telegram-cron.php >/dev/null 2>&1
+*/5 * * * * TELEGRAM_WEBHOOK_SECRET="replace-with-random-webhook-secret" /usr/bin/php /private/path/scripts/broth-log-telegram-cron.php >> /private/path/logs/broth-telegram.log 2>&1
 ```
 
-The cron script fetches the Google Sheets server-side, checks only today's `businessDate` in `America/Chicago`, extracts critical station readings, and posts them to the API for de-duplication and delivery.
+The cron script is CLI-only, uses a short-lived lock to avoid overlapping runs, fetches the Google Sheets server-side, checks only today's `businessDate` in `America/Chicago`, extracts critical station readings, and posts them to the API for de-duplication and delivery.
+
+Dry-run before enabling live sends:
+
+```bash
+TELEGRAM_WEBHOOK_SECRET="replace-with-random-webhook-secret" /usr/bin/php /private/path/scripts/broth-log-telegram-cron.php --dry-run
+```
 
 ## De-Duplication
 
-Each alert uses a stable fingerprint from store branch, response ID, station, and severity. A matching open critical alert is not sent again after dashboard refresh or repeated cron runs. If an alert disappears from the current critical set, it is marked resolved; if it later becomes critical again, it can be sent again.
+Each alert uses a stable fingerprint from store branch, response ID, station, and severity. The API takes an atomic SQLite write lock before sending so overlapping cron runs cannot send the same open critical incident twice. A matching open critical alert is not sent again after dashboard refresh or repeated cron runs. If an alert disappears from the current critical set, it is marked resolved; if it later becomes critical again, it can be sent again.

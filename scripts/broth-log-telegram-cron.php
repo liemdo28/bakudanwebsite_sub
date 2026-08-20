@@ -5,11 +5,16 @@ declare(strict_types=1);
  * Cron entrypoint for server-side Broth Log Telegram alerts.
  *
  * Required env on hosting:
- * - TELEGRAM_CRON_SECRET
+ * - TELEGRAM_WEBHOOK_SECRET or TELEGRAM_CRON_SECRET
  * - BROTH_LOG_TELEGRAM_ALERT_ENDPOINT, optional, defaults to https://bakudanramen.com/api/broth-log/telegram/alerts
  *
  * Telegram bot token/chat id are read only by api/index.php.
  */
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
 
 const BUSINESS_TIMEZONE = 'America/Chicago';
 const SHEETS = [
@@ -87,6 +92,7 @@ const SOP = [
     'pastaBoilerLeft' => ['operator' => '>=', 'target' => 200, 'action' => 'Adjust temp and re-temp in 10 min'],
     'pastaBoilerRight' => ['operator' => '>=', 'target' => 200, 'action' => 'Adjust temp and re-temp in 10 min'],
 ];
+const LOCK_TTL_SECONDS = 240;
 
 function today_chicago(): string {
     return (new DateTimeImmutable('now', new DateTimeZone(BUSINESS_TIMEZONE)))->format('Y-m-d');
@@ -179,8 +185,13 @@ function alerts_from_branch(string $branch, string $date): array {
 
 function post_alerts(array $alerts): array {
     $endpoint = trim((string)(getenv('BROTH_LOG_TELEGRAM_ALERT_ENDPOINT') ?: 'https://bakudanramen.com/api/broth-log/telegram/alerts'));
-    $secret = trim((string)(getenv('TELEGRAM_CRON_SECRET') ?: getenv('BROTH_LOG_TELEGRAM_CRON_SECRET') ?: ''));
-    if ($secret === '') throw new RuntimeException('TELEGRAM_CRON_SECRET is required');
+    $parts = parse_url($endpoint);
+    if (($parts['scheme'] ?? '') !== 'https' || empty($parts['host'])) {
+        throw new RuntimeException('BROTH_LOG_TELEGRAM_ALERT_ENDPOINT must be an https URL');
+    }
+    $secret = trim((string)(getenv('TELEGRAM_WEBHOOK_SECRET') ?: getenv('TELEGRAM_CRON_SECRET') ?: getenv('BROTH_LOG_TELEGRAM_CRON_SECRET') ?: ''));
+    if ($secret === '') throw new RuntimeException('TELEGRAM_WEBHOOK_SECRET is required');
+    if (preg_match('/[\r\n]/', $secret)) throw new RuntimeException('Telegram webhook secret is invalid');
     $payload = json_encode(['alerts' => $alerts]);
     $ctx = stream_context_create(['http' => [
         'method' => 'POST',
@@ -198,10 +209,49 @@ function post_alerts(array $alerts): array {
     return $json;
 }
 
-$date = $argv[1] ?? today_chicago();
-$alerts = [];
-foreach (array_keys(SHEETS) as $branch) {
-    $alerts = array_merge($alerts, alerts_from_branch($branch, $date));
+function acquire_lock() {
+    $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'bakudan-broth-log-telegram.lock';
+    if (is_file($path) && time() - (int)filemtime($path) > LOCK_TTL_SECONDS) {
+        @unlink($path);
+    }
+    $fh = fopen($path, 'c');
+    if (!$fh) throw new RuntimeException('Unable to open cron lock');
+    if (!flock($fh, LOCK_EX | LOCK_NB)) {
+        throw new RuntimeException('Another broth Telegram cron run is active');
+    }
+    ftruncate($fh, 0);
+    fwrite($fh, (string)getmypid());
+    return $fh;
 }
-$result = post_alerts($alerts);
-echo json_encode(['date' => $date, 'critical_alerts' => count($alerts), 'result' => $result], JSON_PRETTY_PRINT) . PHP_EOL;
+
+function option_enabled(array $argv, string $option): bool {
+    return in_array($option, $argv, true);
+}
+
+try {
+    $lock = acquire_lock();
+    $dryRun = option_enabled($argv, '--dry-run');
+    $date = today_chicago();
+    foreach (array_slice($argv, 1) as $arg) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $arg)) {
+            $date = $arg;
+            break;
+        }
+    }
+    $alerts = [];
+    foreach (array_keys(SHEETS) as $branch) {
+        $alerts = array_merge($alerts, alerts_from_branch($branch, $date));
+    }
+    if ($dryRun) {
+        echo json_encode(['dry_run' => true, 'date' => $date, 'critical_alerts' => count($alerts)], JSON_PRETTY_PRINT) . PHP_EOL;
+        exit(0);
+    }
+    $result = post_alerts($alerts);
+    echo json_encode(['date' => $date, 'critical_alerts' => count($alerts), 'result' => $result], JSON_PRETTY_PRINT) . PHP_EOL;
+    flock($lock, LOCK_UN);
+    fclose($lock);
+} catch (Throwable $e) {
+    $message = preg_replace('/[0-9]{8,12}:AA[A-Za-z0-9_-]{20,}/', '[redacted-token]', $e->getMessage()) ?: 'cron failed';
+    fwrite(STDERR, $message . PHP_EOL);
+    exit(1);
+}

@@ -907,6 +907,7 @@ function telegram_dashboard_link(array $alert): string {
 }
 
 function telegram_alert_message(array $alert): string {
+    $prefix = !empty($alert['isTest']) ? 'TEST - ' : '';
     $branch = strtoupper(trim((string)($alert['branch'] ?? 'Unknown store')));
     $date = trim((string)($alert['businessDate'] ?? $alert['business_date'] ?? 'Unknown date'));
     $time = trim((string)($alert['businessTime'] ?? $alert['business_time'] ?? 'Unknown time'));
@@ -916,7 +917,7 @@ function telegram_alert_message(array $alert): string {
     $target = trim((string)($alert['target'] ?? $alert['sopTarget'] ?? 'No SOP target'));
     $action = trim((string)($alert['correctiveAction'] ?? $alert['corrective_action'] ?? 'Follow SOP and notify MOD.'));
     return implode("\n", [
-        "Critical Broth Log Alert",
+        $prefix . "Critical Broth Log Alert",
         "Store: $branch",
         "Business date/time: $date $time",
         "Employee: $employee",
@@ -1126,6 +1127,7 @@ if ($path === '/broth-log/telegram/test' && $METHOD === 'POST') {
         'temperature' => trim((string)($BODY['temperature'] ?? '45F')),
         'target' => trim((string)($BODY['target'] ?? '<= 40F')),
         'correctiveAction' => trim((string)($BODY['correctiveAction'] ?? 'Test only. Verify Telegram delivery path.')),
+        'isTest' => true,
     ];
     $result = telegram_process_alert($sample);
     ok(['telegram' => telegram_config_status(), 'result' => $result]);

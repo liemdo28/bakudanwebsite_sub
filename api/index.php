@@ -14,6 +14,11 @@ define('UPLOAD_URL',   '/uploads/blogs/');
 define('JWT_SECRET',   getenv('JWT_SECRET') ?: 'bakudan-dev-secret-change-in-production');
 define('JWT_TTL',      7 * 24 * 3600);
 define('SITE_URL',     'https://bakudanramen.com');
+define('TELEGRAM_BOT_TOKEN', trim((string)(getenv('TELEGRAM_BOT_TOKEN') ?: '')));
+define('TELEGRAM_CHAT_ID', trim((string)(getenv('TELEGRAM_CHAT_ID') ?: '')));
+define('TELEGRAM_ALERTS_ENABLED', in_array(strtolower(trim((string)(getenv('TELEGRAM_ALERTS_ENABLED') ?: 'false'))), ['1','true','yes','on'], true));
+define('TELEGRAM_TEST_SECRET', trim((string)(getenv('TELEGRAM_TEST_SECRET') ?: getenv('BROTH_LOG_TELEGRAM_TEST_SECRET') ?: '')));
+define('TELEGRAM_CRON_SECRET', trim((string)(getenv('TELEGRAM_CRON_SECRET') ?: getenv('BROTH_LOG_TELEGRAM_CRON_SECRET') ?: '')));
 
 // Suppress PHP warnings that would corrupt JSON output
 error_reporting(0);
@@ -222,6 +227,19 @@ function db_migrate(SQLite3 $db): void {
         dismissible INTEGER NOT NULL DEFAULT 1,
         is_active INTEGER NOT NULL DEFAULT 1,
         start_at TEXT, end_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS broth_log_telegram_alerts (
+        fingerprint TEXT PRIMARY KEY,
+        branch TEXT NOT NULL,
+        response_id TEXT NOT NULL,
+        station TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        sent_at TEXT,
+        resolved_at TEXT,
+        last_error TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -785,6 +803,160 @@ function audit_log(?array $user, string $action, ?string $entityType = null, ?in
     } catch (Throwable $e) { /* never let logging break the request */ }
 }
 
+function telegram_config_status(): array {
+    $last = q1("SELECT value FROM settings WHERE key='broth_log_telegram_last_success_at'");
+    return [
+        'enabled' => TELEGRAM_ALERTS_ENABLED,
+        'chat_configured' => TELEGRAM_CHAT_ID !== '',
+        'token_configured' => TELEGRAM_BOT_TOKEN !== '',
+        'last_success_at' => $last['value'] ?? null,
+    ];
+}
+
+function telegram_secret_authorized(string $secret): bool {
+    if ($secret === '' || TELEGRAM_TEST_SECRET === '') return false;
+    return hash_equals(TELEGRAM_TEST_SECRET, $secret);
+}
+
+function cron_secret_authorized(string $secret): bool {
+    if ($secret === '' || TELEGRAM_CRON_SECRET === '') return false;
+    return hash_equals(TELEGRAM_CRON_SECRET, $secret);
+}
+
+function telegram_alert_fingerprint(array $alert): string {
+    $parts = [
+        strtoupper(trim((string)($alert['branch'] ?? ''))),
+        trim((string)($alert['responseId'] ?? $alert['response_id'] ?? '')),
+        trim((string)($alert['station'] ?? '')),
+        strtolower(trim((string)($alert['severity'] ?? 'critical'))),
+    ];
+    return hash('sha256', implode('|', $parts));
+}
+
+function telegram_dashboard_link(array $alert): string {
+    $branch = strtoupper(trim((string)($alert['branch'] ?? 'B1')));
+    $date = trim((string)($alert['businessDate'] ?? $alert['business_date'] ?? ''));
+    $params = ['range' => $date ? 'today' : 'all', 'store' => $branch];
+    return rtrim(SITE_URL, '/') . '/broth-log?' . http_build_query($params);
+}
+
+function telegram_alert_message(array $alert): string {
+    $branch = strtoupper(trim((string)($alert['branch'] ?? 'Unknown store')));
+    $date = trim((string)($alert['businessDate'] ?? $alert['business_date'] ?? 'Unknown date'));
+    $time = trim((string)($alert['businessTime'] ?? $alert['business_time'] ?? 'Unknown time'));
+    $employee = trim((string)($alert['employee'] ?? $alert['employeeName'] ?? 'Unassigned'));
+    $station = trim((string)($alert['station'] ?? 'Unknown station'));
+    $temp = trim((string)($alert['temperature'] ?? 'Not recorded'));
+    $target = trim((string)($alert['target'] ?? $alert['sopTarget'] ?? 'No SOP target'));
+    $action = trim((string)($alert['correctiveAction'] ?? $alert['corrective_action'] ?? 'Follow SOP and notify MOD.'));
+    return implode("\n", [
+        "Critical Broth Log Alert",
+        "Store: $branch",
+        "Business date/time: $date $time",
+        "Employee: $employee",
+        "Station: $station",
+        "Current temp: $temp",
+        "SOP target: $target",
+        "Corrective action: $action",
+        "Dashboard: " . telegram_dashboard_link($alert),
+    ]);
+}
+
+function telegram_send_message(string $message): array {
+    if (!TELEGRAM_ALERTS_ENABLED) return ['sent' => false, 'reason' => 'disabled'];
+    if (TELEGRAM_BOT_TOKEN === '') return ['sent' => false, 'reason' => 'missing_token'];
+    if (TELEGRAM_CHAT_ID === '') return ['sent' => false, 'reason' => 'missing_chat_id'];
+    $url = 'https://api.telegram.org/bot' . TELEGRAM_BOT_TOKEN . '/sendMessage';
+    $payload = json_encode([
+        'chat_id' => TELEGRAM_CHAT_ID,
+        'text' => $message,
+        'disable_web_page_preview' => true,
+    ]);
+    $ctx = stream_context_create(['http' => [
+        'method' => 'POST',
+        'timeout' => 6,
+        'ignore_errors' => true,
+        'header' => "Content-Type: application/json\r\n",
+        'content' => $payload,
+    ]]);
+    $raw = @file_get_contents($url, false, $ctx);
+    $statusLine = $http_response_header[0] ?? '';
+    $httpCode = preg_match('#\s(\d{3})\s#', $statusLine, $m) ? (int)$m[1] : 0;
+    if ($raw === false || $httpCode < 200 || $httpCode >= 300) {
+        return ['sent' => false, 'reason' => 'telegram_api_error', 'http_code' => $httpCode];
+    }
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded) || empty($decoded['ok'])) {
+        return ['sent' => false, 'reason' => 'telegram_rejected', 'http_code' => $httpCode];
+    }
+    run("INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES ('broth_log_telegram_last_success_at',?,datetime('now'))", [gmdate('c')]);
+    return ['sent' => true, 'http_code' => $httpCode];
+}
+
+function telegram_process_alert(array $alert): array {
+    $severity = strtolower(trim((string)($alert['severity'] ?? 'critical')));
+    if ($severity !== 'critical') return ['sent' => false, 'skipped' => 'non_critical'];
+    $fingerprint = telegram_alert_fingerprint($alert);
+    $existing = q1("SELECT fingerprint,sent_at,resolved_at FROM broth_log_telegram_alerts WHERE fingerprint=?", [$fingerprint]);
+    if ($existing && !empty($existing['sent_at']) && empty($existing['resolved_at'])) {
+        return ['sent' => false, 'skipped' => 'duplicate', 'fingerprint' => $fingerprint];
+    }
+    $result = telegram_send_message(telegram_alert_message($alert));
+    $payload = json_encode($alert);
+    if (!empty($result['sent'])) {
+        run("INSERT OR REPLACE INTO broth_log_telegram_alerts (fingerprint,branch,response_id,station,severity,payload_json,sent_at,resolved_at,last_error,updated_at)
+             VALUES (?,?,?,?,?,?,datetime('now'),NULL,NULL,datetime('now'))", [
+            $fingerprint,
+            strtoupper(trim((string)($alert['branch'] ?? ''))),
+            trim((string)($alert['responseId'] ?? $alert['response_id'] ?? '')),
+            trim((string)($alert['station'] ?? '')),
+            $severity,
+            $payload,
+        ]);
+    } else {
+        run("INSERT OR REPLACE INTO broth_log_telegram_alerts (fingerprint,branch,response_id,station,severity,payload_json,sent_at,resolved_at,last_error,updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, (SELECT sent_at FROM broth_log_telegram_alerts WHERE fingerprint=?), NULL, ?, datetime('now'))", [
+            $fingerprint,
+            strtoupper(trim((string)($alert['branch'] ?? ''))),
+            trim((string)($alert['responseId'] ?? $alert['response_id'] ?? '')),
+            trim((string)($alert['station'] ?? '')),
+            $severity,
+            $payload,
+            $fingerprint,
+            $result['reason'] ?? 'send_failed',
+        ]);
+    }
+    return ['fingerprint' => $fingerprint] + $result;
+}
+
+function mark_resolved_telegram_alerts(array $activeFingerprints): int {
+    $active = array_flip($activeFingerprints);
+    $open = q("SELECT fingerprint FROM broth_log_telegram_alerts WHERE resolved_at IS NULL");
+    $resolved = 0;
+    foreach ($open as $row) {
+        if (isset($active[$row['fingerprint']])) continue;
+        run("UPDATE broth_log_telegram_alerts SET resolved_at=datetime('now'), updated_at=datetime('now') WHERE fingerprint=?", [$row['fingerprint']]);
+        $resolved++;
+    }
+    return $resolved;
+}
+
+function telegram_admin_or_secret(): ?array {
+    $secret = $_SERVER['HTTP_X_BROTH_LOG_TELEGRAM_SECRET'] ?? ($_SERVER['HTTP_X_TELEGRAM_TEST_SECRET'] ?? ($GLOBALS['BODY']['secret'] ?? ''));
+    if (telegram_secret_authorized((string)$secret)) return null;
+    $user = auth();
+    role_check($user, $GLOBALS['MGR']);
+    return $user;
+}
+
+function telegram_cron_or_admin(): ?array {
+    $secret = $_SERVER['HTTP_X_BROTH_LOG_CRON_SECRET'] ?? ($_SERVER['HTTP_X_TELEGRAM_CRON_SECRET'] ?? ($GLOBALS['BODY']['secret'] ?? ''));
+    if (cron_secret_authorized((string)$secret)) return null;
+    $user = auth();
+    role_check($user, $GLOBALS['MGR']);
+    return $user;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // ── AUTH ─────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────
@@ -830,6 +1002,45 @@ if ($path === '/auth/change-password' && $METHOD === 'POST') {
     run("UPDATE users SET password_hash=?, updated_at=datetime('now') WHERE id=?",
         [password_hash($new, PASSWORD_BCRYPT), $user['id']]);
     ok(['success' => true]);
+}
+
+// ── BROTH LOG TELEGRAM ───────────────────────────────────────────────
+if ($path === '/broth-log/telegram/status' && $METHOD === 'GET') {
+    $user = auth(); role_check($user, $MGR);
+    ok(['telegram' => telegram_config_status()]);
+}
+
+if ($path === '/broth-log/telegram/test' && $METHOD === 'POST') {
+    telegram_admin_or_secret();
+    $sample = [
+        'branch' => strtoupper(trim((string)($BODY['branch'] ?? 'B1'))),
+        'responseId' => 'telegram-test-' . gmdate('YmdHis'),
+        'station' => trim((string)($BODY['station'] ?? 'Walk-In Cooler')),
+        'severity' => 'critical',
+        'businessDate' => trim((string)($BODY['businessDate'] ?? gmdate('Y-m-d'))),
+        'businessTime' => trim((string)($BODY['businessTime'] ?? gmdate('H:i'))),
+        'employee' => trim((string)($BODY['employee'] ?? 'Telegram Test')),
+        'temperature' => trim((string)($BODY['temperature'] ?? '45F')),
+        'target' => trim((string)($BODY['target'] ?? '<= 40F')),
+        'correctiveAction' => trim((string)($BODY['correctiveAction'] ?? 'Test only. Verify Telegram delivery path.')),
+    ];
+    $result = telegram_process_alert($sample);
+    ok(['telegram' => telegram_config_status(), 'result' => $result]);
+}
+
+if ($path === '/broth-log/telegram/alerts' && $METHOD === 'POST') {
+    telegram_cron_or_admin();
+    $alerts = $BODY['alerts'] ?? [];
+    if (!is_array($alerts)) err('alerts must be an array.');
+    $results = [];
+    $active = [];
+    foreach ($alerts as $alert) {
+        if (!is_array($alert)) continue;
+        $active[] = telegram_alert_fingerprint($alert);
+        $results[] = telegram_process_alert($alert);
+    }
+    $resolved = mark_resolved_telegram_alerts($active);
+    ok(['telegram' => telegram_config_status(), 'processed' => count($results), 'resolved' => $resolved, 'results' => $results]);
 }
 
 // ── CONFIG ────────────────────────────────────────────────────────────

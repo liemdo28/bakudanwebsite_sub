@@ -35,6 +35,7 @@ body {
     color: var(--text);
     font-family: var(--font-body);
     line-height: 1.45;
+    overflow-x: hidden;
 }
 
 button, input, select {
@@ -258,9 +259,6 @@ button {
     position: sticky;
     top: 0;
     z-index: 5;
-    display: grid;
-    grid-template-columns: auto minmax(180px, 1.6fr) repeat(5, minmax(130px, 1fr));
-    gap: 8px;
     padding: 10px;
     margin-bottom: 16px;
     background: color-mix(in srgb, var(--bg), transparent 10%);
@@ -269,21 +267,49 @@ button {
     border-radius: var(--radius);
 }
 
-.bd-today-btn.active {
-    background: var(--red);
-    border-color: var(--red);
-    color: #fff;
+.bd-primary-filters,
+.bd-advanced-grid {
+    display: grid;
+    grid-template-columns: auto minmax(130px, .8fr) minmax(130px, .8fr) minmax(180px, 1.4fr);
+    gap: 8px;
+}
+
+.bd-advanced-filters {
+    margin-top: 8px;
+}
+
+.bd-advanced-filters summary {
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 10px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+
+.bd-advanced-grid {
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    margin-top: 8px;
 }
 
 .bd-filters input,
-.bd-filters select {
+.bd-filters select,
+.bd-filters button {
     min-width: 0;
-    height: 40px;
+    min-height: 44px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--panel);
     color: var(--text);
     padding: 8px 10px;
+}
+
+.bd-today-btn.active {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
 }
 
 .bd-grid {
@@ -912,13 +938,28 @@ button {
         height: auto;
     }
     .bd-nav {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        display: flex;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        scroll-snap-type: x proximity;
     }
-    .bd-filters,
+    .bd-nav button {
+        flex: 0 0 auto;
+        width: auto;
+        min-width: 120px;
+        min-height: 44px;
+        scroll-snap-align: start;
+    }
     .bd-kpis,
     .bd-two,
     .bd-three {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .bd-primary-filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .bd-advanced-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
     .bd-master-detail,
     .bd-temp-card {
@@ -937,7 +978,6 @@ button {
 @media (max-width: 720px) {
     .bd-main { padding: 14px; }
     .bd-topbar,
-    .bd-filters,
     .bd-kpis,
     .bd-two,
     .bd-three,
@@ -946,28 +986,26 @@ button {
     .bd-detail-grid {
         grid-template-columns: 1fr;
     }
+    .bd-filters {
+        position: relative;
+        top: auto;
+    }
+    .bd-primary-filters,
+    .bd-advanced-grid {
+        grid-template-columns: 1fr;
+    }
+    .bd-filters input,
+    .bd-filters select,
+    .bd-filters button {
+        width: 100%;
+        min-height: 48px;
+    }
     .bd-actions {
         justify-content: flex-start;
     }
     .bd-nav {
-        display: flex;
-        gap: 8px;
-        overflow-x: auto;
-        padding-bottom: 4px;
-        scroll-snap-type: x proximity;
-    }
-    .bd-nav button {
-        flex: 0 0 auto;
-        width: auto;
-        min-height: 44px;
-        white-space: nowrap;
-        scroll-snap-align: start;
-    }
-    .bd-sidebar {
-        padding: 14px;
-    }
-    .bd-brand {
-        margin-bottom: 12px;
+        margin: 0 -18px;
+        padding: 0 18px 6px;
     }
     .bd-bar {
         grid-template-columns: 92px minmax(0, 1fr) 46px;

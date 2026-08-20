@@ -14,6 +14,14 @@
 - `TELEGRAM_WEBHOOK_SECRET`: random secret for the test endpoint and cron alert ingestion.
 - `BROTH_LOG_TELEGRAM_ALERT_ENDPOINT`: optional; defaults to `https://bakudanramen.com/api/broth-log/telegram/alerts`.
 
+Production also reads the same values from this private file when present:
+
+```text
+/home/hoale24new/bakudan-app/config/broth-log-telegram.env
+```
+
+Keep this file outside the public web root with owner-only permissions.
+
 ## Endpoints
 
 - `GET /api/broth-log/telegram/status`: admin JWT required. Returns only enabled/configured flags and last successful send time.
@@ -27,7 +35,7 @@ No endpoint returns the bot token or chat id.
 Run every 5 minutes on hosting:
 
 ```bash
-*/5 * * * * TELEGRAM_WEBHOOK_SECRET="replace-with-random-webhook-secret" /usr/bin/php /private/path/scripts/broth-log-telegram-cron.php >> /private/path/logs/broth-telegram.log 2>&1
+*/5 * * * * /usr/bin/php /home/hoale24new/bakudanramen.com/scripts/broth-log-telegram-cron.php >> /home/hoale24new/bakudan-app/logs/broth-telegram.log 2>&1
 ```
 
 The cron script is CLI-only, uses a short-lived lock to avoid overlapping runs, fetches the Google Sheets server-side, checks only today's `businessDate` in `America/Chicago`, extracts critical station readings, and posts them to the API for de-duplication and delivery.
@@ -35,7 +43,7 @@ The cron script is CLI-only, uses a short-lived lock to avoid overlapping runs, 
 Dry-run before enabling live sends:
 
 ```bash
-TELEGRAM_WEBHOOK_SECRET="replace-with-random-webhook-secret" /usr/bin/php /private/path/scripts/broth-log-telegram-cron.php --dry-run
+/usr/bin/php /home/hoale24new/bakudanramen.com/scripts/broth-log-telegram-cron.php --dry-run
 ```
 
 ## De-Duplication

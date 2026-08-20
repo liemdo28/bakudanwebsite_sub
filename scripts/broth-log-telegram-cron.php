@@ -16,6 +16,7 @@ if (PHP_SAPI !== 'cli') {
     exit;
 }
 
+const PRIVATE_TELEGRAM_ENV_PATH = '/home/hoale24new/bakudan-app/config/broth-log-telegram.env';
 const BUSINESS_TIMEZONE = 'America/Chicago';
 const SHEETS = [
     'B1' => ['id' => '1-T9WLdHI1MWp0kX7U2SNPOnc7nDBnrrc0njFxBUKnqo', 'tab' => 'Form Responses 1'],
@@ -93,6 +94,32 @@ const SOP = [
     'pastaBoilerRight' => ['operator' => '>=', 'target' => 200, 'action' => 'Adjust temp and re-temp in 10 min'],
 ];
 const LOCK_TTL_SECONDS = 240;
+
+function load_private_env_file(string $path): void {
+    $override = getenv('BAKUDAN_TELEGRAM_ENV_FILE');
+    if (is_string($override) && trim($override) !== '') {
+        $path = trim($override);
+    }
+    if ($path === '' || !is_readable($path)) return;
+    $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if (!is_array($lines)) return;
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] === '#') continue;
+        if (!preg_match('/^([A-Z][A-Z0-9_]*)=(.*)$/', $line, $m)) continue;
+        $key = $m[1];
+        $value = trim($m[2]);
+        if ((str_starts_with($value, '"') && str_ends_with($value, '"')) || (str_starts_with($value, "'") && str_ends_with($value, "'"))) {
+            $value = substr($value, 1, -1);
+        }
+        if (getenv($key) === false) {
+            putenv("$key=$value");
+            $_ENV[$key] = $value;
+        }
+    }
+}
+
+load_private_env_file(PRIVATE_TELEGRAM_ENV_PATH);
 
 function today_chicago(): string {
     return (new DateTimeImmutable('now', new DateTimeZone(BUSINESS_TIMEZONE)))->format('Y-m-d');

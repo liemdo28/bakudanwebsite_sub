@@ -12,7 +12,7 @@
 - `TELEGRAM_BOT_TOKEN`: new Telegram bot token from BotFather.
 - `TELEGRAM_CHAT_ID`: target chat/channel id.
 - `TELEGRAM_WEBHOOK_SECRET`: random secret for the test endpoint and cron alert ingestion.
-- `BROTH_LOG_TELEGRAM_ALERT_ENDPOINT`: optional; defaults to `https://bakudanramen.com/api/broth-log/telegram/alerts`.
+- `BROTH_LOG_TELEGRAM_ALERT_ENDPOINT`: optional; defaults to `https://www.bakudanramen.com/api/broth-log/telegram/alerts`.
 
 Production also reads the same values from this private file when present:
 

@@ -6,7 +6,7 @@ declare(strict_types=1);
  *
  * Required env on hosting:
  * - TELEGRAM_WEBHOOK_SECRET or TELEGRAM_CRON_SECRET
- * - BROTH_LOG_TELEGRAM_ALERT_ENDPOINT, optional, defaults to https://bakudanramen.com/api/broth-log/telegram/alerts
+ * - BROTH_LOG_TELEGRAM_ALERT_ENDPOINT, optional, defaults to https://www.bakudanramen.com/api/broth-log/telegram/alerts
  *
  * Telegram bot token/chat id are read only by api/index.php.
  */
@@ -211,7 +211,7 @@ function alerts_from_branch(string $branch, string $date): array {
 }
 
 function post_alerts(array $alerts): array {
-    $endpoint = trim((string)(getenv('BROTH_LOG_TELEGRAM_ALERT_ENDPOINT') ?: 'https://bakudanramen.com/api/broth-log/telegram/alerts'));
+    $endpoint = trim((string)(getenv('BROTH_LOG_TELEGRAM_ALERT_ENDPOINT') ?: 'https://www.bakudanramen.com/api/broth-log/telegram/alerts'));
     $parts = parse_url($endpoint);
     if (($parts['scheme'] ?? '') !== 'https' || empty($parts['host'])) {
         throw new RuntimeException('BROTH_LOG_TELEGRAM_ALERT_ENDPOINT must be an https URL');

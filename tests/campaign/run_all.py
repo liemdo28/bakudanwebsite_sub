@@ -18,6 +18,7 @@ ROOT_RELATIVE_SCRIPTS = [
     'tests/campaign/test_backup_deploy_matrix.py',
     'tests/campaign/test_no_secrets.py',
     'tests/broth_log_copilot/test_phase1_foundations.py',
+    'tests/broth_log_dashboard/test_current_day_ux.py',
 ]
 
 

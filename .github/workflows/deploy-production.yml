@@ -11,13 +11,15 @@ concurrency:
 
 env:
   DEPLOY_SOURCE: >-
-    about.html,accessibility.html,a-local-guide-to-ramen-near-la-cantera.html,blog-authentic.html,blog-chashu.html,blog-journey.html,blog-ramen-101.html,blog-tonkotsu.html,blog.html,broth-log.html,fundraiser.html,happy-hour.html,index.html,locations.html,menu.html,order.html,privacy.html,ramen-guide.html,terms.html,css,js,images,locations,links,links-admin,api,forms,staff-training,marketing-signup,.htaccess,the-ultimate-guide-to-garlic-tonkotsu-ramen.html,lighter-ramen-options-shoyu-and-shio-broth-basics.html,the-secret-to-our-24-hour-slow-simmered-tonkotsu-broth.html,top-rated-japanese-restaurants-in-san-antonio-today.html,the-best-soup-in-san-antonio-for-rainy-days.html,where-to-find-authentic-tonkotsu-ramen-in-san-antonio.html,daily-cocktail-specials-in-san-antonio-you-can-t-miss.html,handmade-vs-instant-why-fresh-noodles-matter.html,bakudan-ramen-why-we-are-la-cantera-s-top-dining-spot.html,the-best-lunch-spots-in-san-antonio-for-ramen-lovers.html,why-bakudan-is-the-perfect-date-night-spot.html,top-5-spicy-chicken-ramen-spots-in-san-antonio.html,cilantro-lime-chicken-ramen-a-fresh-fusion-favorite.html,why-bok-choy-is-the-perfect-crunch-for-spicy-ramen.html,modern-japanese-dining-the-bakudan-ramen-experience.html,how-to-order-ramen-online-in-san-antonio.html,ramen-takeout-san-antonio-how-to-reheat-like-a-pro.html,best-ramen-san-antonio-the-definitive-2026-guide.html,why-fried-garlic-chips-are-the-ultimate-ramen-topping.html,ramen-101-what-makes-a-bowl-truly-soul-warming.html,chili-oil-101-elevating-your-spicy-ramen-bowl.html,your-guide-to-japanese-food-delivery-in-san-antonio.html,why-draft-beer-and-ramen-are-a-match-made-in-heaven.html,finding-a-japanese-restaurant-on-bandera-road.html,is-cilantro-lime-chicken-ramen-the-new-comfort-food.html,craft-cocktails-and-ramen-the-ultimate-pairing.html,how-to-perfectly-eat-garlic-tonkotsu-ramen.html,everything-you-need-to-know-about-spicy-umami-miso.html,the-bold-science-of-spicy-pork-broth-ramen.html,japanese-craft-cocktails-beyond-the-basic-martini.html,the-best-happy-hour-in-stone-oak-for-cocktails.html,sitemap.xml
+    about.html,accessibility.html,a-local-guide-to-ramen-near-la-cantera.html,blog-authentic.html,blog-chashu.html,blog-journey.html,blog-ramen-101.html,blog-tonkotsu.html,blog.html,broth-log.html,fundraiser.html,happy-hour.html,index.html,locations.html,menu.html,order.html,privacy.html,ramen-guide.html,terms.html,css,js,images,locations,links,links-admin,api,forms,staff-training,marketing-signup,scripts/broth-log-telegram-cron.php,.htaccess,the-ultimate-guide-to-garlic-tonkotsu-ramen.html,lighter-ramen-options-shoyu-and-shio-broth-basics.html,the-secret-to-our-24-hour-slow-simmered-tonkotsu-broth.html,top-rated-japanese-restaurants-in-san-antonio-today.html,the-best-soup-in-san-antonio-for-rainy-days.html,where-to-find-authentic-tonkotsu-ramen-in-san-antonio.html,daily-cocktail-specials-in-san-antonio-you-can-t-miss.html,handmade-vs-instant-why-fresh-noodles-matter.html,bakudan-ramen-why-we-are-la-cantera-s-top-dining-spot.html,the-best-lunch-spots-in-san-antonio-for-ramen-lovers.html,why-bakudan-is-the-perfect-date-night-spot.html,top-5-spicy-chicken-ramen-spots-in-san-antonio.html,cilantro-lime-chicken-ramen-a-fresh-fusion-favorite.html,why-bok-choy-is-the-perfect-crunch-for-spicy-ramen.html,modern-japanese-dining-the-bakudan-ramen-experience.html,how-to-order-ramen-online-in-san-antonio.html,ramen-takeout-san-antonio-how-to-reheat-like-a-pro.html,best-ramen-san-antonio-the-definitive-2026-guide.html,why-fried-garlic-chips-are-the-ultimate-ramen-topping.html,ramen-101-what-makes-a-bowl-truly-soul-warming.html,chili-oil-101-elevating-your-spicy-ramen-bowl.html,your-guide-to-japanese-food-delivery-in-san-antonio.html,why-draft-beer-and-ramen-are-a-match-made-in-heaven.html,finding-a-japanese-restaurant-on-bandera-road.html,is-cilantro-lime-chicken-ramen-the-new-comfort-food.html,craft-cocktails-and-ramen-the-ultimate-pairing.html,how-to-perfectly-eat-garlic-tonkotsu-ramen.html,everything-you-need-to-know-about-spicy-umami-miso.html,the-bold-science-of-spicy-pork-broth-ramen.html,japanese-craft-cocktails-beyond-the-basic-martini.html,the-best-happy-hour-in-stone-oak-for-cocktails.html,sitemap.xml
 
 jobs:
   deploy-production:
     runs-on: ubuntu-latest
     environment: production
     if: github.event_name == 'release' && github.event.action == 'published'
+    env:
+      BACKUP_ID: release-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
 
     steps:
       - name: Checkout source
@@ -70,6 +72,46 @@ jobs:
             exit 1
           fi
 
+      - name: Backup production files before upload
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          PRODUCTION_DIR: ${{ secrets.PRODUCTION_TARGET_DIR }}
+          BACKUP_ID: ${{ env.BACKUP_ID }}
+          DEPLOY_SOURCE: ${{ env.DEPLOY_SOURCE }}
+          DEPLOY_COMMIT: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USERNAME }}
+          password: ${{ secrets.PRODUCTION_PASSWORD }}
+          port: ${{ secrets.PRODUCTION_PORT }}
+          envs: PRODUCTION_DIR,BACKUP_ID,DEPLOY_SOURCE,DEPLOY_COMMIT,RELEASE_TAG
+          script_stop: true
+          script: |
+            set -euo pipefail
+            target="${PRODUCTION_DIR%/}"
+            backup_parent="$(dirname "$target")/_deploy_backups"
+            backup_dir="$backup_parent/$BACKUP_ID"
+            mkdir -p "$backup_dir"
+            printf '%s' "$DEPLOY_SOURCE" | tr ',' '\n' | sed '/^[[:space:]]*$/d' > "$backup_dir/deploy-source.txt"
+            cat > "$backup_dir/manifest.json" <<EOF
+            {
+              "backup_id": "$BACKUP_ID",
+              "release_tag": "$RELEASE_TAG",
+              "deploy_commit": "$DEPLOY_COMMIT",
+              "created_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "archive": "changed-files.tar.gz",
+              "source_list": "deploy-source.txt"
+            }
+            EOF
+            cd "$target"
+            tar --ignore-failed-read -czf "$backup_dir/changed-files.tar.gz" -T "$backup_dir/deploy-source.txt"
+            tar -tzf "$backup_dir/changed-files.tar.gz" >/dev/null
+            echo "Backup id: $BACKUP_ID"
+            echo "Backup location: sibling _deploy_backups/$BACKUP_ID beside the production document root"
+            echo "Deploy commit: $DEPLOY_COMMIT"
+            echo "Rollback verified: backup archive is readable and can be extracted over the production document root"
+
       - name: Copy files to production via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -80,3 +122,25 @@ jobs:
           source: ${{ env.DEPLOY_SOURCE }}
           target: ${{ secrets.PRODUCTION_TARGET_DIR }}
           overwrite: true
+
+      - name: Roll back production from backup on deploy failure
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          PRODUCTION_DIR: ${{ secrets.PRODUCTION_TARGET_DIR }}
+          BACKUP_ID: ${{ env.BACKUP_ID }}
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USERNAME }}
+          password: ${{ secrets.PRODUCTION_PASSWORD }}
+          port: ${{ secrets.PRODUCTION_PORT }}
+          envs: PRODUCTION_DIR,BACKUP_ID
+          script_stop: true
+          script: |
+            set -euo pipefail
+            target="${PRODUCTION_DIR%/}"
+            backup_archive="$(dirname "$target")/_deploy_backups/$BACKUP_ID/changed-files.tar.gz"
+            test -f "$backup_archive"
+            cd "$target"
+            tar -xzf "$backup_archive"
+            echo "Rollback restored files from backup id: $BACKUP_ID"

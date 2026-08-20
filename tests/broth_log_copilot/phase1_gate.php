@@ -312,6 +312,77 @@ try {
     $dueEscalate = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 00:09:00 UTC')), fn($d) => $d['incident']['incident_id'] === $raceId))[0];
     expect_eq($dueEscalate['action'], 'escalate', 'fake-clock escalates at minute nine');
 
+    // --- Phase 2: per-intent query responses, EN/ES/VI localization, branch isolation ---
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array {
+        if ($branch !== 'B1') return [];
+        return [[
+            'id' => 'rec-1', 'branch' => 'B1', 'businessDate' => '2026-08-20', 'businessTime' => '08:00', 'employeeName' => 'Tester',
+            'readings' => [
+                ['key' => 'walkInFreezer', 'label' => 'Walk-In Freezer', 'category' => 'freezer', 'temperature' => 25.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => 'Close door'],
+                ['key' => 'bowlWarmer', 'label' => 'Bowl Warmer', 'category' => 'warm', 'temperature' => null, 'unit' => 'F', 'severity' => 'missing', 'target' => '>= 100F', 'correctiveAction' => ''],
+                ['key' => 'prepAreaCooler', 'label' => 'Prep Area Cooler', 'category' => 'cold', 'temperature' => 38.0, 'unit' => 'F', 'severity' => 'safe', 'target' => '<= 40F', 'correctiveAction' => ''],
+            ],
+            'issues' => [
+                ['key' => 'walkInFreezer', 'label' => 'Walk-In Freezer', 'category' => 'freezer', 'temperature' => 25.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => 'Close door', 'status' => 'Escalated'],
+                ['key' => 'bowlWarmer', 'label' => 'Bowl Warmer', 'category' => 'warm', 'temperature' => null, 'unit' => 'F', 'severity' => 'missing', 'target' => '>= 100F', 'correctiveAction' => '', 'status' => 'Open'],
+            ],
+        ]];
+    };
+    $b1User = ['telegram_user_id' => '101', 'allowed_branch_list' => ['B1'], 'preferred_language' => 'en'];
+    $base = ['branch' => 'B1', 'business_date' => '2026-08-20'];
+
+    foreach (['en' => ['1 log(s)', '1 critical', '1 missing'], 'es' => ['1 registro(s)', '1 critico(s)', '1 faltante(s)'], 'vi' => ['1 nhat ky', '1 nghiem trong', '1 thieu']] as $lang => $expectedParts) {
+        $msg = broth_log_copilot_format_response($base + ['intent' => 'today_summary', 'language' => $lang], $b1User);
+        expect_true(str_contains($msg, 'B1') && str_contains($msg, '2026-08-20'), "today summary [$lang] preserves store and date exactly");
+        foreach ($expectedParts as $part) expect_true(str_contains($msg, $part), "today summary [$lang] localizes counts ($part)");
+    }
+
+    $critEn = broth_log_copilot_format_response($base + ['intent' => 'critical_issues', 'language' => 'en'], $b1User);
+    expect_true(str_contains($critEn, 'Critical issues for B1 2026-08-20:'), 'critical issues [en] header localized');
+    expect_true(str_contains($critEn, '- Walk-In Freezer: 25F (target <= 0F)'), 'critical issues [en] preserves item/temp/target exactly');
+    expect_true(!str_contains($critEn, 'Bowl Warmer'), 'critical issues excludes non-critical (missing) reading');
+    $critEs = broth_log_copilot_format_response($base + ['intent' => 'critical_issues', 'language' => 'es'], $b1User);
+    expect_true(str_contains($critEs, 'Problemas criticos para B1 2026-08-20:'), 'critical issues [es] header localized');
+    expect_true(str_contains($critEs, '- Walk-In Freezer: 25F (objetivo <= 0F)'), 'critical issues [es] preserves item/temp/target exactly');
+    $critVi = broth_log_copilot_format_response($base + ['intent' => 'critical_issues', 'language' => 'vi'], $b1User);
+    expect_true(str_contains($critVi, 'Van de nghiem trong cho B1 2026-08-20:'), 'critical issues [vi] header localized');
+    expect_true(str_contains($critVi, '- Walk-In Freezer: 25F (muc tieu <= 0F)'), 'critical issues [vi] preserves item/temp/target exactly');
+
+    $openEn = broth_log_copilot_format_response($base + ['intent' => 'open_issues', 'language' => 'en'], $b1User);
+    expect_true(str_contains($openEn, 'Open issues for B1 2026-08-20:'), 'open issues [en] header localized');
+    expect_true(str_contains($openEn, '- Walk-In Freezer: 25F (status Escalated)'), 'open issues [en] includes critical-but-open item');
+    expect_true(str_contains($openEn, '- Bowl Warmer:'), 'open issues [en] includes missing-but-open item');
+    $openVi = broth_log_copilot_format_response($base + ['intent' => 'open_issues', 'language' => 'vi'], $b1User);
+    expect_true(str_contains($openVi, 'Van de con mo cho B1 2026-08-20:'), 'open issues [vi] header localized');
+
+    $missEn = broth_log_copilot_format_response($base + ['intent' => 'missing_logs', 'language' => 'en'], $b1User);
+    expect_true(str_contains($missEn, 'Missing logs for B1 2026-08-20:') && str_contains($missEn, '- Bowl Warmer'), 'missing logs [en] lists only missing station');
+    expect_true(!str_contains($missEn, 'Walk-In Freezer') && !str_contains($missEn, 'Prep Area Cooler'), 'missing logs [en] excludes non-missing stations');
+    $missEs = broth_log_copilot_format_response($base + ['intent' => 'missing_logs', 'language' => 'es'], $b1User);
+    expect_true(str_contains($missEs, 'Registros faltantes para B1 2026-08-20:'), 'missing logs [es] header localized');
+
+    $tempEn = broth_log_copilot_format_response($base + ['intent' => 'temperature_lookup', 'language' => 'en', 'station' => 'walkInFreezer'], $b1User);
+    expect_eq($tempEn, 'Walk-In Freezer at B1 2026-08-20: 25F (target <= 0F).', 'temperature lookup [en] shows requested station reading exactly');
+    $tempVi = broth_log_copilot_format_response($base + ['intent' => 'temperature_lookup', 'language' => 'vi', 'station' => 'walkInFreezer'], $b1User);
+    expect_eq($tempVi, 'Walk-In Freezer tai B1 2026-08-20: 25F (muc tieu <= 0F).', 'temperature lookup [vi] localized, preserves item/temp/target');
+    $tempNoStation = broth_log_copilot_format_response($base + ['intent' => 'temperature_lookup', 'language' => 'en'], $b1User);
+    expect_true(str_contains($tempNoStation, 'Which item or station'), 'temperature lookup without station asks for clarification');
+
+    $sopEn = broth_log_copilot_format_response($base + ['intent' => 'sop_comparison', 'language' => 'en', 'station' => 'walkInFreezer'], $b1User);
+    expect_eq($sopEn, 'Walk-In Freezer at B1 2026-08-20: entered 25F vs SOP target <= 0F -> critical.', 'SOP comparison [en] shows entered value vs canonical target with verdict');
+    $sopEs = broth_log_copilot_format_response($base + ['intent' => 'sop_comparison', 'language' => 'es', 'station' => 'walkInFreezer'], $b1User);
+    expect_eq($sopEs, 'Walk-In Freezer en B1 2026-08-20: ingresado 25F vs objetivo SOP <= 0F -> critico.', 'SOP comparison [es] localized including verdict word');
+
+    foreach (['en' => 'I cannot access that store', 'es' => 'No puedo acceder a esa tienda', 'vi' => 'Toi khong the truy cap chi nhanh'] as $lang => $expectedPrefix) {
+        $forbidden = broth_log_copilot_format_response(['branch' => 'B2', 'business_date' => '2026-08-20', 'intent' => 'today_summary', 'language' => $lang], $b1User);
+        expect_true(str_contains($forbidden, $expectedPrefix), "cross-branch query [$lang] is denied with localized message (B1 tester cannot read B2)");
+    }
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+
+    // Regression: incident-reference digits must never be parsed as temperature (Phase 7 concern)
+    $refParsed = broth_log_copilot_parse('/resolve #bl-1234567890-20260820120000-abcdef 38F closed door and moved product', $b1User, new DateTimeImmutable('2026-08-20 00:00:00 UTC'));
+    expect_eq($refParsed['temperature_f'], 38.0, 'incident-reference digits are not misread as the recheck temperature');
+
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {
     @unlink(TEST_DB_PATH);

@@ -679,15 +679,20 @@ function broth_log_copilot_apply_escalation_action(array $action, ?DateTimeImmut
     return ['ok' => true, 'action' => 'reminded', 'incident_id' => $incident['incident_id']];
 }
 
+function broth_log_copilot_branch_records(string $branch): array {
+    $provider = $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] ?? null;
+    if (is_callable($provider)) return $provider($branch);
+    return broth_log_fetch_branch_records($branch);
+}
+
 function broth_log_copilot_query_response(array $parsed, array $user): array {
     $branch = $parsed['branch'];
     if (!$branch && count($user['allowed_branch_list']) === 1) $branch = strtoupper($user['allowed_branch_list'][0]);
-    if (!$branch) return ['needs_clarification' => true, 'message' => 'Which store should I check: B1, B2, or B3?'];
-    if (!broth_log_copilot_user_can_branch($user, $branch)) return ['forbidden' => true, 'message' => 'I cannot access that store for this account.'];
+    if (!$branch) return ['needs_clarification' => true];
+    if (!broth_log_copilot_user_can_branch($user, $branch)) return ['forbidden' => true];
     $date = $parsed['business_date'] ?: broth_log_business_date();
-    $records = broth_log_filter_records(broth_log_fetch_branch_records($branch), ['branch' => $branch, 'businessDate' => $date]);
-    $summary = broth_log_summary($records);
-    return ['records' => $records, 'summary' => $summary, 'branch' => $branch, 'businessDate' => $date];
+    $records = broth_log_filter_records(broth_log_copilot_branch_records($branch), ['branch' => $branch, 'businessDate' => $date]);
+    return ['records' => $records, 'branch' => $branch, 'businessDate' => $date];
 }
 
 function broth_log_copilot_active_route_exists(string $branch, int $level): bool {
@@ -704,25 +709,42 @@ function broth_log_copilot_route_chat_ids(string $branch, int $level): array {
     return $chatId !== '' ? [$chatId] : [];
 }
 
-function broth_log_copilot_incident_message(array $incident, string $kind): string {
-    $label = match ($kind) {
-        'ack_confirm' => 'Incident acknowledged',
-        'resolve_confirm' => 'Incident resolved',
-        'escalation' => 'Incident escalated',
-        'fallback' => 'Emergency fallback required',
-        'reminder' => 'Incident reminder',
-        default => 'Critical Broth Log incident',
-    };
+function broth_log_copilot_incident_message_labels(string $lang): array {
+    $t = fn(string $en, string $es, string $vi): string => match ($lang) { 'es' => $es, 'vi' => $vi, default => $en };
+    return [
+        'store' => $t('Store', 'Tienda', 'Chi nhanh'),
+        'business' => $t('Business', 'Fecha/hora', 'Ngay gio'),
+        'item' => $t('Item', 'Producto', 'Muc'),
+        'recorded' => $t('Recorded', 'Registrado', 'Da ghi'),
+        'missing' => $t('missing', 'faltante', 'thieu'),
+        'sop' => 'SOP',
+        'severity' => $t('Severity', 'Severidad', 'Muc do'),
+        'action' => $t('Action', 'Accion', 'Hanh dong'),
+        'ref' => $t('Ref', 'Ref', 'Ma'),
+        'kind' => [
+            'ack_confirm' => $t('Incident acknowledged', 'Incidente confirmado', 'Su co da duoc xac nhan'),
+            'resolve_confirm' => $t('Incident resolved', 'Incidente resuelto', 'Su co da duoc giai quyet'),
+            'escalation' => $t('Incident escalated', 'Incidente escalado', 'Su co da duoc nang cap'),
+            'fallback' => $t('Emergency fallback required', 'Se requiere accion de emergencia', 'Can hanh dong khan cap'),
+            'reminder' => $t('Incident reminder', 'Recordatorio de incidente', 'Nhac nho su co'),
+            'default' => $t('Critical Broth Log incident', 'Incidente critico de Broth Log', 'Su co nghiem trong Broth Log'),
+        ],
+    ];
+}
+
+function broth_log_copilot_incident_message(array $incident, string $kind, string $lang = 'en'): string {
+    $l = broth_log_copilot_incident_message_labels($lang);
+    $label = $l['kind'][$kind] ?? $l['kind']['default'];
     $lines = [
         $label,
-        'Store: ' . (string)$incident['branch'],
-        'Business: ' . trim((string)$incident['business_date'] . ' ' . (string)($incident['business_time'] ?? '')),
-        'Item: ' . (string)$incident['station_label'],
-        'Recorded: ' . (($incident['temperature_f'] ?? null) === null ? 'missing' : rtrim(rtrim((string)$incident['temperature_f'], '0'), '.') . 'F'),
-        'SOP: ' . (string)$incident['sop_target'],
-        'Severity: ' . (string)$incident['severity'],
-        'Action: ' . (string)$incident['corrective_action'],
-        'Ref: #' . (string)$incident['incident_id'],
+        $l['store'] . ': ' . (string)$incident['branch'],
+        $l['business'] . ': ' . trim((string)$incident['business_date'] . ' ' . (string)($incident['business_time'] ?? '')),
+        $l['item'] . ': ' . (string)$incident['station_label'],
+        $l['recorded'] . ': ' . (($incident['temperature_f'] ?? null) === null ? $l['missing'] : rtrim(rtrim((string)$incident['temperature_f'], '0'), '.') . 'F'),
+        $l['sop'] . ': ' . (string)$incident['sop_target'],
+        $l['severity'] . ': ' . (string)$incident['severity'],
+        $l['action'] . ': ' . (string)$incident['corrective_action'],
+        $l['ref'] . ': #' . (string)$incident['incident_id'],
     ];
     return implode("\n", array_map(fn($line) => substr($line, 0, 180), $lines));
 }
@@ -783,31 +805,167 @@ function broth_log_copilot_notify_incident(string $incidentId, ?DateTimeImmutabl
     return ['sent' => count(array_filter($results, fn($r) => !empty($r['sent']))) > 0, 'results' => $results];
 }
 
+const BROTH_LOG_COPILOT_I18N = [
+    'clarification_branch' => ['en' => 'Which store should I check: B1, B2, or B3?', 'es' => 'Que tienda debo revisar: B1, B2 o B3?', 'vi' => 'Toi nen kiem tra chi nhanh nao: B1, B2, hay B3?'],
+    'forbidden_branch' => ['en' => 'I cannot access that store for this account.', 'es' => 'No puedo acceder a esa tienda con esta cuenta.', 'vi' => 'Toi khong the truy cap chi nhanh do voi tai khoan nay.'],
+    'unknown_intent' => ['en' => 'I did not understand that yet. Try: Today B1, critical B1, missing B1, or open B1.', 'es' => 'Aun no entendi eso. Intenta: Today B1, critical B1, missing B1, o open B1.', 'vi' => 'Toi chua hieu yeu cau do. Hay thu: Today B1, critical B1, missing B1, hoac open B1.'],
+    'ack_resolve_need_incident' => ['en' => 'Use the signed incident buttons or include an incident id so I can apply this safely.', 'es' => 'Usa los botones firmados del incidente o incluye un ID de incidente para poder aplicarlo de forma segura.', 'vi' => 'Hay dung nut xac nhan cua su co hoac ghi kem ma so su co de toi ap dung an toan.'],
+    'ack_resolve_need_incident_ref' => ['en' => 'Include an incident reference like #bl-...', 'es' => 'Incluye una referencia de incidente como #bl-...', 'vi' => 'Hay ghi kem ma tham chieu su co nhu #bl-...'],
+    'ack_rejected' => ['en' => 'ACK was rejected: %s', 'es' => 'ACK fue rechazado: %s', 'vi' => 'ACK bi tu choi: %s'],
+    'resolve_rejected' => ['en' => 'Resolve was rejected: %s. Include a safe recheck temperature and corrective-action note.', 'es' => 'Resolve fue rechazado: %s. Incluye una temperatura de reverificacion segura y una nota de accion correctiva.', 'vi' => 'Resolve bi tu choi: %s. Hay ghi kem nhiet do kiem tra lai an toan va ghi chu hanh dong khac phuc.'],
+    'resolve_prompt' => ['en' => 'Resolve #%s by replying with safe recheck temp and corrective action note. Example: /resolve #%s 38F closed door and moved product.', 'es' => 'Resolve #%s respondiendo con la temperatura segura de reverificacion y una nota de accion correctiva. Ejemplo: /resolve #%s 38F puerta cerrada y producto movido.', 'vi' => 'Resolve #%s bang cach tra loi voi nhiet do kiem tra lai an toan va ghi chu hanh dong khac phuc. Vi du: /resolve #%s 38F da dong cua va di chuyen san pham.'],
+    'callback_expired' => ['en' => 'Callback expired, already used, or invalid.', 'es' => 'El boton expiro, ya se uso, o no es valido.', 'vi' => 'Nut bam da het han, da duoc dung, hoac khong hop le.'],
+    'callback_stale' => ['en' => 'Incident is not open.', 'es' => 'El incidente no esta abierto.', 'vi' => 'Su co khong con mo.'],
+    'callback_forbidden' => ['en' => 'I cannot apply this incident action for your account.', 'es' => 'No puedo aplicar esta accion de incidente para tu cuenta.', 'vi' => 'Toi khong the ap dung hanh dong nay cho tai khoan cua ban.'],
+    'unsupported_action' => ['en' => 'Unsupported incident action.', 'es' => 'Accion de incidente no compatible.', 'vi' => 'Hanh dong su co khong duoc ho tro.'],
+    'help' => ['en' => 'I can check Today, critical issues, missing logs, and open issues for your authorized stores.', 'es' => 'Puedo revisar Today, critical issues, missing logs y open issues para tus tiendas autorizadas.', 'vi' => 'Toi co the xem Today, critical issues, missing logs va open issues cho chi nhanh ban duoc cap quyen.'],
+    'today_summary' => ['en' => '%s %s: %d log(s), %d critical, %d missing.', 'es' => '%s %s: %d registro(s), %d critico(s), %d faltante(s).', 'vi' => '%s %s: %d nhat ky, %d nghiem trong, %d thieu.'],
+    'critical_issues_none' => ['en' => 'No critical issues for %s %s.', 'es' => 'No hay problemas criticos para %s %s.', 'vi' => 'Khong co van de nghiem trong cho %s %s.'],
+    'critical_issues_header' => ['en' => 'Critical issues for %s %s:', 'es' => 'Problemas criticos para %s %s:', 'vi' => 'Van de nghiem trong cho %s %s:'],
+    'critical_issue_line' => ['en' => '- %s: %s (target %s)', 'es' => '- %s: %s (objetivo %s)', 'vi' => '- %s: %s (muc tieu %s)'],
+    'open_issues_none' => ['en' => 'No open issues for %s %s.', 'es' => 'No hay problemas abiertos para %s %s.', 'vi' => 'Khong co van de con mo cho %s %s.'],
+    'open_issues_header' => ['en' => 'Open issues for %s %s:', 'es' => 'Problemas abiertos para %s %s:', 'vi' => 'Van de con mo cho %s %s:'],
+    'open_issue_line' => ['en' => '- %s: %s (status %s)', 'es' => '- %s: %s (estado %s)', 'vi' => '- %s: %s (trang thai %s)'],
+    'missing_logs_none' => ['en' => 'No missing logs for %s %s.', 'es' => 'No faltan registros para %s %s.', 'vi' => 'Khong thieu nhat ky nao cho %s %s.'],
+    'missing_logs_header' => ['en' => 'Missing logs for %s %s:', 'es' => 'Registros faltantes para %s %s:', 'vi' => 'Nhat ky bi thieu cho %s %s:'],
+    'missing_log_line' => ['en' => '- %s', 'es' => '- %s', 'vi' => '- %s'],
+    'temperature_lookup_need_station' => ['en' => 'Which item or station should I check?', 'es' => 'Que producto o estacion debo revisar?', 'vi' => 'Toi nen kiem tra mon nao hoac tram nao?'],
+    'temperature_lookup_none' => ['en' => 'No reading recorded for %s at %s %s.', 'es' => 'No hay lectura registrada para %s en %s %s.', 'vi' => 'Khong co so do nao duoc ghi cho %s tai %s %s.'],
+    'temperature_lookup_result' => ['en' => '%s at %s %s: %s (target %s).', 'es' => '%s en %s %s: %s (objetivo %s).', 'vi' => '%s tai %s %s: %s (muc tieu %s).'],
+    'sop_comparison_none' => ['en' => 'No reading recorded for %s at %s %s to compare against SOP.', 'es' => 'No hay lectura registrada para %s en %s %s para comparar con el SOP.', 'vi' => 'Khong co so do nao duoc ghi cho %s tai %s %s de so sanh voi SOP.'],
+    'sop_comparison_result' => ['en' => '%s at %s %s: entered %s vs SOP target %s -> %s.', 'es' => '%s en %s %s: ingresado %s vs objetivo SOP %s -> %s.', 'vi' => '%s tai %s %s: nhap %s so voi muc tieu SOP %s -> %s.'],
+];
+
+const BROTH_LOG_COPILOT_SEVERITY_WORDS = [
+    'safe' => ['en' => 'safe', 'es' => 'seguro', 'vi' => 'an toan'],
+    'warning' => ['en' => 'warning', 'es' => 'alerta', 'vi' => 'canh bao'],
+    'high' => ['en' => 'high', 'es' => 'alto', 'vi' => 'cao'],
+    'critical' => ['en' => 'critical', 'es' => 'critico', 'vi' => 'nghiem trong'],
+    'missing' => ['en' => 'missing', 'es' => 'sin dato', 'vi' => 'khong co du lieu'],
+];
+
+const BROTH_LOG_COPILOT_REASON_WORDS = [
+    'forbidden' => ['en' => 'not authorized for this store', 'es' => 'no autorizado para esta tienda', 'vi' => 'khong duoc phep cho chi nhanh nay'],
+    'incident_not_open' => ['en' => 'incident is not open', 'es' => 'el incidente no esta abierto', 'vi' => 'su co khong con mo'],
+    'missing_resolution_evidence' => ['en' => 'missing recheck temperature or corrective-action note', 'es' => 'falta la temperatura de reverificacion o la nota de accion correctiva', 'vi' => 'thieu nhiet do kiem tra lai hoac ghi chu hanh dong khac phuc'],
+    'recheck_still_unsafe' => ['en' => 'recheck temperature is still unsafe', 'es' => 'la temperatura de reverificacion sigue sin ser segura', 'vi' => 'nhiet do kiem tra lai van chua an toan'],
+    'lock_failed' => ['en' => 'please try again', 'es' => 'intenta de nuevo', 'vi' => 'vui long thu lai'],
+];
+
+function broth_log_copilot_tr(string $key, string $lang, array $args = []): string {
+    $set = BROTH_LOG_COPILOT_I18N[$key] ?? null;
+    $tpl = $set[$lang] ?? $set['en'] ?? $key;
+    return $args ? vsprintf($tpl, $args) : $tpl;
+}
+
+function broth_log_copilot_severity_word(string $severity, string $lang): string {
+    $set = BROTH_LOG_COPILOT_SEVERITY_WORDS[$severity] ?? null;
+    return $set ? ($set[$lang] ?? $set['en']) : $severity;
+}
+
+function broth_log_copilot_reason_word(string $reason, string $lang): string {
+    $set = BROTH_LOG_COPILOT_REASON_WORDS[$reason] ?? null;
+    if ($set) return $set[$lang] ?? $set['en'];
+    return ['en' => 'unknown reason', 'es' => 'motivo desconocido', 'vi' => 'ly do khong xac dinh'][$lang] ?? 'unknown reason';
+}
+
+function broth_log_copilot_reading_lookup(array $records, string $stationKey): ?array {
+    foreach (array_reverse($records) as $record) {
+        foreach ($record['readings'] as $reading) {
+            if ($reading['key'] === $stationKey) return $reading;
+        }
+    }
+    return null;
+}
+
+function broth_log_copilot_station_label(string $stationKey, ?array $reading): string {
+    if ($reading) return (string)$reading['label'];
+    foreach (BROTH_LOG_READINGS as [$key, $label, $category]) {
+        if ($key === $stationKey) return $label;
+    }
+    return $stationKey;
+}
+
+function broth_log_copilot_temp_text(?float $temperature, string $lang): string {
+    if ($temperature === null) return broth_log_copilot_severity_word('missing', $lang);
+    return rtrim(rtrim((string)$temperature, '0'), '.') . 'F';
+}
+
 function broth_log_copilot_format_response(array $parsed, array $user): string {
     $lang = $parsed['language'] ?? ($user['preferred_language'] ?? 'en');
-    if (($parsed['intent'] ?? '') === 'help') {
-        return match ($lang) {
-            'es' => 'Puedo revisar Today, critical issues, missing logs y open issues para tus tiendas autorizadas.',
-            'vi' => 'Toi co the xem Today, critical issues, missing logs va open issues cho chi nhanh ban duoc cap quyen.',
-            default => 'I can check Today, critical issues, missing logs, and open issues for your authorized stores.',
-        };
+    $intent = $parsed['intent'] ?? 'help';
+
+    if ($intent === 'help') return broth_log_copilot_tr('help', $lang);
+    if (in_array($intent, ['ack', 'resolve'], true)) return broth_log_copilot_tr('ack_resolve_need_incident', $lang);
+    if (!in_array($intent, ['today_summary', 'critical_issues', 'open_issues', 'missing_logs', 'temperature_lookup', 'sop_comparison'], true)) {
+        return broth_log_copilot_tr('unknown_intent', $lang);
     }
-    if (in_array($parsed['intent'] ?? '', ['ack','resolve'], true)) {
-        return 'Use the signed incident buttons or include an incident id so I can apply this safely.';
+
+    $response = broth_log_copilot_query_response($parsed, $user);
+    if (!empty($response['forbidden'])) return broth_log_copilot_tr('forbidden_branch', $lang);
+    if (!empty($response['needs_clarification'])) return broth_log_copilot_tr('clarification_branch', $lang);
+
+    $records = $response['records'] ?? [];
+    $branch = $response['branch'] ?? ($parsed['branch'] ?? 'Store');
+    $date = $response['businessDate'] ?? ($parsed['business_date'] ?? broth_log_business_date());
+
+    if ($intent === 'today_summary') {
+        $summary = broth_log_summary($records);
+        return broth_log_copilot_tr('today_summary', $lang, [$branch, $date, (int)$summary['logs'], (int)$summary['criticalIssues'], (int)$summary['missingReadings']]);
     }
-    if (in_array($parsed['intent'] ?? '', ['today_summary','critical_issues','open_issues','missing_logs','temperature_lookup','sop_comparison'], true)) {
-        $response = broth_log_copilot_query_response($parsed, $user);
-        if (!empty($response['forbidden'])) return (string)$response['message'];
-        if (!empty($response['needs_clarification'])) return (string)$response['message'];
-        $summary = $response['summary'] ?? [];
-        $branch = $response['branch'] ?? ($parsed['branch'] ?? 'Store');
-        $date = $response['businessDate'] ?? ($parsed['business_date'] ?? broth_log_business_date());
-        $total = (int)($summary['total'] ?? 0);
-        $critical = (int)($summary['critical'] ?? 0);
-        $missing = (int)($summary['missing'] ?? 0);
-        return "$branch $date: $total log(s), $critical critical, $missing missing.";
+
+    if ($intent === 'critical_issues') {
+        $lines = [];
+        foreach ($records as $record) {
+            foreach ($record['issues'] as $issue) {
+                if ($issue['severity'] !== 'critical') continue;
+                $lines[] = broth_log_copilot_tr('critical_issue_line', $lang, [$issue['label'], broth_log_copilot_temp_text($issue['temperature'], $lang), $issue['target']]);
+            }
+        }
+        if (!$lines) return broth_log_copilot_tr('critical_issues_none', $lang, [$branch, $date]);
+        return broth_log_copilot_tr('critical_issues_header', $lang, [$branch, $date]) . "\n" . implode("\n", array_slice($lines, 0, 10));
     }
-    return 'I did not understand that yet. Try: Today B1, critical B1, missing B1, or open B1.';
+
+    if ($intent === 'open_issues') {
+        $lines = [];
+        foreach ($records as $record) {
+            foreach ($record['issues'] as $issue) {
+                if (($issue['status'] ?? '') === 'Closed') continue;
+                $lines[] = broth_log_copilot_tr('open_issue_line', $lang, [$issue['label'], broth_log_copilot_temp_text($issue['temperature'], $lang), (string)($issue['status'] ?? '')]);
+            }
+        }
+        if (!$lines) return broth_log_copilot_tr('open_issues_none', $lang, [$branch, $date]);
+        return broth_log_copilot_tr('open_issues_header', $lang, [$branch, $date]) . "\n" . implode("\n", array_slice($lines, 0, 10));
+    }
+
+    if ($intent === 'missing_logs') {
+        $lines = [];
+        $seen = [];
+        foreach ($records as $record) {
+            foreach ($record['readings'] as $reading) {
+                if ($reading['severity'] !== 'missing' || isset($seen[$reading['label']])) continue;
+                $seen[$reading['label']] = true;
+                $lines[] = broth_log_copilot_tr('missing_log_line', $lang, [$reading['label']]);
+            }
+        }
+        if (!$lines) return broth_log_copilot_tr('missing_logs_none', $lang, [$branch, $date]);
+        return broth_log_copilot_tr('missing_logs_header', $lang, [$branch, $date]) . "\n" . implode("\n", array_slice($lines, 0, 10));
+    }
+
+    // temperature_lookup / sop_comparison
+    $stationKey = $parsed['station'] ?? null;
+    if (!$stationKey) return broth_log_copilot_tr('temperature_lookup_need_station', $lang);
+    $reading = broth_log_copilot_reading_lookup($records, $stationKey);
+    $stationLabel = broth_log_copilot_station_label($stationKey, $reading);
+    if (!$reading || $reading['temperature'] === null) {
+        $key = $intent === 'sop_comparison' ? 'sop_comparison_none' : 'temperature_lookup_none';
+        return broth_log_copilot_tr($key, $lang, [$stationLabel, $branch, $date]);
+    }
+    $tempText = broth_log_copilot_temp_text($reading['temperature'], $lang);
+    if ($intent === 'temperature_lookup') {
+        return broth_log_copilot_tr('temperature_lookup_result', $lang, [$stationLabel, $branch, $date, $tempText, $reading['target']]);
+    }
+    return broth_log_copilot_tr('sop_comparison_result', $lang, [$stationLabel, $branch, $date, $tempText, $reading['target'], broth_log_copilot_severity_word($reading['severity'], $lang)]);
 }
 
 function broth_log_copilot_incident_from_result(string $incidentId): ?array {
@@ -816,24 +974,25 @@ function broth_log_copilot_incident_from_result(string $incidentId): ?array {
 
 function broth_log_copilot_callback_response(string $callbackData, array $user, string $chatId, ?DateTimeImmutable $now = null): array {
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $lang = $user['preferred_language'] ?? 'en';
     $callback = broth_log_copilot_consume_callback($callbackData, $now->getTimestamp());
     if (!$callback) {
-        return ['message' => 'Callback expired, already used, or invalid.', 'intent' => 'callback_rejected'];
+        return ['message' => broth_log_copilot_tr('callback_expired', $lang), 'intent' => 'callback_rejected'];
     }
     $incident = broth_log_copilot_incident_from_result((string)$callback['incident_id']);
     if (!$incident || in_array($incident['state'], ['resolved','closed'], true)) {
-        return ['message' => 'Incident is not open.', 'intent' => 'callback_stale'];
+        return ['message' => broth_log_copilot_tr('callback_stale', $lang), 'intent' => 'callback_stale'];
     }
     if (!broth_log_copilot_user_can_branch($user, (string)$incident['branch'])) {
-        return ['message' => 'I cannot apply this incident action for your account.', 'intent' => 'callback_forbidden'];
+        return ['message' => broth_log_copilot_tr('callback_forbidden', $lang), 'intent' => 'callback_forbidden'];
     }
     if ($callback['action'] === 'ack') {
         $result = broth_log_copilot_ack((string)$incident['incident_id'], $user, $now);
         if (!empty($result['ok'])) {
             $fresh = broth_log_copilot_incident_from_result((string)$incident['incident_id']) ?: $incident;
-            return ['message' => broth_log_copilot_incident_message($fresh, 'ack_confirm'), 'intent' => 'ack'];
+            return ['message' => broth_log_copilot_incident_message($fresh, 'ack_confirm', $lang), 'intent' => 'ack'];
         }
-        return ['message' => 'ACK was rejected: ' . (string)($result['reason'] ?? 'unknown'), 'intent' => 'ack_rejected'];
+        return ['message' => broth_log_copilot_tr('ack_rejected', $lang, [broth_log_copilot_reason_word((string)($result['reason'] ?? ''), $lang)]), 'intent' => 'ack_rejected'];
     }
     if ($callback['action'] === 'resolve') {
         run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at)
@@ -841,9 +1000,9 @@ function broth_log_copilot_callback_response(string $callbackData, array $user, 
             $user['telegram_user_id'],
             json_encode(['pending' => 'resolve', 'incident_id' => $incident['incident_id'], 'chat_id' => $chatId]),
         ]);
-        return ['message' => 'Resolve #' . $incident['incident_id'] . " by replying with safe recheck temp and corrective action note. Example: /resolve #" . $incident['incident_id'] . " 38F closed door and moved product.", 'intent' => 'resolve_prompt'];
+        return ['message' => broth_log_copilot_tr('resolve_prompt', $lang, [$incident['incident_id'], $incident['incident_id']]), 'intent' => 'resolve_prompt'];
     }
-    return ['message' => 'Unsupported incident action.', 'intent' => 'callback_rejected'];
+    return ['message' => broth_log_copilot_tr('unsupported_action', $lang), 'intent' => 'callback_rejected'];
 }
 
 function broth_log_copilot_resolution_note(string $message, array $parsed): string {
@@ -859,6 +1018,7 @@ function broth_log_copilot_resolution_note(string $message, array $parsed): stri
 function broth_log_copilot_message_action_response(string $messageText, array $parsed, array $user, string $chatId, ?DateTimeImmutable $now = null): ?array {
     $intent = $parsed['intent'] ?? '';
     if (!in_array($intent, ['ack','resolve'], true)) return null;
+    $lang = $parsed['language'] ?? ($user['preferred_language'] ?? 'en');
     $incidentId = (string)($parsed['incident_id'] ?? '');
     if ($incidentId === '') {
         $context = q1("SELECT context_json,expires_at FROM broth_log_conversation_context WHERE telegram_user_id=? AND expires_at > datetime('now')", [$user['telegram_user_id']]);
@@ -867,23 +1027,23 @@ function broth_log_copilot_message_action_response(string $messageText, array $p
             $incidentId = (string)($ctx['incident_id'] ?? '');
         }
     }
-    if ($incidentId === '') return ['message' => 'Include an incident reference like #bl-...', 'intent' => $intent . '_rejected'];
+    if ($incidentId === '') return ['message' => broth_log_copilot_tr('ack_resolve_need_incident_ref', $lang), 'intent' => $intent . '_rejected'];
     if ($intent === 'ack') {
         $result = broth_log_copilot_ack($incidentId, $user, $now);
         if (!empty($result['ok'])) {
             $incident = broth_log_copilot_incident_from_result($incidentId);
-            return ['message' => broth_log_copilot_incident_message($incident ?: ['incident_id' => $incidentId], 'ack_confirm'), 'intent' => 'ack'];
+            return ['message' => broth_log_copilot_incident_message($incident ?: ['incident_id' => $incidentId], 'ack_confirm', $lang), 'intent' => 'ack'];
         }
-        return ['message' => 'ACK was rejected: ' . (string)($result['reason'] ?? 'unknown'), 'intent' => 'ack_rejected'];
+        return ['message' => broth_log_copilot_tr('ack_rejected', $lang, [broth_log_copilot_reason_word((string)($result['reason'] ?? ''), $lang)]), 'intent' => 'ack_rejected'];
     }
     $note = broth_log_copilot_resolution_note($messageText, $parsed);
     $result = broth_log_copilot_resolve($incidentId, $user, $parsed['temperature_f'] ?? null, $note, $now);
     if (!empty($result['ok'])) {
         run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id=?", [$user['telegram_user_id']]);
         $incident = broth_log_copilot_incident_from_result($incidentId);
-        return ['message' => broth_log_copilot_incident_message($incident ?: ['incident_id' => $incidentId], 'resolve_confirm'), 'intent' => 'resolve'];
+        return ['message' => broth_log_copilot_incident_message($incident ?: ['incident_id' => $incidentId], 'resolve_confirm', $lang), 'intent' => 'resolve'];
     }
-    return ['message' => 'Resolve was rejected: ' . (string)($result['reason'] ?? 'unknown') . '. Include a safe recheck temperature and corrective-action note.', 'intent' => 'resolve_rejected'];
+    return ['message' => broth_log_copilot_tr('resolve_rejected', $lang, [broth_log_copilot_reason_word((string)($result['reason'] ?? ''), $lang)]), 'intent' => 'resolve_rejected'];
 }
 
 function broth_log_copilot_apply_escalation_action_with_notification(array $action, ?DateTimeImmutable $now = null): array {

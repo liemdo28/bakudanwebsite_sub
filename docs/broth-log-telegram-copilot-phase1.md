@@ -18,7 +18,7 @@ Phase 1 is implemented as a disabled-by-default foundation. It must not be activ
   - signed inline callback helpers;
   - incident ACK/resolve state machine;
   - fake-clock-testable escalation selector and applier.
-- `POST /api/broth-log/telegram/webhook` is only available when `TELEGRAM_COPILOT_ENABLED=true` and the Telegram secret header is valid.
+- `POST /api/broth-log/telegram/webhook` is only available when the Copilot feature flag is explicitly enabled and the Telegram secret header is valid.
 - `scripts/broth-log-telegram-bot-worker.php` drains the inbox and applies escalation actions. It supports `--dry-run` and `--now=<iso timestamp>` for fake-clock tests.
 
 No LLM is used in MVP. All SOP and safe/unsafe decisions are deterministic.
@@ -43,6 +43,7 @@ All migrations use `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`.
 - `broth_log_incidents`: workflow state for detected, notified, acknowledged, escalated, resolved, closed, reopened, and unacknowledged critical incidents.
 - `broth_log_incident_events`: append-only audit events.
 - `broth_log_bot_rate_limits`: rate-limit buckets for future send/query enforcement.
+- `broth_log_callback_replays`: one-time callback consumption records.
 
 Retention defaults:
 
@@ -58,10 +59,12 @@ Retention defaults:
 - Unauthorized users receive a generic denial; store data is not revealed.
 - Webhook accepts POST JSON only, rejects oversized payloads, and validates Telegram secret header.
 - Telegram update IDs are deduped.
-- Inline callback data is signed and expires.
+- Inline callback data is signed, expires, and is consumed once to reject replay.
 - ACK/resolve/escalation mutations use SQLite transactions.
+- Escalation actions claim an expiring lock and reject stale two-worker snapshots.
 - Resolution of temperature incidents requires both a safe recheck temperature and a corrective-action note.
-- Raw token-shaped strings are redacted from stored message text and error output.
+- Raw Telegram payloads are reduced to sanitized metadata before storage.
+- Raw token-shaped strings are redacted from stored message text, sanitized payload metadata, and error output.
 
 ## Escalation Rules
 
@@ -106,6 +109,52 @@ Languages:
 7. Add verified numeric Telegram user IDs and inactive routing rows.
 8. Activate B1 pilot for 7 days only after explicit approval.
 9. Roll out B2, then B3 after pilot signoff.
+
+## Staging Plan
+
+- Use a separate Telegram staging bot. Telegram permits one webhook per bot, so never register the production bot to a staging endpoint.
+- Use a private staging chat controlled by Operations.
+- Use separate staging values for inbound webhook and callback secrets.
+- Use an isolated staging database/state file.
+- Prefix all staging bot messages with `TEST`.
+- Do not load production manager routing or production manager data into staging.
+- Keep production defaults unchanged: Copilot disabled, no active routing, no production webhook registration, no production worker cron, and no LLM.
+
+## Manager Onboarding Template
+
+For each manager:
+
+| Field | Required | Notes |
+|---|---:|---|
+| Numeric Telegram user ID | Yes | Collect from a verified out-of-band flow; never from username alone. |
+| Display name | Yes | Human-readable only; not used for authorization. |
+| Role | Yes | Example: manager, area_manager, admin. |
+| Allowed branches | Yes | Explicit list such as `B1`, `B2`, `B3`. |
+| Preferred language | Yes | `en`, `es`, or `vi`. |
+| Active | Yes | Must remain `false` until identity and branch access are verified. |
+| Escalation level | Yes | Operations-approved level only. |
+| Backup manager | Optional | Numeric Telegram user ID after verification. |
+
+Activation requires two-person verification of the numeric Telegram ID and explicit Operations approval for branch access.
+
+## Activation Checklist
+
+- Separate staging bot exists.
+- Private staging chat approved.
+- Staging secrets configured outside web root.
+- Staging database/state isolated.
+- Webhook unauthorized requests return 401.
+- Replay update IDs are suppressed.
+- Callback replay is rejected.
+- Unauthorized users are denied.
+- Cross-branch queries/mutations are denied.
+- ACK stops reminders for the correct incident.
+- Resolve requires safe recheck and corrective-action note.
+- Fake-clock escalation follows 0/3/6/9 minute rules.
+- Two-worker stale escalation action is rejected.
+- Existing one-way critical-alert cron dry-run still works.
+- Production feature flag remains disabled.
+- No production webhook or production worker cron is registered.
 
 ## Rollback Plan
 

@@ -7,6 +7,7 @@ const BROTH_LOG_COPILOT_STATES = ['detected','notified_level_1','acknowledged','
 const BROTH_LOG_COPILOT_RETENTION_RAW_DAYS = 30;
 const BROTH_LOG_COPILOT_CONTEXT_TTL_HOURS = 24;
 const BROTH_LOG_COPILOT_INCIDENT_RETENTION_MONTHS = 12;
+const BROTH_LOG_COPILOT_ESCALATION_LOCK_SECONDS = 120;
 
 function broth_log_copilot_enabled(): bool {
     return in_array(strtolower(trim((string)(getenv('TELEGRAM_COPILOT_ENABLED') ?: 'false'))), ['1','true','yes','on'], true);
@@ -86,6 +87,8 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         resolution_note TEXT,
         last_reminder_at TEXT,
         reminder_count INTEGER NOT NULL DEFAULT 0,
+        escalation_lock_expires_at TEXT,
+        escalation_lock_token TEXT,
         source_revision_hash TEXT NOT NULL DEFAULT '',
         closed_at TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -106,9 +109,16 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         count INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS broth_log_callback_replays (
+        callback_hash TEXT PRIMARY KEY,
+        consumed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL
+    );
     ");
     foreach ([
         "ALTER TABLE broth_log_incidents ADD COLUMN active_key TEXT",
+        "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_expires_at TEXT",
+        "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_token TEXT",
     ] as $sql) {
         try { $db->exec($sql); } catch (Throwable $e) {}
     }
@@ -118,6 +128,7 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_broth_log_incidents_active_key ON broth_log_incidents(active_key)",
         "CREATE INDEX IF NOT EXISTS idx_broth_log_incident_events_incident ON broth_log_incident_events(incident_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_broth_log_routing_rules_active ON broth_log_routing_rules(branch, stage, level, active)",
+        "CREATE INDEX IF NOT EXISTS idx_broth_log_callback_replays_expires ON broth_log_callback_replays(expires_at)",
     ] as $sql) {
         $db->exec($sql);
     }
@@ -156,6 +167,7 @@ function broth_log_copilot_extract_update(array $update): array {
 }
 
 function broth_log_copilot_enqueue_webhook(array $update): array {
+    if (!broth_log_copilot_enabled()) return ['queued' => false, 'reason' => 'disabled'];
     $meta = broth_log_copilot_extract_update($update);
     if ($meta['update_id'] === '' || !in_array($meta['update_type'], ['message','callback_query'], true)) {
         return ['queued' => false, 'reason' => 'unsupported_update'];
@@ -167,10 +179,22 @@ function broth_log_copilot_enqueue_webhook(array $update): array {
         $meta['chat_id'],
         $meta['message_id'],
         $meta['update_type'],
-        json_encode($update),
+        json_encode(broth_log_copilot_sanitized_update_payload($update, $meta)),
         broth_log_copilot_sanitize_message($meta['text']),
     ]);
     return ['queued' => db()->changes() > 0, 'update_id' => $meta['update_id']];
+}
+
+function broth_log_copilot_sanitized_update_payload(array $update, array $meta): array {
+    return [
+        'update_id' => $meta['update_id'],
+        'update_type' => $meta['update_type'],
+        'telegram_user_id' => $meta['telegram_user_id'],
+        'chat_id' => $meta['chat_id'],
+        'message_id' => $meta['message_id'],
+        'message_text' => broth_log_copilot_sanitize_message($meta['text']),
+        'received_keys' => array_values(array_intersect(array_keys($update), ['message','edited_message','callback_query'])),
+    ];
 }
 
 function broth_log_copilot_sanitize_message(string $message): string {
@@ -298,12 +322,27 @@ function broth_log_copilot_validate_callback(string $data, ?int $now = null): ?a
     return hash_equals($expected, $data) ? ['action' => $action, 'incident_id' => $incidentId] : null;
 }
 
+function broth_log_copilot_consume_callback(string $data, ?int $now = null): ?array {
+    if (!broth_log_copilot_enabled()) return null;
+    $validated = broth_log_copilot_validate_callback($data, $now);
+    if (!$validated) return null;
+    $parts = explode('|', $data);
+    $expiresAt = (int)$parts[2];
+    run("DELETE FROM broth_log_callback_replays WHERE expires_at < datetime('now')");
+    run("INSERT OR IGNORE INTO broth_log_callback_replays (callback_hash,expires_at) VALUES (?,?)", [
+        hash('sha256', $data),
+        gmdate('Y-m-d H:i:s', $expiresAt),
+    ]);
+    return db()->changes() > 0 ? $validated : null;
+}
+
 function broth_log_copilot_create_incident(array $alert): string {
+    if (!broth_log_copilot_enabled()) return '';
     $stationKey = (string)($alert['stationKey'] ?? '');
     $fingerprint = hash('sha256', implode('|', [$alert['branch'] ?? '', $alert['responseId'] ?? '', $stationKey ?: ($alert['station'] ?? ''), $alert['severity'] ?? 'critical', $alert['businessDate'] ?? '']));
     $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=?", [$fingerprint]);
     if ($existing) return (string)$existing['incident_id'];
-    $incidentId = 'bl-' . substr($fingerprint, 0, 10) . '-' . gmdate('YmdHis');
+    $incidentId = 'bl-' . substr($fingerprint, 0, 10) . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(3));
     run("INSERT OR IGNORE INTO broth_log_incidents
         (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,source_revision_hash)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
@@ -338,6 +377,7 @@ function broth_log_copilot_audit(string $incidentId, string $eventType, ?string 
 }
 
 function broth_log_copilot_ack(string $incidentId, array $actor, ?DateTimeImmutable $now = null): array {
+    if (!broth_log_copilot_enabled()) return ['ok' => false, 'reason' => 'disabled'];
     $ts = ($now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
     db()->exec('BEGIN IMMEDIATE');
     try {
@@ -366,6 +406,7 @@ function broth_log_copilot_ack(string $incidentId, array $actor, ?DateTimeImmuta
 }
 
 function broth_log_copilot_resolve(string $incidentId, array $actor, ?float $recheckTemp, string $note, ?DateTimeImmutable $now = null): array {
+    if (!broth_log_copilot_enabled()) return ['ok' => false, 'reason' => 'disabled'];
     $ts = ($now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
     $note = trim($note);
     db()->exec('BEGIN IMMEDIATE');
@@ -404,9 +445,13 @@ function broth_log_copilot_resolve(string $incidentId, array $actor, ?float $rec
 }
 
 function broth_log_copilot_due_escalations(?DateTimeImmutable $now = null): array {
+    if (!broth_log_copilot_enabled()) return [];
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
     $due = [];
-    foreach (q("SELECT * FROM broth_log_incidents WHERE state IN ('detected','notified_level_1','escalated_level_2','escalated_level_3')") as $incident) {
+    $ts = $now->format('Y-m-d H:i:s');
+    foreach (q("SELECT * FROM broth_log_incidents
+        WHERE state IN ('detected','notified_level_1','escalated_level_2','escalated_level_3')
+          AND (escalation_lock_expires_at IS NULL OR escalation_lock_expires_at < ?)", [$ts]) as $incident) {
         $created = new DateTimeImmutable($incident['created_at'] . ' UTC');
         $last = $incident['last_reminder_at'] ? new DateTimeImmutable($incident['last_reminder_at'] . ' UTC') : null;
         $age = $now->getTimestamp() - $created->getTimestamp();
@@ -420,21 +465,51 @@ function broth_log_copilot_due_escalations(?DateTimeImmutable $now = null): arra
 }
 
 function broth_log_copilot_apply_escalation_action(array $action, ?DateTimeImmutable $now = null): array {
+    if (!broth_log_copilot_enabled()) return ['ok' => false, 'reason' => 'disabled'];
     $incident = $action['incident'];
     $ts = ($now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
+    $lockUntil = ($now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+' . BROTH_LOG_COPILOT_ESCALATION_LOCK_SECONDS . ' seconds')->format('Y-m-d H:i:s');
+    $lockToken = bin2hex(random_bytes(12));
+    db()->exec('BEGIN IMMEDIATE');
+    try {
+        $fresh = q1("SELECT * FROM broth_log_incidents
+            WHERE incident_id=?
+              AND state IN ('detected','notified_level_1','escalated_level_2','escalated_level_3')
+              AND (escalation_lock_expires_at IS NULL OR escalation_lock_expires_at < ?)", [
+            $incident['incident_id'],
+            $ts,
+        ]);
+        if (!$fresh) {
+            db()->exec('COMMIT');
+            return ['ok' => false, 'reason' => 'locked_or_closed', 'incident_id' => $incident['incident_id']];
+        }
+        if (($fresh['state'] ?? '') !== ($incident['state'] ?? '')
+            || (int)($fresh['current_level'] ?? 0) !== (int)($incident['current_level'] ?? 0)
+            || (string)($fresh['last_reminder_at'] ?? '') !== (string)($incident['last_reminder_at'] ?? '')
+            || (int)($fresh['reminder_count'] ?? 0) !== (int)($incident['reminder_count'] ?? 0)) {
+            db()->exec('COMMIT');
+            return ['ok' => false, 'reason' => 'stale_action', 'incident_id' => $incident['incident_id']];
+        }
+        run("UPDATE broth_log_incidents SET escalation_lock_expires_at=?, escalation_lock_token=?, updated_at=datetime('now') WHERE incident_id=?", [$lockUntil, $lockToken, $incident['incident_id']]);
+        db()->exec('COMMIT');
+        $incident = $fresh;
+    } catch (Throwable $e) {
+        try { db()->exec('ROLLBACK'); } catch (Throwable $ignored) {}
+        return ['ok' => false, 'reason' => 'lock_failed', 'incident_id' => $incident['incident_id']];
+    }
     if ($action['action'] === 'escalate') {
         $level = (int)$action['to_level'];
         $state = $level === 2 ? 'escalated_level_2' : 'escalated_level_3';
-        run("UPDATE broth_log_incidents SET state=?, current_level=?, last_reminder_at=?, reminder_count=0, updated_at=datetime('now') WHERE incident_id=?", [$state, $level, $ts, $incident['incident_id']]);
+        run("UPDATE broth_log_incidents SET state=?, current_level=?, last_reminder_at=?, reminder_count=0, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$state, $level, $ts, $incident['incident_id'], $lockToken]);
         broth_log_copilot_audit($incident['incident_id'], $state, null, []);
         return ['ok' => true, 'action' => 'escalated', 'level' => $level, 'incident_id' => $incident['incident_id']];
     }
     if ($action['action'] === 'fallback') {
-        run("UPDATE broth_log_incidents SET state='unacknowledged_critical', last_reminder_at=?, updated_at=datetime('now') WHERE incident_id=?", [$ts, $incident['incident_id']]);
+        run("UPDATE broth_log_incidents SET state='unacknowledged_critical', last_reminder_at=?, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$ts, $incident['incident_id'], $lockToken]);
         broth_log_copilot_audit($incident['incident_id'], 'fallback_required', null, ['fallback' => broth_log_copilot_env('TELEGRAM_LEVEL3_FALLBACK', 'operations manual fallback')]);
         return ['ok' => true, 'action' => 'fallback', 'incident_id' => $incident['incident_id']];
     }
-    run("UPDATE broth_log_incidents SET state=CASE WHEN state='detected' THEN 'notified_level_1' ELSE state END, last_reminder_at=?, reminder_count=reminder_count+1, updated_at=datetime('now') WHERE incident_id=?", [$ts, $incident['incident_id']]);
+    run("UPDATE broth_log_incidents SET state=CASE WHEN state='detected' THEN 'notified_level_1' ELSE state END, last_reminder_at=?, reminder_count=reminder_count+1, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$ts, $incident['incident_id'], $lockToken]);
     broth_log_copilot_audit($incident['incident_id'], 'reminder_sent', null, ['level' => (int)$incident['current_level']]);
     return ['ok' => true, 'action' => 'reminded', 'incident_id' => $incident['incident_id']];
 }
@@ -451,6 +526,7 @@ function broth_log_copilot_query_response(array $parsed, array $user): array {
 }
 
 function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $now = null): array {
+    if (!broth_log_copilot_enabled()) return [];
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
     $processed = [];
     foreach (q("SELECT * FROM broth_log_bot_inbox WHERE status='queued' ORDER BY received_at ASC LIMIT ?", [$limit]) as $row) {

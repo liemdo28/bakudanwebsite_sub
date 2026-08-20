@@ -38,6 +38,7 @@ def test_migrations_cover_auth_inbox_incident_context_and_routing():
         'broth_log_incidents',
         'broth_log_incident_events',
         'broth_log_bot_rate_limits',
+        'broth_log_callback_replays',
     ]
     for table in required_tables:
         assert f'CREATE TABLE IF NOT EXISTS {table}' in copilot
@@ -45,6 +46,8 @@ def test_migrations_cover_auth_inbox_incident_context_and_routing():
     assert 'allowed_branches TEXT NOT NULL' in copilot
     assert 'active_key TEXT UNIQUE' in copilot
     assert 'CREATE UNIQUE INDEX IF NOT EXISTS idx_broth_log_incidents_active_key' in copilot
+    assert 'escalation_lock_expires_at' in copilot
+    assert 'escalation_lock_token' in copilot
 
 
 def test_deterministic_parser_supports_en_es_vi_without_llm():
@@ -75,6 +78,8 @@ def test_signed_callbacks_do_not_embed_secrets_or_large_payloads():
     assert 'hash_hmac' in copilot
     assert 'TELEGRAM_CALLBACK_SECRET' in copilot
     assert 'function broth_log_copilot_validate_callback' in copilot
+    assert 'function broth_log_copilot_consume_callback' in copilot
+    assert 'broth_log_callback_replays' in copilot
     assert re.search(r"substr\(hash_hmac\('sha256'.*0, 16\)", copilot, re.S)
 
 
@@ -85,6 +90,8 @@ def test_raw_message_and_context_retention_are_configured():
     assert 'BROTH_LOG_COPILOT_CONTEXT_TTL_HOURS = 24' in copilot
     assert 'BROTH_LOG_COPILOT_INCIDENT_RETENTION_MONTHS = 12' in copilot
     assert 'broth_log_copilot_process_inbox' in worker
+    assert "if (!broth_log_copilot_enabled()) return [];" in copilot
+    assert "reason' => 'disabled'" in copilot
 
 
 def test_no_secret_values_or_production_activation_in_new_files():
@@ -95,7 +102,7 @@ def test_no_secret_values_or_production_activation_in_new_files():
     ]
     blob = '\n'.join(text(path) for path in paths)
     assert not re.search(r'\b[0-9]{8,12}:AA[A-Za-z0-9_-]{20,}\b', blob)
-    assert 'TELEGRAM_COPILOT_ENABLED=true' not in blob
+    assert ('TELEGRAM_COPILOT_ENABLED' + '=true') not in blob
 
 
 def main() -> int:

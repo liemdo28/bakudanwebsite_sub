@@ -1,0 +1,151 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../../api/broth-log-copilot.php';
+
+$dbPath = sys_get_temp_dir() . '/broth-log-copilot-gate-' . bin2hex(random_bytes(4)) . '.sqlite';
+define('TEST_DB_PATH', $dbPath);
+
+function db(): SQLite3 {
+    static $db = null;
+    if ($db) return $db;
+    $db = new SQLite3(TEST_DB_PATH);
+    $db->enableExceptions(true);
+    $db->busyTimeout(3000);
+    $db->exec('PRAGMA journal_mode=WAL;');
+    $db->exec('PRAGMA foreign_keys=ON;');
+    return $db;
+}
+
+function q(string $sql, array $params = []): array {
+    $stmt = db()->prepare($sql);
+    foreach ($params as $i => $v) $stmt->bindValue($i + 1, $v);
+    $res = $stmt->execute();
+    $rows = [];
+    while ($row = $res->fetchArray(SQLITE3_ASSOC)) $rows[] = $row;
+    return $rows;
+}
+
+function q1(string $sql, array $params = []): ?array {
+    $rows = q($sql, $params);
+    return $rows[0] ?? null;
+}
+
+function run(string $sql, array $params = []): int {
+    $stmt = db()->prepare($sql);
+    foreach ($params as $i => $v) $stmt->bindValue($i + 1, $v);
+    $stmt->execute();
+    return db()->lastInsertRowID();
+}
+
+function expect_true(bool $condition, string $label): void {
+    if (!$condition) throw new RuntimeException("FAIL $label");
+    echo "PASS $label\n";
+}
+
+function expect_eq($actual, $expected, string $label): void {
+    if ($actual !== $expected) {
+        throw new RuntimeException("FAIL $label expected=" . var_export($expected, true) . " actual=" . var_export($actual, true));
+    }
+    echo "PASS $label\n";
+}
+
+try {
+    putenv('TELEGRAM_COPILOT_ENABLED=false');
+    broth_log_copilot_migrate(db());
+    broth_log_copilot_migrate(db());
+    expect_true((bool)q1("SELECT name FROM sqlite_master WHERE type='table' AND name='broth_log_incidents'"), 'migration apply twice creates incident table');
+
+    $disabledEnqueue = broth_log_copilot_enqueue_webhook([
+        'update_id' => 100,
+        'message' => [
+            'text' => 'today B1',
+            'from' => ['id' => 123],
+            'chat' => ['id' => 456],
+        ],
+    ]);
+    expect_eq($disabledEnqueue['reason'] ?? '', 'disabled', 'feature flag blocks inbound enqueue');
+    expect_eq(count(q("SELECT * FROM broth_log_bot_inbox")), 0, 'feature flag prevents inbox writes');
+    expect_eq(count(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 00:10:00 UTC'))), 0, 'feature flag blocks escalation planning');
+    expect_eq(broth_log_copilot_ack('missing', ['telegram_user_id' => '123', 'allowed_branch_list' => ['B1']])['reason'], 'disabled', 'feature flag blocks ACK mutation');
+    expect_eq(broth_log_copilot_resolve('missing', ['telegram_user_id' => '123', 'allowed_branch_list' => ['B1']], 38, 'fixed')['reason'], 'disabled', 'feature flag blocks resolve mutation');
+    expect_eq(broth_log_copilot_create_incident(['branch' => 'B1']), '', 'feature flag blocks incident creation');
+
+    putenv('TELEGRAM_COPILOT_ENABLED' . '=true');
+    putenv('TELEGRAM_CALLBACK_SECRET=unit-callback-secret');
+    broth_log_copilot_migrate(db());
+    db()->exec('DROP INDEX IF EXISTS idx_broth_log_incidents_open');
+    broth_log_copilot_migrate(db());
+    expect_true((bool)q1("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_broth_log_incidents_open'"), 'migration recovery recreates dropped index');
+
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", ['101', 'B1 Manager', 'manager', json_encode(['B1'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,0)", ['202', 'Inactive', 'manager', json_encode(['B1'])]);
+    $user = broth_log_copilot_authorized_user('101');
+    expect_true($user !== null, 'active numeric Telegram ID is authorized');
+    expect_true(broth_log_copilot_authorized_user('202') === null, 'inactive Telegram user is denied');
+    expect_true(broth_log_copilot_authorized_user('username-only') === null, 'username-only lookup is denied');
+    expect_true(broth_log_copilot_query_response(['branch' => 'B2', 'business_date' => '2026-08-20'], $user)['forbidden'] ?? false, 'cross-branch query is rejected before data fetch');
+
+    $fakeToken = '1234567890:' . 'AAabcdefghijklmnopqrstuvwxyzABCD';
+    $update = [
+        'update_id' => 1010,
+        'message' => [
+            'text' => 'token ' . $fakeToken . ' B1 today',
+            'from' => ['id' => 101],
+            'chat' => ['id' => 999],
+            'message_id' => 77,
+        ],
+    ];
+    expect_true(broth_log_copilot_enqueue_webhook($update)['queued'], 'webhook enqueue accepts first update');
+    expect_true(!broth_log_copilot_enqueue_webhook($update)['queued'], 'webhook retry duplicate update_id is suppressed');
+    $inbox = q1("SELECT payload_json,message_text FROM broth_log_bot_inbox WHERE update_id='1010'");
+    expect_true(!str_contains((string)$inbox['payload_json'], $fakeToken), 'payload JSON redacts token-shaped text');
+    expect_true(str_contains((string)$inbox['message_text'], '[redacted-token]'), 'message text redacts token-shaped text');
+    expect_eq(count(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:00:00 UTC'))), 1, 'worker processes authorized inbox');
+
+    $callback = broth_log_copilot_sign_callback('ack', 'bl-test', time() + 60);
+    expect_eq(broth_log_copilot_consume_callback($callback)['incident_id'] ?? '', 'bl-test', 'callback validates and consumes once');
+    expect_true(broth_log_copilot_consume_callback($callback) === null, 'callback replay is rejected');
+    $expired = broth_log_copilot_sign_callback('ack', 'bl-expired', time() - 1);
+    expect_true(broth_log_copilot_consume_callback($expired) === null, 'expired callback is rejected');
+
+    $alert = [
+        'branch' => 'B1',
+        'responseId' => 'resp-1',
+        'stationKey' => 'prepAreaCooler',
+        'station' => 'Prep Area Cooler',
+        'severity' => 'critical',
+        'businessDate' => '2026-08-20',
+        'businessTime' => '08:00',
+        'temperature' => '45F',
+        'target' => '<= 40F',
+        'correctiveAction' => 'Move product and re-temp',
+    ];
+    $incidentId = broth_log_copilot_create_incident($alert);
+    expect_eq(broth_log_copilot_create_incident($alert), $incidentId, 'duplicate open incident returns same id');
+    expect_eq(broth_log_copilot_ack($incidentId, ['telegram_user_id' => '999', 'allowed_branch_list' => ['B2']])['reason'], 'forbidden', 'cross-branch ACK is rejected');
+    expect_true(broth_log_copilot_ack($incidentId, $user)['ok'], 'authorized ACK succeeds');
+    expect_eq(broth_log_copilot_resolve($incidentId, $user, null, 'fixed')['reason'], 'missing_resolution_evidence', 'resolve requires recheck temperature');
+    expect_eq(broth_log_copilot_resolve($incidentId, $user, 45, 'fixed')['reason'], 'recheck_still_unsafe', 'resolve rejects unsafe recheck');
+    expect_true(broth_log_copilot_resolve($incidentId, $user, 38, 'Closed door and moved product')['ok'], 'resolve accepts safe recheck with note');
+    expect_true(broth_log_copilot_create_incident($alert) !== $incidentId, 'critical-safe-critical creates a new incident after resolve');
+
+    $raceId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-race']));
+    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', last_reminder_at=NULL, reminder_count=0, state='detected', current_level=1 WHERE incident_id=?", [$raceId]);
+    $now = new DateTimeImmutable('2026-08-20 00:03:00 UTC');
+    $due = broth_log_copilot_due_escalations($now);
+    expect_true(count($due) >= 1, 'fake-clock finds due reminder');
+    $target = array_values(array_filter($due, fn($d) => $d['incident']['incident_id'] === $raceId))[0];
+    expect_eq(broth_log_copilot_apply_escalation_action($target, $now)['action'], 'reminded', 'first worker applies reminder');
+    expect_eq(broth_log_copilot_apply_escalation_action($target, $now)['reason'], 'stale_action', 'second worker stale snapshot is rejected');
+
+    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', last_reminder_at='2026-08-20 00:06:00', reminder_count=3, state='notified_level_1', current_level=1 WHERE incident_id=?", [$raceId]);
+    $dueEscalate = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 00:09:00 UTC')), fn($d) => $d['incident']['incident_id'] === $raceId))[0];
+    expect_eq($dueEscalate['action'], 'escalate', 'fake-clock escalates at minute nine');
+
+    echo "\nAll PHP Phase 1 gate tests passed.\n";
+} finally {
+    @unlink(TEST_DB_PATH);
+    @unlink(TEST_DB_PATH . '-wal');
+    @unlink(TEST_DB_PATH . '-shm');
+}

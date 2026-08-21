@@ -147,6 +147,7 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         "ALTER TABLE broth_log_incidents ADD COLUMN active_key TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_expires_at TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_token TEXT",
+        "ALTER TABLE broth_log_incidents ADD COLUMN level_entered_at TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_status TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_error TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_sent_at TEXT",
@@ -574,9 +575,10 @@ function broth_log_copilot_create_incident(array $alert): string {
     $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=?", [$fingerprint]);
     if ($existing) return (string)$existing['incident_id'];
     $incidentId = 'bl-' . substr($fingerprint, 0, 10) . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(3));
+    $nowTs = gmdate('Y-m-d H:i:s');
     run("INSERT OR IGNORE INTO broth_log_incidents
-        (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,source_revision_hash)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+        (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
         $incidentId,
         $fingerprint,
         $fingerprint,
@@ -592,6 +594,7 @@ function broth_log_copilot_create_incident(array $alert): string {
         (string)($alert['correctiveAction'] ?? ''),
         'detected',
         1,
+        $nowTs,
         hash('sha256', json_encode($alert)),
     ]);
     broth_log_copilot_audit($incidentId, 'detected', null, $alert);
@@ -684,11 +687,16 @@ function broth_log_copilot_due_escalations(?DateTimeImmutable $now = null): arra
         WHERE state IN ('detected','notified_level_1','escalated_level_2','escalated_level_3')
           AND (escalation_lock_expires_at IS NULL OR escalation_lock_expires_at < ?)", [$ts]) as $incident) {
         $created = new DateTimeImmutable($incident['created_at'] . ' UTC');
+        // level_entered_at tracks when the incident entered its *current* level, separate from
+        // created_at. Without this, once total incident age passed 9 minutes, every subsequent
+        // check kept choosing "escalate" over "remind" regardless of level, so level 2/3 never
+        // got their own documented 0/3/6-minute reminder cadence before racing to the next level.
+        $levelStart = !empty($incident['level_entered_at']) ? new DateTimeImmutable($incident['level_entered_at'] . ' UTC') : $created;
         $last = $incident['last_reminder_at'] ? new DateTimeImmutable($incident['last_reminder_at'] . ' UTC') : null;
-        $age = $now->getTimestamp() - $created->getTimestamp();
+        $ageInLevel = $now->getTimestamp() - $levelStart->getTimestamp();
         $sinceLast = $last ? $now->getTimestamp() - $last->getTimestamp() : PHP_INT_MAX;
         $level = (int)$incident['current_level'];
-        if ($level < 3 && $age >= 9 * 60) $due[] = ['action' => 'escalate', 'incident' => $incident, 'to_level' => $level + 1];
+        if ($level < 3 && $ageInLevel >= 9 * 60) $due[] = ['action' => 'escalate', 'incident' => $incident, 'to_level' => $level + 1];
         elseif ($level === 3 && (int)$incident['reminder_count'] >= 10) $due[] = ['action' => 'fallback', 'incident' => $incident];
         elseif ($sinceLast >= 3 * 60) $due[] = ['action' => 'remind', 'incident' => $incident, 'level' => $level];
     }
@@ -731,7 +739,7 @@ function broth_log_copilot_apply_escalation_action(array $action, ?DateTimeImmut
     if ($action['action'] === 'escalate') {
         $level = (int)$action['to_level'];
         $state = $level === 2 ? 'escalated_level_2' : 'escalated_level_3';
-        run("UPDATE broth_log_incidents SET state=?, current_level=?, last_reminder_at=?, reminder_count=0, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$state, $level, $ts, $incident['incident_id'], $lockToken]);
+        run("UPDATE broth_log_incidents SET state=?, current_level=?, last_reminder_at=?, reminder_count=0, level_entered_at=?, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$state, $level, $ts, $ts, $incident['incident_id'], $lockToken]);
         broth_log_copilot_audit($incident['incident_id'], $state, null, []);
         return ['ok' => true, 'action' => 'escalated', 'level' => $level, 'incident_id' => $incident['incident_id']];
     }

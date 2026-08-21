@@ -297,7 +297,7 @@ try {
     expect_true(broth_log_copilot_create_incident($alert) !== $incidentId, 'critical-safe-critical creates a new incident after resolve');
 
     $raceId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-race']));
-    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', last_reminder_at=NULL, reminder_count=0, state='detected', current_level=1 WHERE incident_id=?", [$raceId]);
+    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:00:00', last_reminder_at=NULL, reminder_count=0, state='detected', current_level=1 WHERE incident_id=?", [$raceId]);
     $now = new DateTimeImmutable('2026-08-20 00:03:00 UTC');
     $due = broth_log_copilot_due_escalations($now);
     expect_true(count($due) >= 1, 'fake-clock finds due reminder');
@@ -309,9 +309,35 @@ try {
     expect_eq(count($sentMessages), $escalationSentBefore + 1, 'reminder uses outbound helper once');
     expect_eq(broth_log_copilot_apply_escalation_action($target, $now)['reason'], 'stale_action', 'second worker stale snapshot is rejected');
 
-    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', last_reminder_at='2026-08-20 00:06:00', reminder_count=3, state='notified_level_1', current_level=1 WHERE incident_id=?", [$raceId]);
+    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:00:00', last_reminder_at='2026-08-20 00:06:00', reminder_count=3, state='notified_level_1', current_level=1 WHERE incident_id=?", [$raceId]);
     $dueEscalate = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 00:09:00 UTC')), fn($d) => $d['incident']['incident_id'] === $raceId))[0];
-    expect_eq($dueEscalate['action'], 'escalate', 'fake-clock escalates at minute nine');
+    expect_eq($dueEscalate['action'], 'escalate', 'fake-clock escalates level 1 to level 2 at minute nine');
+    $escalate2Before = count($sentMessages);
+    $escalate2Result = broth_log_copilot_apply_escalation_action_with_notification($dueEscalate, new DateTimeImmutable('2026-08-20 00:09:00 UTC'));
+    expect_eq($escalate2Result['action'], 'escalated', 'worker applies the level 1 -> 2 escalation');
+    expect_eq($escalate2Result['level'], 2, 'escalation moves the incident to level 2');
+
+    // Regression: before level_entered_at existed, this check used total age-since-created, so once
+    // that passed 9 minutes it always chose "escalate" over "remind" - level 2/3 never got their own
+    // documented 0/3/6-minute reminder cadence and raced straight through to the next escalation.
+    $level2Row = q1("SELECT level_entered_at FROM broth_log_incidents WHERE incident_id=?", [$raceId]);
+    expect_eq($level2Row['level_entered_at'], '2026-08-20 00:09:00', 'entering level 2 resets level_entered_at to the escalation time');
+    $dueAtLevel2Min3 = broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 00:12:00 UTC')); // 3 min into level 2, 12 min total age
+    $level2Target = array_values(array_filter($dueAtLevel2Min3, fn($d) => $d['incident']['incident_id'] === $raceId));
+    expect_true(!empty($level2Target), 'an action is due 3 minutes into level 2');
+    expect_eq($level2Target[0]['action'] ?? null, 'remind', 'level 2 gets its own minute-3 reminder instead of immediately escalating again just because total age exceeds 9 minutes');
+    expect_eq($level2Target[0]['level'] ?? null, 2, 'the level-2 reminder is issued at level 2, not level 1');
+
+    $dueAtLevel2Min9 = broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 00:18:00 UTC')); // 9 min into level 2, 18 min total age
+    $level3Target = array_values(array_filter($dueAtLevel2Min9, fn($d) => $d['incident']['incident_id'] === $raceId));
+    expect_eq($level3Target[0]['action'] ?? null, 'escalate', 'level 2 escalates to level 3 nine minutes after entering level 2 (not nine minutes after original creation)');
+    expect_eq($level3Target[0]['to_level'] ?? null, 3, 'level 2 escalates specifically to level 3');
+
+    // Backward compatibility: a pre-migration row with no level_entered_at falls back to created_at.
+    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at=NULL, last_reminder_at=NULL, reminder_count=0, state='detected', current_level=1 WHERE incident_id=?", [$raceId]);
+    $legacyDue = broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 00:09:00 UTC'));
+    $legacyTarget = array_values(array_filter($legacyDue, fn($d) => $d['incident']['incident_id'] === $raceId));
+    expect_eq($legacyTarget[0]['action'] ?? null, 'escalate', 'a legacy row with no level_entered_at falls back to created_at for the escalation check');
 
     // --- Phase 2: per-intent query responses, EN/ES/VI localization, branch isolation ---
     $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array {

@@ -96,7 +96,23 @@ try {
     expect_true(broth_log_copilot_query_response(['branch' => 'B2', 'business_date' => '2026-08-20'], $user)['forbidden'] ?? false, 'cross-branch query is rejected before data fetch');
     run("INSERT INTO broth_log_routing_rules (branch,stage,level,telegram_user_ids,active) VALUES (?,?,?,?,1)", ['B1', 'staging', 1, json_encode(['101'])]);
     run("INSERT INTO broth_log_routing_rules (branch,stage,level,telegram_user_ids,active) VALUES (?,?,?,?,1)", ['B1', 'staging', 2, json_encode(['101'])]);
-    putenv('TELEGRAM_CHAT_ID=999');
+    // Deliberately different from the Copilot destination below, so any accidental fallback to the
+    // legacy one-way-alert variable would be caught by the chat_id assertions further down.
+    putenv('TELEGRAM_CHAT_ID=one-way-alert-chat-should-never-be-used-by-copilot');
+    putenv('TELEGRAM_COPILOT_CHAT_ID=999');
+
+    // Regression: Copilot's chat destination must never come from TELEGRAM_CHAT_ID (the existing
+    // one-way critical-alert chat). Resolution order is routing-row chat_id, then
+    // TELEGRAM_COPILOT_CHAT_ID, then no destination at all - never silently reusing the one-way chat.
+    expect_true(broth_log_copilot_route_chat_ids('B1', 1) === ['999'], 'route_chat_ids falls back to TELEGRAM_COPILOT_CHAT_ID when the routing row has no chat_id, and ignores TELEGRAM_CHAT_ID entirely');
+    run("UPDATE broth_log_routing_rules SET chat_id=? WHERE branch='B1' AND stage='staging' AND level=1", ['888-row-specific-chat']);
+    expect_true(broth_log_copilot_route_chat_ids('B1', 1) === ['888-row-specific-chat'], 'route_chat_ids prefers the routing row\'s own chat_id over TELEGRAM_COPILOT_CHAT_ID once one is set');
+    run("UPDATE broth_log_routing_rules SET active=0 WHERE branch='B1' AND stage='staging' AND level=1");
+    putenv('TELEGRAM_COPILOT_CHAT_ID=');
+    expect_true(broth_log_copilot_route_chat_ids('B1', 1) === [], 'with no active route and no TELEGRAM_COPILOT_CHAT_ID fallback, route_chat_ids fails safely to an empty destination rather than misrouting');
+    run("UPDATE broth_log_routing_rules SET active=1 WHERE branch='B1' AND stage='staging' AND level=1");
+    putenv('TELEGRAM_COPILOT_CHAT_ID=999');
+    run("UPDATE broth_log_routing_rules SET chat_id=NULL WHERE branch='B1' AND stage='staging' AND level=1");
 
     $sentMessages = [];
     $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
@@ -503,6 +519,13 @@ try {
     expect_eq(broth_log_copilot_format_number(38.5), '38.5', 'format_number preserves a genuine decimal value');
     expect_eq(broth_log_copilot_format_number(3.0), '3', 'format_number renders a small whole number correctly');
     expect_eq(broth_log_copilot_temp_text(10.0, 'en'), '10F', 'temp_text uses the corrected formatter, not the old truncating one');
+
+    // Cross-cutting: across every message sent by any test in this run (queries, incident
+    // notifications, ACK/resolve confirmations, reminders, escalations), none was ever addressed
+    // to the one-way-alert sentinel chat - proving Copilot's destination selection never leaks
+    // into the legacy one-way critical-alert chat under any code path exercised above.
+    $leakedToOneWayChat = array_filter($sentMessages, fn($m) => ($m['payload']['chat_id'] ?? '') === 'one-way-alert-chat-should-never-be-used-by-copilot');
+    expect_eq(count($leakedToOneWayChat), 0, 'no message sent anywhere in this test run was ever addressed to the one-way-alert chat sentinel');
 
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {

@@ -31,6 +31,7 @@ function load_private_env_file(string $path): void {
 }
 
 load_private_env_file(PRIVATE_TELEGRAM_ENV_PATH);
+require_once __DIR__ . '/broth-log-copilot.php';
 
 define('DB_PATH',      '/home/hoale24new/bakudan-app/data/bakudan.db');
 define('UPLOAD_DIR',   '/home/hoale24new/bakudanramen.com/uploads/blogs/');
@@ -430,6 +431,7 @@ function db_migrate(SQLite3 $db): void {
     migrate_staff_training_v2($db);
     migrate_staff_training_v3($db);
     migrate_staff_training_v4($db);
+    broth_log_copilot_migrate($db);
 }
 
 // One-time, idempotent: move the two confirmed staff-training YouTube videos
@@ -1143,10 +1145,28 @@ if ($path === '/broth-log/telegram/alerts' && $METHOD === 'POST') {
         if (!is_array($alert)) continue;
         $validated = validate_telegram_alert($alert);
         $active[] = telegram_alert_fingerprint($validated);
-        $results[] = telegram_process_alert($validated);
+        $result = telegram_process_alert($validated);
+        if (broth_log_copilot_enabled()) {
+            $result['incidentId'] = broth_log_copilot_create_incident($validated);
+            if ($result['incidentId'] !== '') {
+                $result['copilotNotification'] = broth_log_copilot_notify_incident($result['incidentId']);
+            }
+        }
+        $results[] = $result;
     }
     $resolved = mark_resolved_telegram_alerts($active);
     ok(['telegram' => telegram_config_status(), 'processed' => count($results), 'resolved' => $resolved, 'results' => $results]);
+}
+
+if ($path === '/broth-log/telegram/webhook' && $METHOD === 'POST') {
+    if (!broth_log_copilot_enabled()) broth_log_copilot_reject('Not found.', 404);
+    if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 262144) broth_log_copilot_reject('Payload too large.', 413);
+    $contentType = strtolower((string)($_SERVER['CONTENT_TYPE'] ?? ''));
+    if (!str_starts_with($contentType, 'application/json')) broth_log_copilot_reject('Unsupported media type.', 415);
+    if (!broth_log_copilot_webhook_authorized()) broth_log_copilot_reject('Unauthorized.', 401);
+    if (!is_array($BODY)) broth_log_copilot_reject('Malformed JSON.', 400);
+    $result = broth_log_copilot_enqueue_webhook($BODY);
+    broth_log_copilot_json_response(['webhook' => $result]);
 }
 
 // ── CONFIG ────────────────────────────────────────────────────────────

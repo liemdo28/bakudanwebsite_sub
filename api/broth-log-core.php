@@ -144,7 +144,10 @@ function broth_log_sop_label(?array $sop): string {
 function broth_log_severity_for(?array $sop, ?float $temp): string {
     if ($temp === null) return 'missing';
     if (abs($temp) > 500) return 'critical';
-    if (!$sop) return 'safe';
+    // No SOP entry for this station is a configuration gap, not a passing reading - never
+    // classify it 'safe', since that would let an unconfigured/mistyped station key silently
+    // bypass every downstream safety check (e.g. resolve validation) regardless of temperature.
+    if (!$sop) return 'unknown_config';
     $variance = $sop['operator'] === '<=' ? $temp - $sop['target'] : $sop['target'] - $temp;
     if ($variance <= 0) return 'safe';
     if ($variance <= 2) return 'warning';

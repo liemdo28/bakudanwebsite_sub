@@ -293,6 +293,28 @@ try {
     expect_eq(broth_log_copilot_ack($incidentId, ['telegram_user_id' => '999', 'allowed_branch_list' => ['B2']])['reason'], 'forbidden', 'cross-branch ACK is rejected');
     expect_eq(broth_log_copilot_resolve($incidentId, $user, null, 'fixed')['reason'], 'missing_resolution_evidence', 'resolve requires recheck temperature');
     expect_eq(broth_log_copilot_resolve($incidentId, $user, 45, 'fixed')['reason'], 'recheck_still_unsafe', 'resolve rejects unsafe recheck');
+
+    // Regression: an incident whose station key has no BROTH_LOG_SOP entry (unconfigured or
+    // mistyped) must never be treated as automatically safe, no matter the recheck temperature.
+    $unknownStationAlert = [
+        'branch' => 'B1',
+        'responseId' => 'resp-unknown-station',
+        'stationKey' => 'thisStationKeyDoesNotExist',
+        'station' => 'Unknown Station',
+        'severity' => 'critical',
+        'businessDate' => '2026-08-20',
+        'businessTime' => '09:00',
+        'temperature' => '55F',
+        'target' => '<= 40F',
+        'correctiveAction' => 'Investigate',
+    ];
+    $unknownStationIncidentId = broth_log_copilot_create_incident($unknownStationAlert);
+    expect_true(broth_log_severity_for(null, -50.0) !== 'safe', 'a missing SOP config never classifies any temperature as safe, even an extreme favorable one');
+    expect_eq(broth_log_is_safe_recheck('thisStationKeyDoesNotExist', -50.0), false, 'is_safe_recheck refuses an unconfigured station even for a temperature that would pass any real SOP');
+    expect_eq(broth_log_copilot_resolve($unknownStationIncidentId, $user, -50, 'invented safe reading', new DateTimeImmutable('2026-08-20 00:05:00 UTC'))['reason'], 'unknown_station_config', 'resolve on an unconfigured station is rejected with a distinct diagnosable reason, not lumped into "still unsafe"');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$unknownStationIncidentId])['state'] ?? '', 'detected', 'unconfigured-station incident is not silently resolved using an invented threshold');
+    expect_eq(broth_log_severity_for(BROTH_LOG_SOP['prepAreaCooler'], 38.0), 'safe', 'unaffected: a known, correctly configured station still classifies a genuinely safe reading as safe');
+    expect_eq(broth_log_is_safe_recheck('prepAreaCooler', 38.0), true, 'unaffected: a known, correctly configured station still accepts a genuinely safe recheck');
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1022,
         'message' => [

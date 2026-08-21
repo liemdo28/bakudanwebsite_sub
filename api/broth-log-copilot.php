@@ -430,7 +430,9 @@ function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImm
     $preferred = $user['preferred_language'] ?? null;
     $lang = broth_log_copilot_detect_language($text, $preferred);
     $n = broth_log_norm($text);
-    $intent = 'help';
+    $explicitDate = broth_log_copilot_extract_explicit_date($n, $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')));
+
+    $intent = null;
     if (preg_match('#^/(start|help)#i', $text) || str_contains($n, 'help') || str_contains($n, 'ayuda') || str_contains($n, 'giup')) $intent = 'help';
     elseif (preg_match('#^/(today|status)#i', $text) || str_contains($n, 'today') || str_contains($n, 'hoy') || str_contains($n, 'hom nay') || str_contains($n, 'status')) $intent = 'today_summary';
     elseif (preg_match('#^/(critical|issues)#i', $text) || str_contains($n, 'critical') || str_contains($n, 'critico') || str_contains($n, 'nghiem trong')) $intent = 'critical_issues';
@@ -441,11 +443,16 @@ function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImm
     elseif (str_contains($n, 'temperature') || str_contains($n, 'temp') || str_contains($n, 'temperatura') || str_contains($n, 'nhiet do') || str_contains($n, 'safe') || str_contains($n, 'an toan')) $intent = 'temperature_lookup';
     elseif (str_contains($n, 'sop') || str_contains($n, 'corrective') || str_contains($n, 'accion correctiva') || str_contains($n, 'khac phuc')) $intent = 'sop_comparison';
 
+    if ($intent === null) {
+        // No keyword matched. A bare explicit business date ("B1 July 19") should behave like
+        // "B1 today" (daily summary), not silently fall back to the generic help message.
+        $intent = $explicitDate['matched'] ? 'today_summary' : 'help';
+    }
+
     preg_match('/\b(B[123])\b/i', $text, $bm);
     $branch = isset($bm[1]) ? strtoupper($bm[1]) : null;
     $date = null;
     $dateError = null;
-    $explicitDate = broth_log_copilot_extract_explicit_date($n, $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')));
     if ($explicitDate['matched']) {
         if ($explicitDate['error']) {
             $dateError = $explicitDate['error'];

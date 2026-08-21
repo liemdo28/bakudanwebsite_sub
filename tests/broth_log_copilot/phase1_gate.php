@@ -415,6 +415,20 @@ try {
     $yesterdayParsed = broth_log_copilot_parse('B1 yesterday', $b1User, $fixedNow);
     expect_eq($yesterdayParsed['business_date'], '2026-08-19', 'plain "yesterday" still resolves correctly (no regression)');
 
+    // Regression (found via real staging Telegram testing): a bare explicit date with no other
+    // intent keyword must behave like "today", not silently fall back to the help message.
+    $bareDateParsed = broth_log_copilot_parse('B1 July 19', $b1User, $fixedNow);
+    expect_eq($bareDateParsed['intent'], 'today_summary', 'bare explicit date defaults to daily summary intent, not help');
+    expect_eq($bareDateParsed['business_date'], '2026-07-19', 'bare explicit date still resolves the correct business date');
+    $bareIsoParsed = broth_log_copilot_parse('B1 2026-07-19', $b1User, $fixedNow);
+    expect_eq($bareIsoParsed['intent'], 'today_summary', 'bare ISO date also defaults to daily summary intent, not help');
+    $explicitKeywordStillWorks = broth_log_copilot_parse('B1 July 19 critical issues', $b1User, $fixedNow);
+    expect_eq($explicitKeywordStillWorks['intent'], 'critical_issues', 'an explicit intent keyword alongside a date still takes precedence over the daily-summary default');
+    $bareHelpParsed = broth_log_copilot_parse('help', $b1User, $fixedNow);
+    expect_eq($bareHelpParsed['intent'], 'help', 'a message with no date and no keyword still defaults to help (unchanged)');
+    $explicitHelpWithDate = broth_log_copilot_parse('help B1 July 19', $b1User, $fixedNow);
+    expect_eq($explicitHelpWithDate['intent'], 'help', 'an explicit "help" keyword still wins even if a date is also present');
+
     foreach (['en' => 'That date does not look valid', 'es' => 'Esa fecha no parece valida', 'vi' => 'Ngay do khong hop le'] as $lang => $expectedPrefix) {
         $msg = broth_log_copilot_format_response(['intent' => 'critical_issues', 'language' => $lang, 'branch' => 'B1', 'business_date' => null, 'date_error' => 'invalid_date'], $b1User);
         expect_true(str_contains($msg, $expectedPrefix), "invalid date rejection [$lang] is localized");

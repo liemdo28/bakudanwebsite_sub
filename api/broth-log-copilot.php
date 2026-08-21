@@ -626,6 +626,10 @@ function broth_log_copilot_ack(string $incidentId, array $actor, ?DateTimeImmuta
             db()->exec('COMMIT');
             return ['ok' => false, 'reason' => 'forbidden'];
         }
+        if ($incident['state'] === 'acknowledged') {
+            db()->exec('COMMIT');
+            return ['ok' => false, 'reason' => 'already_acknowledged'];
+        }
         run("UPDATE broth_log_incidents SET state='acknowledged', owner_telegram_user_id=?, acknowledged_by=?, acknowledged_at=?, last_reminder_at=NULL, updated_at=datetime('now') WHERE incident_id=?", [
             $actor['telegram_user_id'],
             $actor['telegram_user_id'],
@@ -938,6 +942,7 @@ const BROTH_LOG_COPILOT_SEVERITY_WORDS = [
 const BROTH_LOG_COPILOT_REASON_WORDS = [
     'forbidden' => ['en' => 'not authorized for this store', 'es' => 'no autorizado para esta tienda', 'vi' => 'khong duoc phep cho chi nhanh nay'],
     'incident_not_open' => ['en' => 'incident is not open', 'es' => 'el incidente no esta abierto', 'vi' => 'su co khong con mo'],
+    'already_acknowledged' => ['en' => 'already acknowledged', 'es' => 'ya fue confirmado', 'vi' => 'da duoc xac nhan roi'],
     'missing_resolution_evidence' => ['en' => 'missing recheck temperature or corrective-action note', 'es' => 'falta la temperatura de reverificacion o la nota de accion correctiva', 'vi' => 'thieu nhiet do kiem tra lai hoac ghi chu hanh dong khac phuc'],
     'recheck_still_unsafe' => ['en' => 'recheck temperature is still unsafe', 'es' => 'la temperatura de reverificacion sigue sin ser segura', 'vi' => 'nhiet do kiem tra lai van chua an toan'],
     'lock_failed' => ['en' => 'please try again', 'es' => 'intenta de nuevo', 'vi' => 'vui long thu lai'],

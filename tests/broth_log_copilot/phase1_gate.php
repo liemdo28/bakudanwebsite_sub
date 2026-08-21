@@ -273,6 +273,23 @@ try {
     expect_eq($replayProcessed['intent'] ?? '', 'callback_rejected', 'ACK replay is rejected');
     expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Incident acknowledged'), 'ACK replay does not send second ACK confirmation');
 
+    // Regression: a reminder message mints its own independently-signed ACK token for the same
+    // incident. Tapping that token after the incident is already acknowledged must not re-fire
+    // the ack action, since it is not caught by same-token replay protection.
+    $secondAckData = broth_log_copilot_create_callback_token('ack', $incidentId, (new DateTimeImmutable('2026-08-20 00:05:00 UTC'))->getTimestamp());
+    expect_true(broth_log_copilot_enqueue_webhook([
+        'update_id' => 1025,
+        'callback_query' => [
+            'data' => $secondAckData,
+            'from' => ['id' => 101],
+            'message' => ['message_id' => 85, 'chat' => ['id' => 999]],
+        ],
+    ])['queued'], 'second independently-signed ACK token enqueues');
+    $secondTokenProcessed = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:02:30 UTC')), '1025');
+    expect_eq($secondTokenProcessed['intent'] ?? '', 'ack_rejected', 'a second valid-but-distinct ACK token is rejected once already acknowledged (regression: duplicate ack via reminder-message button)');
+    expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_incident_events WHERE incident_id=? AND event_type='acknowledged'", [$incidentId])['c'] ?? -1, 1, 'exactly one acknowledged audit event even after a second valid token is consumed');
+    expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Incident acknowledged'), 'second valid-token ACK attempt does not send a duplicate confirmation');
+
     expect_eq(broth_log_copilot_ack($incidentId, ['telegram_user_id' => '999', 'allowed_branch_list' => ['B2']])['reason'], 'forbidden', 'cross-branch ACK is rejected');
     expect_eq(broth_log_copilot_resolve($incidentId, $user, null, 'fixed')['reason'], 'missing_resolution_evidence', 'resolve requires recheck temperature');
     expect_eq(broth_log_copilot_resolve($incidentId, $user, 45, 'fixed')['reason'], 'recheck_still_unsafe', 'resolve rejects unsafe recheck');

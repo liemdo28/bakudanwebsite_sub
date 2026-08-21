@@ -141,6 +141,11 @@ function number_or_null(string $value): ?float {
     return (float)$clean;
 }
 
+function format_number(float $value): string {
+    $s = (string)$value;
+    return str_contains($s, '.') ? rtrim(rtrim($s, '0'), '.') : $s;
+}
+
 function build_index(array $cols): array {
     $labels = array_map(fn($col) => norm((string)($col['label'] ?? '')), $cols);
     $index = [];
@@ -201,7 +206,7 @@ function alerts_from_branch(string $branch, string $date): array {
                 'businessDate' => $businessDate,
                 'businessTime' => $get('businessTime'),
                 'employee' => $get('employeeName') ?: 'Unassigned',
-                'temperature' => $temp === null ? 'Not recorded' : rtrim(rtrim((string)$temp, '0'), '.') . 'F',
+                'temperature' => $temp === null ? 'Not recorded' : format_number($temp) . 'F',
                 'target' => $sop['operator'] . ' ' . $sop['target'] . 'F',
                 'correctiveAction' => $get('correctiveAction') ?: $sop['action'],
             ];
@@ -255,30 +260,32 @@ function option_enabled(array $argv, string $option): bool {
     return in_array($option, $argv, true);
 }
 
-try {
-    $lock = acquire_lock();
-    $dryRun = option_enabled($argv, '--dry-run');
-    $date = today_chicago();
-    foreach (array_slice($argv, 1) as $arg) {
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $arg)) {
-            $date = $arg;
-            break;
+if (realpath($argv[0] ?? '') === __FILE__) {
+    try {
+        $lock = acquire_lock();
+        $dryRun = option_enabled($argv, '--dry-run');
+        $date = today_chicago();
+        foreach (array_slice($argv, 1) as $arg) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $arg)) {
+                $date = $arg;
+                break;
+            }
         }
+        $alerts = [];
+        foreach (array_keys(SHEETS) as $branch) {
+            $alerts = array_merge($alerts, alerts_from_branch($branch, $date));
+        }
+        if ($dryRun) {
+            echo json_encode(['dry_run' => true, 'date' => $date, 'critical_alerts' => count($alerts)], JSON_PRETTY_PRINT) . PHP_EOL;
+            exit(0);
+        }
+        $result = post_alerts($alerts);
+        echo json_encode(['date' => $date, 'critical_alerts' => count($alerts), 'result' => $result], JSON_PRETTY_PRINT) . PHP_EOL;
+        flock($lock, LOCK_UN);
+        fclose($lock);
+    } catch (Throwable $e) {
+        $message = preg_replace('/[0-9]{8,12}:AA[A-Za-z0-9_-]{20,}/', '[redacted-token]', $e->getMessage()) ?: 'cron failed';
+        fwrite(STDERR, $message . PHP_EOL);
+        exit(1);
     }
-    $alerts = [];
-    foreach (array_keys(SHEETS) as $branch) {
-        $alerts = array_merge($alerts, alerts_from_branch($branch, $date));
-    }
-    if ($dryRun) {
-        echo json_encode(['dry_run' => true, 'date' => $date, 'critical_alerts' => count($alerts)], JSON_PRETTY_PRINT) . PHP_EOL;
-        exit(0);
-    }
-    $result = post_alerts($alerts);
-    echo json_encode(['date' => $date, 'critical_alerts' => count($alerts), 'result' => $result], JSON_PRETTY_PRINT) . PHP_EOL;
-    flock($lock, LOCK_UN);
-    fclose($lock);
-} catch (Throwable $e) {
-    $message = preg_replace('/[0-9]{8,12}:AA[A-Za-z0-9_-]{20,}/', '[redacted-token]', $e->getMessage()) ?: 'cron failed';
-    fwrite(STDERR, $message . PHP_EOL);
-    exit(1);
 }

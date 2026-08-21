@@ -92,30 +92,32 @@ function option_enabled(array $argv, string $option): bool {
     return in_array($option, $argv, true);
 }
 
-try {
-    $lock = acquire_lock();
-    $dryRun = option_enabled($argv, '--dry-run');
-    $date = broth_log_business_date();
-    foreach (array_slice($argv, 1) as $arg) {
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $arg)) {
-            $date = $arg;
-            break;
+if (realpath($argv[0] ?? '') === __FILE__) {
+    try {
+        $lock = acquire_lock();
+        $dryRun = option_enabled($argv, '--dry-run');
+        $date = broth_log_business_date();
+        foreach (array_slice($argv, 1) as $arg) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $arg)) {
+                $date = $arg;
+                break;
+            }
         }
+        $alerts = [];
+        foreach (array_keys(BROTH_LOG_BRANCHES) as $branch) {
+            $alerts = array_merge($alerts, broth_log_critical_alerts_for_branch($branch, $date));
+        }
+        if ($dryRun) {
+            echo json_encode(['dry_run' => true, 'date' => $date, 'critical_alerts' => count($alerts)], JSON_PRETTY_PRINT) . PHP_EOL;
+            exit(0);
+        }
+        $result = post_alerts($alerts);
+        echo json_encode(['date' => $date, 'critical_alerts' => count($alerts), 'result' => $result], JSON_PRETTY_PRINT) . PHP_EOL;
+        flock($lock, LOCK_UN);
+        fclose($lock);
+    } catch (Throwable $e) {
+        $message = preg_replace('/[0-9]{8,12}:AA[A-Za-z0-9_-]{20,}/', '[redacted-token]', $e->getMessage()) ?: 'cron failed';
+        fwrite(STDERR, $message . PHP_EOL);
+        exit(1);
     }
-    $alerts = [];
-    foreach (array_keys(BROTH_LOG_BRANCHES) as $branch) {
-        $alerts = array_merge($alerts, broth_log_critical_alerts_for_branch($branch, $date));
-    }
-    if ($dryRun) {
-        echo json_encode(['dry_run' => true, 'date' => $date, 'critical_alerts' => count($alerts)], JSON_PRETTY_PRINT) . PHP_EOL;
-        exit(0);
-    }
-    $result = post_alerts($alerts);
-    echo json_encode(['date' => $date, 'critical_alerts' => count($alerts), 'result' => $result], JSON_PRETTY_PRINT) . PHP_EOL;
-    flock($lock, LOCK_UN);
-    fclose($lock);
-} catch (Throwable $e) {
-    $message = preg_replace('/[0-9]{8,12}:AA[A-Za-z0-9_-]{20,}/', '[redacted-token]', $e->getMessage()) ?: 'cron failed';
-    fwrite(STDERR, $message . PHP_EOL);
-    exit(1);
 }

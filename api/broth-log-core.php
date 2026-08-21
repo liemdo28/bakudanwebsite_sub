@@ -108,6 +108,14 @@ function broth_log_number_or_null($value): ?float {
     return (float)$clean;
 }
 
+// (string)$float already renders the minimal decimal form (10.0 -> "10", 38.5 -> "38.5"); naively
+// stripping trailing zero digits from the integer part silently turns 10 into 1, 100 into 1, 120
+// into 12. Only strip when a decimal point is actually present.
+function broth_log_format_number(float $value): string {
+    $s = (string)$value;
+    return str_contains($s, '.') ? rtrim(rtrim($s, '0'), '.') : $s;
+}
+
 function broth_log_cell_value(?array $cell): string {
     if (!$cell) return '';
     return trim((string)($cell['f'] ?? $cell['v'] ?? ''));
@@ -250,7 +258,7 @@ function broth_log_critical_alerts_for_branch(string $branch, string $date): arr
                 'businessDate' => $record['businessDate'],
                 'businessTime' => $record['businessTime'],
                 'employee' => $record['employeeName'],
-                'temperature' => $reading['temperature'] === null ? 'Not recorded' : rtrim(rtrim((string)$reading['temperature'], '0'), '.') . 'F',
+                'temperature' => $reading['temperature'] === null ? 'Not recorded' : broth_log_format_number($reading['temperature']) . 'F',
                 'target' => $reading['target'],
                 'correctiveAction' => $record['correctiveAction'] ?: $reading['correctiveAction'],
             ];

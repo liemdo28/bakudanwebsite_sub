@@ -148,6 +148,7 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_expires_at TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_token TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN level_entered_at TEXT",
+        "ALTER TABLE broth_log_routing_rules ADD COLUMN chat_id TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_status TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_error TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_sent_at TEXT",
@@ -259,6 +260,7 @@ function broth_log_copilot_sanitize_error(string $message): string {
     foreach ([
         broth_log_copilot_env('TELEGRAM_BOT_TOKEN'),
         broth_log_copilot_env('TELEGRAM_CHAT_ID'),
+        broth_log_copilot_env('TELEGRAM_COPILOT_CHAT_ID'),
         broth_log_copilot_env('TELEGRAM_INCOMING_SECRET'),
         broth_log_copilot_env('TELEGRAM_CALLBACK_SECRET'),
         broth_log_copilot_env('TELEGRAM_WEBHOOK_SECRET'),
@@ -769,17 +771,30 @@ function broth_log_copilot_query_response(array $parsed, array $user): array {
     return ['records' => $records, 'branch' => $branch, 'businessDate' => $date];
 }
 
-function broth_log_copilot_active_route_exists(string $branch, int $level): bool {
+// Copilot's operational destination is intentionally isolated from the existing one-way critical-alert
+// chat: it never reads TELEGRAM_CHAT_ID (that constant is defined and read only in api/index.php's
+// legacy one-way send path). Resolution order: (1) the active routing row's own chat_id, so each
+// branch/level can eventually have a distinct destination; (2) TELEGRAM_COPILOT_CHAT_ID as a
+// Copilot-only fallback; (3) if neither is set, no chat is returned and nothing is sent - failing
+// safely rather than silently reusing an unrelated chat.
+function broth_log_copilot_active_route(string $branch, int $level): ?array {
     $stage = broth_log_copilot_is_staging() ? 'staging' : 'pilot';
-    $row = q1("SELECT telegram_user_ids FROM broth_log_routing_rules WHERE branch=? AND stage=? AND level=? AND active=1", [strtoupper($branch), $stage, $level]);
-    if (!$row) return false;
+    $row = q1("SELECT telegram_user_ids, chat_id FROM broth_log_routing_rules WHERE branch=? AND stage=? AND level=? AND active=1", [strtoupper($branch), $stage, $level]);
+    if (!$row) return null;
     $ids = json_decode((string)$row['telegram_user_ids'], true);
-    return is_array($ids) && count($ids) > 0;
+    if (!is_array($ids) || count($ids) === 0) return null;
+    return $row;
+}
+
+function broth_log_copilot_active_route_exists(string $branch, int $level): bool {
+    return broth_log_copilot_active_route($branch, $level) !== null;
 }
 
 function broth_log_copilot_route_chat_ids(string $branch, int $level): array {
-    if (!broth_log_copilot_active_route_exists($branch, $level)) return [];
-    $chatId = broth_log_copilot_env('TELEGRAM_CHAT_ID');
+    $route = broth_log_copilot_active_route($branch, $level);
+    if (!$route) return [];
+    $chatId = trim((string)($route['chat_id'] ?? ''));
+    if ($chatId === '') $chatId = broth_log_copilot_env('TELEGRAM_COPILOT_CHAT_ID');
     return $chatId !== '' ? [$chatId] : [];
 }
 

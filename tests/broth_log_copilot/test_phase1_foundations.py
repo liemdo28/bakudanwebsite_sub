@@ -69,7 +69,14 @@ def test_ack_resolve_and_escalation_are_transactional_and_fake_clockable():
     assert 'function broth_log_copilot_due_escalations(?DateTimeImmutable $now = null)' in copilot
     assert "9 * 60" in copilot
     assert "3 * 60" in copilot
-    assert ">= 10" in copilot
+    # Level 3 has no reminder cap: crossing 10 reminders records a one-time 'fallback_reminder'
+    # audit marker but keeps reminding indefinitely - it must never switch to a terminal state
+    # that would silently stop the Telegram pushes.
+    assert "reminder_count'] === 10" in copilot
+    assert "'fallback_reminder'" in copilot
+    # unacknowledged_critical remains a valid historical state (schema/enum), but nothing may
+    # transition an incident into it anymore - that used to be how level 3 silently went quiet.
+    assert "state='unacknowledged_critical'" not in copilot
     assert 'missing_resolution_evidence' in copilot
     assert 'recheck_still_unsafe' in copilot
     assert "active_key=NULL" in copilot

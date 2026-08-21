@@ -152,6 +152,49 @@ try {
         return ['sent' => true, 'mock' => true];
     };
 
+    // Regression: outbound sends must retry a bounded number of times on a local connection/timeout
+    // failure (http_code 0), but never retry a real HTTP response from Telegram - even an error one -
+    // since that means the request was received and answered, and retrying could mask a genuine
+    // rejection or hammer Telegram with duplicate attempts for no benefit.
+    unset($GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT']);
+    putenv('TELEGRAM_BOT_TOKEN=unit-test-token');
+
+    $httpAttempts = 0;
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_HTTP_HOOK'] = function () use (&$httpAttempts): array {
+        $httpAttempts++;
+        if ($httpAttempts < 3) return ['raw' => false, 'http_code' => 0];
+        return ['raw' => json_encode(['ok' => true]), 'http_code' => 200];
+    };
+    $retrySucceeds = broth_log_copilot_send_telegram_message('999', 'retry test - eventual success');
+    expect_true($retrySucceeds['sent'] ?? false, 'a local timeout retries and eventually succeeds within the attempt budget');
+    expect_eq($retrySucceeds['attempts'] ?? -1, 3, 'the send that succeeded on the third attempt reports 3 attempts');
+
+    $httpAttempts = 0;
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_HTTP_HOOK'] = function () use (&$httpAttempts): array {
+        $httpAttempts++;
+        return ['raw' => false, 'http_code' => 0];
+    };
+    $retryExhausted = broth_log_copilot_send_telegram_message('999', 'retry test - always times out');
+    expect_true(!($retryExhausted['sent'] ?? true), 'a persistent local timeout eventually gives up rather than retrying forever');
+    expect_eq($retryExhausted['attempts'] ?? -1, 3, 'retry is bounded to exactly 3 attempts, not unbounded');
+    expect_eq($httpAttempts, 3, 'the retry loop makes exactly 3 real attempts, no more');
+
+    $httpAttempts = 0;
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_HTTP_HOOK'] = function () use (&$httpAttempts): array {
+        $httpAttempts++;
+        return ['raw' => json_encode(['ok' => false, 'description' => 'Forbidden: bot was blocked']), 'http_code' => 403];
+    };
+    $noRetryOnRejection = broth_log_copilot_send_telegram_message('999', 'retry test - real telegram rejection');
+    expect_true(!($noRetryOnRejection['sent'] ?? true), 'a real Telegram HTTP rejection is not treated as sent');
+    expect_eq($httpAttempts, 1, 'a real Telegram HTTP response (even an error) is never retried - only a local no-response failure is');
+    expect_eq($noRetryOnRejection['attempts'] ?? -1, 1, 'the rejection result reports a single attempt, confirming no retry occurred');
+
+    unset($GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_HTTP_HOOK']);
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+
     $fakeToken = '1234567890:' . 'ABCdefGhijkLMNOPqrstUVwxYZ';
     $update = [
         'update_id' => 1010,
@@ -241,6 +284,8 @@ try {
     expect_true(str_contains($notification['text'], 'Store: B1'), 'incident notification includes store');
     expect_true(str_contains($notification['text'], 'Prep Area Cooler'), 'incident notification includes station');
     expect_true(str_contains($notification['text'], 'Recorded: 120F'), 'incident notification shows the correct recorded temperature (regression: was truncated to 12F)');
+    expect_true(str_contains($notification['text'], 'Level: 1'), 'incident notification includes the escalation level');
+    expect_true(str_contains($notification['text'], 'Employee: Unassigned'), 'incident notification falls back to Unassigned when no employee is known');
     expect_true(isset($notification['reply_markup']['inline_keyboard'][0][0]['callback_data']), 'incident notification includes inline ACK button');
     $ackData = $notification['reply_markup']['inline_keyboard'][0][0]['callback_data'];
     $resolveData = $notification['reply_markup']['inline_keyboard'][0][1]['callback_data'];
@@ -248,6 +293,10 @@ try {
     expect_true(strlen($resolveData) <= 64, 'resolve callback payload fits Telegram limit');
     broth_log_copilot_notify_incident($incidentId);
     expect_eq(count($sentMessages), $sentBeforeIncident + 1, 'duplicate incident notification is suppressed');
+
+    $employeeIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-with-employee', 'employee' => 'Jordan Rivera']));
+    broth_log_copilot_notify_incident($employeeIncidentId);
+    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Employee: Jordan Rivera'), 'incident notification shows the real employee name when known');
 
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1020,
@@ -387,6 +436,34 @@ try {
     $level3Target = array_values(array_filter($dueAtLevel2Min9, fn($d) => $d['incident']['incident_id'] === $raceId));
     expect_eq($level3Target[0]['action'] ?? null, 'escalate', 'level 2 escalates to level 3 nine minutes after entering level 2 (not nine minutes after original creation)');
     expect_eq($level3Target[0]['to_level'] ?? null, 3, 'level 2 escalates specifically to level 3');
+
+    // Regression: Level 3 must never cap out and go silent. The old behavior switched the
+    // incident to 'unacknowledged_critical' after 10 reminders, which is excluded from the
+    // due-escalations query - Telegram pushes stopped permanently. Level 3 must keep reminding
+    // every 3 minutes indefinitely until ACK, with a one-time 'fallback_required' audit marker
+    // recorded in parallel (not instead of) the ongoing reminders.
+    run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-20 00:00:00', last_reminder_at='2026-08-20 00:27:00', reminder_count=10 WHERE incident_id=?", [$raceId]);
+    $dueAtTenReminders = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 00:30:00 UTC')), fn($d) => $d['incident']['incident_id'] === $raceId));
+    expect_eq($dueAtTenReminders[0]['action'] ?? null, 'fallback_reminder', 'crossing 10 reminders at level 3 is flagged for a one-time fallback audit marker');
+    $fallbackResult = broth_log_copilot_apply_escalation_action_with_notification($dueAtTenReminders[0], new DateTimeImmutable('2026-08-20 00:30:00 UTC'));
+    expect_eq($fallbackResult['action'], 'reminded', 'the fallback-marker crossing still results in a normal reminder being sent, not a terminal fallback action');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$raceId])['state'] ?? '', 'escalated_level_3', 'incident remains escalated_level_3, not moved to a terminal unacknowledged_critical state');
+    expect_eq(q1("SELECT reminder_count FROM broth_log_incidents WHERE incident_id=?", [$raceId])['reminder_count'] ?? -1, 11, 'reminder count keeps incrementing past the old cap of 10');
+    expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_incident_events WHERE incident_id=? AND event_type='fallback_required'", [$raceId])['c'] ?? -1, 1, 'exactly one fallback_required audit event is recorded at the crossing');
+
+    // Well beyond the old cap: still due, still reminding, no silent stop, no duplicate fallback marker.
+    run("UPDATE broth_log_incidents SET last_reminder_at='2026-08-20 01:00:00', reminder_count=25 WHERE incident_id=?", [$raceId]);
+    $dueAt25Reminders = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 01:03:00 UTC')), fn($d) => $d['incident']['incident_id'] === $raceId));
+    expect_eq($dueAt25Reminders[0]['action'] ?? null, 'remind', 'far beyond the old 10-reminder cap, level 3 is still due for an ordinary reminder - no cap, no silent stop');
+    broth_log_copilot_apply_escalation_action_with_notification($dueAt25Reminders[0], new DateTimeImmutable('2026-08-20 01:03:00 UTC'));
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$raceId])['state'] ?? '', 'escalated_level_3', 'still escalated_level_3 at reminder 26, long-running scenario well beyond the previous cap');
+    expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_incident_events WHERE incident_id=? AND event_type='fallback_required'", [$raceId])['c'] ?? -1, 1, 'fallback_required audit marker does not duplicate on later reminders');
+
+    // ACK still immediately stops the infinite level-3 cadence.
+    $level3Ack = broth_log_copilot_ack($raceId, $user, new DateTimeImmutable('2026-08-20 01:05:00 UTC'));
+    expect_true($level3Ack['ok'] ?? false, 'ACK succeeds even deep into the infinite level-3 reminder cadence');
+    $dueAfterLevel3Ack = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 01:10:00 UTC')), fn($d) => $d['incident']['incident_id'] === $raceId));
+    expect_true(empty($dueAfterLevel3Ack), 'ACK stops all future level-3 reminders immediately, infinite cadence or not');
 
     // Backward compatibility: a pre-migration row with no level_entered_at falls back to created_at.
     run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at=NULL, last_reminder_at=NULL, reminder_count=0, state='detected', current_level=1 WHERE incident_id=?", [$raceId]);

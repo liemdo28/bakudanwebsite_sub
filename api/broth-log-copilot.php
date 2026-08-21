@@ -148,6 +148,7 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_expires_at TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_token TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN level_entered_at TEXT",
+        "ALTER TABLE broth_log_incidents ADD COLUMN employee_name TEXT",
         "ALTER TABLE broth_log_routing_rules ADD COLUMN chat_id TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_status TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_error TEXT",
@@ -306,6 +307,33 @@ function broth_log_copilot_send_telegram_message(string $chatId, string $message
 
     $url = 'https://api.telegram.org/bot' . $token . '/sendMessage';
     $body = json_encode($payload);
+    // Local connection/timeout failures (http_code 0 - no response reached us at all) are worth a
+    // bounded retry on shared hosting. A real HTTP response from Telegram, even an error one, means
+    // the request was received and answered - retrying it would not help and could mask a genuine
+    // rejection, so only the no-response case retries.
+    $maxAttempts = 3;
+    for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        $result = broth_log_copilot_telegram_http_call($url, $body);
+        $raw = $result['raw'];
+        $httpCode = $result['http_code'];
+        if ($raw !== false && $httpCode > 0) {
+            if ($httpCode >= 200 && $httpCode < 300) {
+                $decoded = json_decode($raw, true);
+                if (!is_array($decoded) || empty($decoded['ok'])) {
+                    return ['sent' => false, 'reason' => 'telegram_rejected', 'http_code' => $httpCode, 'error' => broth_log_copilot_sanitize_error($raw), 'attempts' => $attempt];
+                }
+                return ['sent' => true, 'http_code' => $httpCode, 'attempts' => $attempt];
+            }
+            return ['sent' => false, 'reason' => 'telegram_api_error', 'http_code' => $httpCode, 'attempts' => $attempt];
+        }
+        if ($attempt < $maxAttempts) usleep(500000 * $attempt);
+    }
+    return ['sent' => false, 'reason' => 'telegram_api_error', 'http_code' => 0, 'attempts' => $maxAttempts];
+}
+
+function broth_log_copilot_telegram_http_call(string $url, string $body): array {
+    $hook = $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_HTTP_HOOK'] ?? null;
+    if (is_callable($hook)) return $hook($url, $body);
     $ctx = stream_context_create(['http' => [
         'method' => 'POST',
         'timeout' => 6,
@@ -316,14 +344,7 @@ function broth_log_copilot_send_telegram_message(string $chatId, string $message
     $raw = @file_get_contents($url, false, $ctx);
     $statusLine = $http_response_header[0] ?? '';
     $httpCode = preg_match('#\s(\d{3})\s#', $statusLine, $m) ? (int)$m[1] : 0;
-    if ($raw === false || $httpCode < 200 || $httpCode >= 300) {
-        return ['sent' => false, 'reason' => 'telegram_api_error', 'http_code' => $httpCode];
-    }
-    $decoded = json_decode($raw, true);
-    if (!is_array($decoded) || empty($decoded['ok'])) {
-        return ['sent' => false, 'reason' => 'telegram_rejected', 'http_code' => $httpCode, 'error' => broth_log_copilot_sanitize_error($raw)];
-    }
-    return ['sent' => true, 'http_code' => $httpCode];
+    return ['raw' => $raw, 'http_code' => $httpCode];
 }
 
 function broth_log_copilot_authorized_user(string $telegramUserId): ?array {
@@ -579,8 +600,8 @@ function broth_log_copilot_create_incident(array $alert): string {
     $incidentId = 'bl-' . substr($fingerprint, 0, 10) . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(3));
     $nowTs = gmdate('Y-m-d H:i:s');
     run("INSERT OR IGNORE INTO broth_log_incidents
-        (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+        (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash,employee_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
         $incidentId,
         $fingerprint,
         $fingerprint,
@@ -598,6 +619,7 @@ function broth_log_copilot_create_incident(array $alert): string {
         1,
         $nowTs,
         hash('sha256', json_encode($alert)),
+        (string)($alert['employee'] ?? ''),
     ]);
     broth_log_copilot_audit($incidentId, 'detected', null, $alert);
     return $incidentId;
@@ -706,9 +728,16 @@ function broth_log_copilot_due_escalations(?DateTimeImmutable $now = null): arra
         $ageInLevel = $now->getTimestamp() - $levelStart->getTimestamp();
         $sinceLast = $last ? $now->getTimestamp() - $last->getTimestamp() : PHP_INT_MAX;
         $level = (int)$incident['current_level'];
-        if ($level < 3 && $ageInLevel >= 9 * 60) $due[] = ['action' => 'escalate', 'incident' => $incident, 'to_level' => $level + 1];
-        elseif ($level === 3 && (int)$incident['reminder_count'] >= 10) $due[] = ['action' => 'fallback', 'incident' => $incident];
-        elseif ($sinceLast >= 3 * 60) $due[] = ['action' => 'remind', 'incident' => $incident, 'level' => $level];
+        if ($level < 3 && $ageInLevel >= 9 * 60) {
+            $due[] = ['action' => 'escalate', 'incident' => $incident, 'to_level' => $level + 1];
+        } elseif ($sinceLast >= 3 * 60) {
+            // Level 3 has no reminder cap and never goes silent: it keeps reminding every 3
+            // minutes indefinitely until ACK. The one-time crossing into "MOD fallback should
+            // now engage" is recorded as a parallel audit marker (fallback_reminder), not as a
+            // terminal state that would stop the Telegram pushes.
+            $action = ($level === 3 && (int)$incident['reminder_count'] === 10) ? 'fallback_reminder' : 'remind';
+            $due[] = ['action' => $action, 'incident' => $incident, 'level' => $level];
+        }
     }
     return $due;
 }
@@ -753,10 +782,11 @@ function broth_log_copilot_apply_escalation_action(array $action, ?DateTimeImmut
         broth_log_copilot_audit($incident['incident_id'], $state, null, []);
         return ['ok' => true, 'action' => 'escalated', 'level' => $level, 'incident_id' => $incident['incident_id']];
     }
-    if ($action['action'] === 'fallback') {
-        run("UPDATE broth_log_incidents SET state='unacknowledged_critical', last_reminder_at=?, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$ts, $incident['incident_id'], $lockToken]);
+    if ($action['action'] === 'fallback_reminder') {
+        // One-time audit marker that MOD manual fallback should now engage. State stays
+        // escalated_level_3 (not a terminal state) and execution falls through to the same
+        // reminder logic below, so Telegram pushes keep going every 3 minutes until ACK.
         broth_log_copilot_audit($incident['incident_id'], 'fallback_required', null, ['fallback' => broth_log_copilot_env('TELEGRAM_LEVEL3_FALLBACK', 'operations manual fallback')]);
-        return ['ok' => true, 'action' => 'fallback', 'incident_id' => $incident['incident_id']];
     }
     run("UPDATE broth_log_incidents SET state=CASE WHEN state='detected' THEN 'notified_level_1' ELSE state END, last_reminder_at=?, reminder_count=reminder_count+1, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$ts, $incident['incident_id'], $lockToken]);
     broth_log_copilot_audit($incident['incident_id'], 'reminder_sent', null, ['level' => (int)$incident['current_level']]);
@@ -812,12 +842,14 @@ function broth_log_copilot_incident_message_labels(string $lang): array {
         'store' => $t('Store', 'Tienda', 'Chi nhanh'),
         'business' => $t('Business', 'Fecha/hora', 'Ngay gio'),
         'item' => $t('Item', 'Producto', 'Muc'),
+        'employee' => $t('Employee', 'Empleado', 'Nhan vien'),
         'recorded' => $t('Recorded', 'Registrado', 'Da ghi'),
         'missing' => $t('missing', 'faltante', 'thieu'),
         'sop' => 'SOP',
         'severity' => $t('Severity', 'Severidad', 'Muc do'),
         'action' => $t('Action', 'Accion', 'Hanh dong'),
         'ref' => $t('Ref', 'Ref', 'Ma'),
+        'level' => $t('Level', 'Nivel', 'Muc do leo thang'),
         'kind' => [
             'ack_confirm' => $t('Incident acknowledged', 'Incidente confirmado', 'Su co da duoc xac nhan'),
             'resolve_confirm' => $t('Incident resolved', 'Incidente resuelto', 'Su co da duoc giai quyet'),
@@ -836,12 +868,14 @@ function broth_log_copilot_incident_message(array $incident, string $kind, strin
         $label,
         $l['store'] . ': ' . (string)$incident['branch'],
         $l['business'] . ': ' . trim((string)$incident['business_date'] . ' ' . (string)($incident['business_time'] ?? '')),
+        $l['employee'] . ': ' . ((string)($incident['employee_name'] ?? '') !== '' ? (string)$incident['employee_name'] : 'Unassigned'),
         $l['item'] . ': ' . (string)$incident['station_label'],
         $l['recorded'] . ': ' . (($incident['temperature_f'] ?? null) === null ? $l['missing'] : broth_log_copilot_format_number((float)$incident['temperature_f']) . 'F'),
         $l['sop'] . ': ' . (string)$incident['sop_target'],
         $l['severity'] . ': ' . (string)$incident['severity'],
         $l['action'] . ': ' . (string)$incident['corrective_action'],
         $l['ref'] . ': #' . (string)$incident['incident_id'],
+        $l['level'] . ': ' . (string)($incident['current_level'] ?? 1),
     ];
     return implode("\n", array_map(fn($line) => substr($line, 0, 180), $lines));
 }

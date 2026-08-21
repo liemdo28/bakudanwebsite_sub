@@ -664,6 +664,10 @@ function broth_log_copilot_resolve(string $incidentId, array $actor, ?float $rec
             db()->exec('COMMIT');
             return ['ok' => false, 'reason' => 'missing_resolution_evidence'];
         }
+        if (!isset(BROTH_LOG_SOP[(string)$incident['station_key']])) {
+            db()->exec('COMMIT');
+            return ['ok' => false, 'reason' => 'unknown_station_config'];
+        }
         if (!broth_log_is_safe_recheck((string)$incident['station_key'], $recheckTemp)) {
             db()->exec('COMMIT');
             return ['ok' => false, 'reason' => 'recheck_still_unsafe'];
@@ -945,6 +949,7 @@ const BROTH_LOG_COPILOT_REASON_WORDS = [
     'already_acknowledged' => ['en' => 'already acknowledged', 'es' => 'ya fue confirmado', 'vi' => 'da duoc xac nhan roi'],
     'missing_resolution_evidence' => ['en' => 'missing recheck temperature or corrective-action note', 'es' => 'falta la temperatura de reverificacion o la nota de accion correctiva', 'vi' => 'thieu nhiet do kiem tra lai hoac ghi chu hanh dong khac phuc'],
     'recheck_still_unsafe' => ['en' => 'recheck temperature is still unsafe', 'es' => 'la temperatura de reverificacion sigue sin ser segura', 'vi' => 'nhiet do kiem tra lai van chua an toan'],
+    'unknown_station_config' => ['en' => 'this station has no configured SOP target - contact an admin, this cannot be auto-resolved', 'es' => 'esta estacion no tiene un objetivo SOP configurado - contacta a un administrador, esto no se puede resolver automaticamente', 'vi' => 'tram nay chua co muc tieu SOP - hay lien he quan tri vien, khong the tu dong giai quyet'],
     'lock_failed' => ['en' => 'please try again', 'es' => 'intenta de nuevo', 'vi' => 'vui long thu lai'],
 ];
 

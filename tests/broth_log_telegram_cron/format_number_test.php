@@ -23,5 +23,14 @@ expect_eq(format_number(38.5), '38.5', 'format_number preserves a genuine decima
 expect_eq(format_number(10.50), '10.5', 'format_number strips a trailing decimal zero after an actual decimal point');
 expect_eq(format_number(3.0), '3', 'format_number renders a small whole number correctly');
 expect_eq(format_number(0.0), '0', 'format_number renders zero correctly');
+expect_eq(format_number(40.0), '40', 'format_number does not truncate a common SOP-boundary whole number ending in zero');
+expect_eq(format_number(-2.0), '-2', 'format_number renders a negative whole number correctly');
+
+// SOP targets are built directly from integer literals in SOP (e.g. 'target' => 40) concatenated
+// as $sop['operator'] . ' ' . $sop['target'] . 'F' - they never pass through format_number/rtrim,
+// so there is no equivalent truncation bug there. This file has exactly one rtrim() call, inside
+// format_number() itself (verified by inspection during the hotfix review).
+$sourceCallCount = substr_count(file_get_contents(__DIR__ . '/../../scripts/broth-log-telegram-cron.php'), 'rtrim(');
+expect_eq($sourceCallCount, 2, 'the file has exactly one rtrim(rtrim(...)) call site, confined to format_number - SOP target formatting is unaffected');
 
 echo "\nAll broth-log-telegram-cron format_number tests passed.\n";

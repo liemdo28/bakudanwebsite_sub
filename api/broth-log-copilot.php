@@ -806,7 +806,7 @@ function broth_log_copilot_incident_message(array $incident, string $kind, strin
         $l['store'] . ': ' . (string)$incident['branch'],
         $l['business'] . ': ' . trim((string)$incident['business_date'] . ' ' . (string)($incident['business_time'] ?? '')),
         $l['item'] . ': ' . (string)$incident['station_label'],
-        $l['recorded'] . ': ' . (($incident['temperature_f'] ?? null) === null ? $l['missing'] : rtrim(rtrim((string)$incident['temperature_f'], '0'), '.') . 'F'),
+        $l['recorded'] . ': ' . (($incident['temperature_f'] ?? null) === null ? $l['missing'] : broth_log_copilot_format_number((float)$incident['temperature_f']) . 'F'),
         $l['sop'] . ': ' . (string)$incident['sop_target'],
         $l['severity'] . ': ' . (string)$incident['severity'],
         $l['action'] . ': ' . (string)$incident['corrective_action'],
@@ -954,9 +954,18 @@ function broth_log_copilot_station_label(string $stationKey, ?array $reading): s
     return $stationKey;
 }
 
+// (string)$float already renders the minimal decimal form (10.0 -> "10", 38.5 -> "38.5"); the old
+// rtrim(rtrim($s,'0'),'.') pattern additionally stripped trailing zero *digits* from the integer
+// part, silently turning 10 into 1, 100 into 1, 120 into 12, etc. Only strip when a decimal point
+// is actually present, and only trailing zeros after it.
+function broth_log_copilot_format_number(float $value): string {
+    $s = (string)$value;
+    return str_contains($s, '.') ? rtrim(rtrim($s, '0'), '.') : $s;
+}
+
 function broth_log_copilot_temp_text(?float $temperature, string $lang): string {
     if ($temperature === null) return broth_log_copilot_severity_word('missing', $lang);
-    return rtrim(rtrim((string)$temperature, '0'), '.') . 'F';
+    return broth_log_copilot_format_number($temperature) . 'F';
 }
 
 function broth_log_copilot_format_response(array $parsed, array $user): string {

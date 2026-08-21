@@ -211,7 +211,7 @@ try {
         'severity' => 'critical',
         'businessDate' => '2026-08-20',
         'businessTime' => '08:00',
-        'temperature' => '45F',
+        'temperature' => '120F',
         'target' => '<= 40F',
         'correctiveAction' => 'Move product and re-temp',
     ];
@@ -224,6 +224,7 @@ try {
     expect_true(str_starts_with($notification['text'], 'TEST'), 'incident notification uses TEST prefix in staging');
     expect_true(str_contains($notification['text'], 'Store: B1'), 'incident notification includes store');
     expect_true(str_contains($notification['text'], 'Prep Area Cooler'), 'incident notification includes station');
+    expect_true(str_contains($notification['text'], 'Recorded: 120F'), 'incident notification shows the correct recorded temperature (regression: was truncated to 12F)');
     expect_true(isset($notification['reply_markup']['inline_keyboard'][0][0]['callback_data']), 'incident notification includes inline ACK button');
     $ackData = $notification['reply_markup']['inline_keyboard'][0][0]['callback_data'];
     $resolveData = $notification['reply_markup']['inline_keyboard'][0][1]['callback_data'];
@@ -440,27 +441,42 @@ try {
 
     // Explicit date wired into per-intent filtering against a real, previously-verified historical
     // B1 date (2026-07-19: logs=1, critical=1, open=3, missing=0, confirmed via live sheet inspection).
+    // Walk-In Freezer's real recorded temperature that day was 10F - deliberately used here (instead
+    // of a rounder/safer test number) because it's the exact real value that exposed a formatting
+    // regression during live staging testing (see broth_log_copilot_format_number below).
     // Synthetic fixture only - no data was written to the real Broth Log sheet.
     $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array {
         if ($branch !== 'B1') return [];
         return [[
-            'id' => 'rec-jul19', 'branch' => 'B1', 'businessDate' => '2026-07-19', 'businessTime' => '07:30', 'employeeName' => 'Tester',
+            'id' => 'rec-jul19', 'branch' => 'B1', 'businessDate' => '2026-07-19', 'businessTime' => '17:36', 'employeeName' => 'Yenci',
             'readings' => [
-                ['key' => 'lineFreezer', 'label' => 'Line Freezer', 'category' => 'freezer', 'temperature' => 12.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => 'Alert MOD'],
+                ['key' => 'walkInFreezer', 'label' => 'Walk-In Freezer', 'category' => 'freezer', 'temperature' => 10.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => 'Alert MOD'],
                 ['key' => 'prepAreaCooler', 'label' => 'Prep Area Cooler', 'category' => 'cold', 'temperature' => 39.0, 'unit' => 'F', 'severity' => 'safe', 'target' => '<= 40F', 'correctiveAction' => ''],
             ],
             'issues' => [
-                ['key' => 'lineFreezer', 'label' => 'Line Freezer', 'category' => 'freezer', 'temperature' => 12.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => 'Alert MOD', 'status' => 'Open'],
+                ['key' => 'walkInFreezer', 'label' => 'Walk-In Freezer', 'category' => 'freezer', 'temperature' => 10.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => 'Alert MOD', 'status' => 'Open'],
             ],
         ]];
     };
     $histCritical = broth_log_copilot_format_response(['intent' => 'critical_issues', 'language' => 'en', 'branch' => 'B1', 'business_date' => '2026-07-19', 'date_error' => null, 'station' => null], $b1User);
-    expect_true(str_contains($histCritical, 'Line Freezer') && str_contains($histCritical, '12F'), 'explicit-date critical_issues query returns the real historical critical reading');
-    $histTemp = broth_log_copilot_format_response(['intent' => 'temperature_lookup', 'language' => 'en', 'branch' => 'B1', 'business_date' => '2026-07-19', 'date_error' => null, 'station' => 'lineFreezer'], $b1User);
-    expect_eq($histTemp, 'Line Freezer at B1 2026-07-19: 12F (target <= 0F).', 'explicit-date temperature_lookup returns the requested station for the requested historical date');
+    expect_true(str_contains($histCritical, 'Walk-In Freezer') && str_contains($histCritical, '10F'), 'explicit-date critical_issues query returns the real historical critical reading with the correct temperature (not truncated to 1F)');
+    $histTemp = broth_log_copilot_format_response(['intent' => 'temperature_lookup', 'language' => 'en', 'branch' => 'B1', 'business_date' => '2026-07-19', 'date_error' => null, 'station' => 'walkInFreezer'], $b1User);
+    expect_eq($histTemp, 'Walk-In Freezer at B1 2026-07-19: 10F (target <= 0F).', 'explicit-date temperature_lookup returns the requested station for the requested historical date');
+    $histSop = broth_log_copilot_format_response(['intent' => 'sop_comparison', 'language' => 'en', 'branch' => 'B1', 'business_date' => '2026-07-19', 'date_error' => null, 'station' => 'walkInFreezer'], $b1User);
+    expect_eq($histSop, 'Walk-In Freezer at B1 2026-07-19: entered 10F vs SOP target <= 0F -> critical.', 'explicit-date sop_comparison shows entered value with correct temperature');
     $histForbidden = broth_log_copilot_format_response(['intent' => 'critical_issues', 'language' => 'en', 'branch' => 'B2', 'business_date' => '2026-07-19', 'date_error' => null], $b1User);
     expect_true(str_contains($histForbidden, 'I cannot access that store'), 'explicit-date query still enforces branch isolation (B1 tester cannot read B2 for any date)');
     unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+
+    // Regression: rtrim(rtrim($s,'0'),'.') silently turned whole-number temperatures ending in 0
+    // into the wrong (smaller) number (10 -> 1, 100 -> 1, 120 -> 12). Found via real Telegram
+    // testing where a real 10F reading was displayed as 1F.
+    expect_eq(broth_log_copilot_format_number(10.0), '10', 'format_number does not truncate a whole number ending in one zero');
+    expect_eq(broth_log_copilot_format_number(100.0), '100', 'format_number does not truncate a whole number ending in two zeros');
+    expect_eq(broth_log_copilot_format_number(120.0), '120', 'format_number does not truncate a whole number with an internal zero before a trailing digit');
+    expect_eq(broth_log_copilot_format_number(38.5), '38.5', 'format_number preserves a genuine decimal value');
+    expect_eq(broth_log_copilot_format_number(3.0), '3', 'format_number renders a small whole number correctly');
+    expect_eq(broth_log_copilot_temp_text(10.0, 'en'), '10F', 'temp_text uses the corrected formatter, not the old truncating one');
 
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {

@@ -1407,68 +1407,96 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
     $processed = [];
     foreach (q("SELECT * FROM broth_log_bot_inbox WHERE status='queued' ORDER BY received_at ASC LIMIT ?", [$limit]) as $row) {
-        $telegramUserId = (string)($row['telegram_user_id'] ?? '');
-        $user = broth_log_copilot_authorized_user($telegramUserId);
+        // Each row gets its own exception boundary. A single malformed/unexpected row (a parser
+        // bug, a programming error, anything) must never abort the rest of this batch, and - just
+        // as critically - must never prevent the caller (the worker script) from reaching the
+        // escalation/reminder loop that runs after this whole function returns. Without this,
+        // one poison row retried every cron tick can silently block food-safety reminders
+        // indefinitely - confirmed as a real production incident on 2026-08-22.
+        try {
+            $telegramUserId = (string)($row['telegram_user_id'] ?? '');
+            $user = broth_log_copilot_authorized_user($telegramUserId);
 
-        // /pilotid is the one command an unauthorized sender may use - checked before the
-        // authorization gate below on purpose, and scoped to real production message updates only
-        // (never callback_query). It only responds inside the real production Ops chat(s);
-        // everywhere else (DM, staging, any other chat) it falls straight through to the same
-        // deny-by-default path as every other command, with no distinguishing reply. It never
-        // creates, modifies, or reads broth_log_authorized_users beyond the read-only lookup above,
-        // and never touches broth_log_routing_rules.
-        if ((string)($row['update_type'] ?? '') === 'message'
-            && broth_log_copilot_is_pilot_id_text((string)$row['message_text'])
-            && broth_log_copilot_is_production_ops_chat((string)$row['chat_id'])) {
-            $lang = $user['preferred_language'] ?? broth_log_copilot_detect_language((string)$row['message_text']);
-            $response = broth_log_copilot_pilot_id_response($user, $lang);
-            $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $response['message']);
+            // /pilotid is the one command an unauthorized sender may use - checked before the
+            // authorization gate below on purpose, and scoped to real production message updates only
+            // (never callback_query). It only responds inside the real production Ops chat(s);
+            // everywhere else (DM, staging, any other chat) it falls straight through to the same
+            // deny-by-default path as every other command, with no distinguishing reply. It never
+            // creates, modifies, or reads broth_log_authorized_users beyond the read-only lookup above,
+            // and never touches broth_log_routing_rules.
+            if ((string)($row['update_type'] ?? '') === 'message'
+                && broth_log_copilot_is_pilot_id_text((string)$row['message_text'])
+                && broth_log_copilot_is_production_ops_chat((string)$row['chat_id'])) {
+                $lang = $user['preferred_language'] ?? broth_log_copilot_detect_language((string)$row['message_text']);
+                $response = broth_log_copilot_pilot_id_response($user, $lang);
+                $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $response['message']);
+                if (!empty($send['sent'])) {
+                    run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+                    $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => 'pilot_id', 'outbound' => 'sent'];
+                    continue;
+                }
+                $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
+                run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => 'pilot_id', 'outbound' => 'failed', 'reason' => $reason];
+                continue;
+            }
+
+            if (!$user) {
+                run("UPDATE broth_log_bot_inbox SET status='denied', processed_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'denied'];
+                continue;
+            }
+            if (($row['update_type'] ?? '') === 'callback_query') {
+                $response = broth_log_copilot_callback_response((string)$row['message_text'], $user, (string)$row['chat_id'], $now);
+                $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], (string)$response['message']);
+                if (!empty($send['sent'])) {
+                    run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+                    $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $response['intent'], 'outbound' => 'sent'];
+                    continue;
+                }
+                $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
+                run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $response['intent'], 'outbound' => 'failed', 'reason' => $reason];
+                continue;
+            }
+            $parsed = broth_log_copilot_parse((string)$row['message_text'], $user, $now);
+            run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at)
+                 VALUES (?,?,datetime('now', '+24 hours'),datetime('now'))", [
+                $telegramUserId,
+                json_encode(['last_parse' => $parsed, 'chat_id' => $row['chat_id']]),
+            ]);
+            $actionResponse = broth_log_copilot_message_action_response((string)$row['message_text'], $parsed, $user, (string)$row['chat_id'], $now);
+            $message = $actionResponse ? (string)$actionResponse['message'] : broth_log_copilot_format_response($parsed, $user);
+            $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $message);
             if (!empty($send['sent'])) {
                 run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
-                $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => 'pilot_id', 'outbound' => 'sent'];
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $actionResponse['intent'] ?? $parsed['intent'], 'language' => $parsed['language'], 'outbound' => 'sent'];
                 continue;
             }
             $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
             run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
-            $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => 'pilot_id', 'outbound' => 'failed', 'reason' => $reason];
-            continue;
-        }
-
-        if (!$user) {
-            run("UPDATE broth_log_bot_inbox SET status='denied', processed_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
-            $processed[] = ['update_id' => $row['update_id'], 'status' => 'denied'];
-            continue;
-        }
-        if (($row['update_type'] ?? '') === 'callback_query') {
-            $response = broth_log_copilot_callback_response((string)$row['message_text'], $user, (string)$row['chat_id'], $now);
-            $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], (string)$response['message']);
-            if (!empty($send['sent'])) {
-                run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
-                $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $response['intent'], 'outbound' => 'sent'];
+            $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $parsed['intent'], 'language' => $parsed['language'], 'outbound' => 'failed', 'reason' => $reason];
+        } catch (Throwable $e) {
+            // Roll back defensively in case the exception left a transaction open. Harmless if
+            // none was active - every mutating helper this loop calls (ack/resolve/escalation
+            // actions) already manages its own BEGIN IMMEDIATE/COMMIT/ROLLBACK internally, so this
+            // is a safety net for the unexpected, not the expected path.
+            try { db()->exec('ROLLBACK'); } catch (Throwable $ignored) {}
+            $reason = broth_log_copilot_classify_db_exception($e);
+            if ($reason === 'lock_failed') {
+                // Transient: leave the row queued so the next cron tick retries it naturally once
+                // whatever held the lock releases it - retrying is exactly the right response.
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'queued', 'reason' => 'lock_failed'];
                 continue;
             }
-            $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
-            run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
-            $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $response['intent'], 'outbound' => 'failed', 'reason' => $reason];
-            continue;
+            // Anything else (a programming error, malformed data, an unexpected shape) would
+            // throw identically on every future tick if left queued - the exact poison-row
+            // failure mode this boundary exists to prevent. Move it out of the queued set
+            // immediately, but keep it auditable via last_error - a sanitized category only,
+            // never the raw exception message, stack trace, or payload.
+            run("UPDATE broth_log_bot_inbox SET status='processing_failed', processed_at=datetime('now'), last_error=? WHERE update_id=?", [$reason, $row['update_id']]);
+            $processed[] = ['update_id' => $row['update_id'], 'status' => 'processing_failed', 'reason' => $reason];
         }
-        $parsed = broth_log_copilot_parse((string)$row['message_text'], $user, $now);
-        run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at)
-             VALUES (?,?,datetime('now', '+24 hours'),datetime('now'))", [
-            $telegramUserId,
-            json_encode(['last_parse' => $parsed, 'chat_id' => $row['chat_id']]),
-        ]);
-        $actionResponse = broth_log_copilot_message_action_response((string)$row['message_text'], $parsed, $user, (string)$row['chat_id'], $now);
-        $message = $actionResponse ? (string)$actionResponse['message'] : broth_log_copilot_format_response($parsed, $user);
-        $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $message);
-        if (!empty($send['sent'])) {
-            run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
-            $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $actionResponse['intent'] ?? $parsed['intent'], 'language' => $parsed['language'], 'outbound' => 'sent'];
-            continue;
-        }
-        $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
-        run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
-        $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $parsed['intent'], 'language' => $parsed['language'], 'outbound' => 'failed', 'reason' => $reason];
     }
     return $processed;
 }

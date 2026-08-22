@@ -870,6 +870,95 @@ try {
     expect_eq($sentMessages[count($sentMessages) - 1]['payload']['text'], 'TEST - ' . broth_log_copilot_tr('pilot_id_already_registered', 'en'), 'an already-authorized user gets the harmless "already registered" reply, not the waiting-for-approval one');
     expect_true(q1("SELECT telegram_user_id,display_name,role,allowed_branches,active FROM broth_log_authorized_users WHERE telegram_user_id='101'") === $existingUserBefore, 'the already-authorized user\'s row is completely unchanged by /pilotid');
 
+    // --- Poison-row isolation: one row that throws must not abort the batch or block escalation ---
+    // Reuses the existing records-provider test seam to simulate a realistic downstream failure
+    // (e.g. malformed/unexpected data from the branch-records source) rather than inventing a new
+    // test-only hook - the same class of "something deep in per-row processing throws" as the real
+    // production incident on 2026-08-22, just triggered deterministically instead of by a live bug.
+    $poisonProvider = function (string $branch) {
+        throw new RuntimeException('simulated poison row failure - malformed downstream data');
+    };
+    $poisonUser = broth_log_copilot_authorized_user('101');
+
+    // Seed a real due Level-3 incident, exactly mirroring the worker script's own sequence
+    // ($due computed, then process_inbox(), then the due actions are applied) to prove the
+    // escalation phase still runs after a poison row in the same batch.
+    $poisonIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-poison-escalation']));
+    run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$poisonIncidentId]);
+    $poisonNow = new DateTimeImmutable('2026-08-22 01:00:00 UTC');
+    $poisonDueBeforeInbox = broth_log_copilot_due_escalations($poisonNow);
+    $poisonEscalationTarget = array_values(array_filter($poisonDueBeforeInbox, fn($d) => $d['incident']['incident_id'] === $poisonIncidentId));
+    expect_true(!empty($poisonEscalationTarget), 'the real incident is genuinely due for a reminder at the same moment the poison row will be processed');
+
+    broth_log_copilot_enqueue_webhook(['update_id' => 6001, 'message' => ['text' => '/help', 'from' => ['id' => 101], 'chat' => ['id' => 999], 'message_id' => 601]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 6002, 'message' => ['text' => 'today B1', 'from' => ['id' => 101], 'chat' => ['id' => 999], 'message_id' => 602]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 6003, 'message' => ['text' => '/help', 'from' => ['id' => 101], 'chat' => ['id' => 999], 'message_id' => 603]]);
+
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = $poisonProvider;
+    $poisonProcessed = broth_log_copilot_process_inbox(10, $poisonNow);
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+
+    $poisonRowA = find_processed($poisonProcessed, '6001');
+    $poisonRowPoison = find_processed($poisonProcessed, '6002');
+    $poisonRowB = find_processed($poisonProcessed, '6003');
+    expect_eq($poisonRowA['status'] ?? '', 'processed', 'the valid row BEFORE the poison row is processed normally');
+    expect_eq($poisonRowPoison['status'] ?? '', 'processing_failed', 'the poison row itself ends in a terminal processing_failed status, not left queued forever');
+    expect_eq($poisonRowPoison['reason'] ?? '', 'internal_error', 'the poison row records a sanitized failure category, not the raw exception');
+    expect_eq($poisonRowB['status'] ?? '', 'processed', 'the valid row AFTER the poison row is still processed - the batch is not aborted');
+
+    $poisonInboxRow = q1("SELECT status, last_error, outbound_status FROM broth_log_bot_inbox WHERE update_id='6002'");
+    expect_eq($poisonInboxRow['status'] ?? '', 'processing_failed', 'the poison row\'s persisted status is processing_failed');
+    expect_eq($poisonInboxRow['last_error'] ?? '', 'internal_error', 'the persisted failure reason is the sanitized category');
+    expect_true(!str_contains((string)$poisonInboxRow['last_error'], 'simulated poison row failure'), 'the raw exception message is never persisted, only the sanitized category');
+    expect_true($poisonInboxRow['outbound_status'] === null, 'a processing_failed row never reached the outbound-send step, so outbound_status is untouched');
+
+    // Most important: the escalation/reminder phase (which the worker script runs right after
+    // process_inbox() returns) still completes normally in the same tick a poison row was present.
+    $poisonEscalationResult = broth_log_copilot_apply_escalation_action_with_notification($poisonEscalationTarget[0], $poisonNow);
+    expect_eq($poisonEscalationResult['action'] ?? '', 'reminded', 'the escalation/reminder phase still completes in the same tick a poison row was present and handled');
+    expect_eq($poisonEscalationResult['outbound_sent'] ?? -1, 1, 'the reminder is actually delivered - the poison row did not silently suppress escalation delivery');
+
+    // No duplicate processing: a processing_failed row is never picked up again.
+    $poisonNoRequeue = broth_log_copilot_process_inbox(10, $poisonNow);
+    expect_true(find_processed($poisonNoRequeue, '6002') === null, 'a processing_failed row is never picked up again on a subsequent process_inbox() call - no duplicate processing');
+
+    // No open transaction / no stale lock survives a poison row: a completely unrelated real
+    // mutation (ACK on a freshly seeded incident) must still succeed immediately afterward.
+    $poisonLockProbeId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-poison-lock-probe']));
+    run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$poisonLockProbeId]);
+    $poisonAckProbe = broth_log_copilot_ack($poisonLockProbeId, $poisonUser, $poisonNow);
+    expect_true($poisonAckProbe['ok'] ?? false, 'a real mutation succeeds immediately after a poison row - proving no transaction or lock was left open');
+
+    // Positional variations: poison first in the batch, and multiple poison rows mixed with valid ones.
+    broth_log_copilot_enqueue_webhook(['update_id' => 6011, 'message' => ['text' => 'today B1', 'from' => ['id' => 101], 'chat' => ['id' => 999], 'message_id' => 611]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 6012, 'message' => ['text' => '/help', 'from' => ['id' => 101], 'chat' => ['id' => 999], 'message_id' => 612]]);
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = $poisonProvider;
+    $poisonFirstProcessed = broth_log_copilot_process_inbox(10, $poisonNow);
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    expect_eq(find_processed($poisonFirstProcessed, '6011')['status'] ?? '', 'processing_failed', 'a poison row as the FIRST row in the batch still ends in processing_failed');
+    expect_eq(find_processed($poisonFirstProcessed, '6012')['status'] ?? '', 'processed', 'a valid row after a leading poison row is still processed');
+
+    broth_log_copilot_enqueue_webhook(['update_id' => 6021, 'message' => ['text' => 'today B1', 'from' => ['id' => 101], 'chat' => ['id' => 999], 'message_id' => 621]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 6022, 'message' => ['text' => '/help', 'from' => ['id' => 101], 'chat' => ['id' => 999], 'message_id' => 622]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 6023, 'message' => ['text' => 'today B1', 'from' => ['id' => 101], 'chat' => ['id' => 999], 'message_id' => 623]]);
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = $poisonProvider;
+    $multiPoisonProcessed = broth_log_copilot_process_inbox(10, $poisonNow);
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    expect_eq(find_processed($multiPoisonProcessed, '6021')['status'] ?? '', 'processing_failed', 'the first of two poison rows fails cleanly');
+    expect_eq(find_processed($multiPoisonProcessed, '6022')['status'] ?? '', 'processed', 'the valid row sandwiched between two poison rows is processed');
+    expect_eq(find_processed($multiPoisonProcessed, '6023')['status'] ?? '', 'processing_failed', 'the second of two poison rows also fails cleanly, independently of the first');
+
+    // Transient (genuine DB lock) failures are preserved as retryable, unlike permanent ones: left
+    // queued rather than marked processing_failed, so the next cron tick retries once the lock clears.
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) {
+        throw new Exception('database is locked');
+    };
+    broth_log_copilot_enqueue_webhook(['update_id' => 6031, 'message' => ['text' => 'today B1', 'from' => ['id' => 101], 'chat' => ['id' => 999], 'message_id' => 631]]);
+    $transientProcessed = broth_log_copilot_process_inbox(10, $poisonNow);
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    expect_eq(find_processed($transientProcessed, '6031')['status'] ?? '', 'queued', 'a genuine transient lock failure leaves the row queued for a natural retry, unlike a permanent failure');
+    expect_eq(q1("SELECT status FROM broth_log_bot_inbox WHERE update_id='6031'")['status'] ?? '', 'queued', 'the persisted inbox row status also remains queued for a transient failure');
+
     // Cross-cutting: across every message sent by any test in this run (queries, incident
     // notifications, ACK/resolve confirmations, reminders, escalations), none was ever addressed
     // to the one-way-alert sentinel chat - proving Copilot's destination selection never leaks

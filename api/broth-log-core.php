@@ -174,8 +174,19 @@ function broth_log_gviz_table(string $branch): array {
 }
 
 function broth_log_derive_business_date_from_submission(string $submittedAt): string {
-    $parsed = DateTimeImmutable::createFromFormat('n/j/Y G:i:s', trim($submittedAt), new DateTimeZone(BROTH_LOG_BUSINESS_TIMEZONE));
-    return $parsed ? broth_log_business_date($parsed) : '';
+    $format = 'n/j/Y G:i:s';
+    $submittedAt = trim($submittedAt);
+    $parsed = DateTimeImmutable::createFromFormat($format, $submittedAt, new DateTimeZone(BROTH_LOG_BUSINESS_TIMEZONE));
+    if (!$parsed) return '';
+    // createFromFormat() silently overflows an impossible calendar value into a different, valid
+    // one (e.g. "2/30/2026" becomes March 2) while still returning a truthy object - it does not
+    // fail. getLastErrors() flags that overflow, and re-formatting the parsed result back to the
+    // same pattern is an independent check that catches the same class of drift (and anything
+    // getLastErrors might miss): a genuinely valid timestamp always round-trips back to itself.
+    $errors = DateTimeImmutable::getLastErrors();
+    if ($errors !== false && ((($errors['warning_count'] ?? 0) > 0) || (($errors['error_count'] ?? 0) > 0))) return '';
+    if ($parsed->format($format) !== $submittedAt) return '';
+    return broth_log_business_date($parsed);
 }
 
 function broth_log_normalize_row(array $row, array $cols, string $sheetBranch): array {

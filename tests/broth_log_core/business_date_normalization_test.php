@@ -65,6 +65,17 @@ expect_eq($normalized['businessDate'], '', 'a malformed submittedAt does not inv
 $normalized = broth_log_normalize_row($row, $cols, 'B3');
 expect_eq($normalized['businessDate'], '', 'a completely absent submittedAt does not invent a business date - stays unresolved');
 
+// 3b. Hardening: createFromFormat() silently overflows an impossible calendar/time value into a
+// different, valid one instead of failing - it must never be trusted at face value. Each of these
+// must resolve to '' (rejected), not a "close enough" nearby date.
+expect_eq(broth_log_derive_business_date_from_submission('2/30/2026 10:00:00'), '', 'Feb 30 (impossible calendar date) is rejected, not silently normalized to March 2');
+expect_eq(broth_log_derive_business_date_from_submission('8/7/2026 25:00:00'), '', 'an impossible hour (25) is rejected, not silently rolled into the next day');
+expect_eq(broth_log_derive_business_date_from_submission('8/7/2026 10:65:00'), '', 'an impossible minute (65) is rejected, not silently rolled forward');
+expect_eq(broth_log_derive_business_date_from_submission('8/7/2026 10:00:65'), '', 'an impossible second (65) is rejected, not silently rolled forward');
+expect_eq(broth_log_derive_business_date_from_submission('2/29/2028 10:00:00'), '2028-02-29', 'a genuinely valid leap day (2028 is a leap year) is accepted');
+expect_eq(broth_log_derive_business_date_from_submission('2/29/2026 10:00:00'), '', 'Feb 29 in a non-leap year (2026) is rejected, not silently normalized to March 1');
+expect_eq(broth_log_derive_business_date_from_submission('8/7/2026 10:00:00 extra trailing text'), '', 'unexpected trailing content after a valid-looking timestamp is rejected, not silently ignored');
+
 // 4. Timezone boundary: a submission at 23:59:59 Chicago time must not roll into the next day.
 expect_eq(broth_log_derive_business_date_from_submission('12/31/2026 23:59:59'), '2026-12-31', 'a submission one second before midnight Chicago time still derives the same calendar day');
 expect_eq(broth_log_derive_business_date_from_submission('1/1/2027 0:00:01'), '2027-01-01', 'a submission one second after midnight Chicago time correctly derives the new calendar day');

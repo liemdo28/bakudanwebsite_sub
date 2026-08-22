@@ -820,7 +820,8 @@ function broth_log_copilot_apply_escalation_action(array $action, ?DateTimeImmut
     if ($action['action'] === 'fallback_reminder') {
         // One-time audit marker that MOD manual fallback should now engage. State stays
         // escalated_level_3 (not a terminal state) and execution falls through to the same
-        // reminder logic below, so Telegram pushes keep going every 3 minutes until ACK.
+        // reminder logic below, so Telegram pushes keep going every BROTH_LOG_COPILOT_L3_REMINDER_SECONDS
+        // (15 minutes) until ACK.
         broth_log_copilot_audit($incident['incident_id'], 'fallback_required', null, ['fallback' => broth_log_copilot_env('TELEGRAM_LEVEL3_FALLBACK', 'operations manual fallback')]);
     }
     run("UPDATE broth_log_incidents SET state=CASE WHEN state='detected' THEN 'notified_level_1' ELSE state END, last_reminder_at=?, reminder_count=reminder_count+1, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$ts, $incident['incident_id'], $lockToken]);

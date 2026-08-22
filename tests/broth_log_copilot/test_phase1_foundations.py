@@ -67,8 +67,12 @@ def test_ack_resolve_and_escalation_are_transactional_and_fake_clockable():
     assert 'function broth_log_copilot_ack(' in copilot
     assert 'function broth_log_copilot_resolve(' in copilot
     assert 'function broth_log_copilot_due_escalations(?DateTimeImmutable $now = null)' in copilot
-    assert "9 * 60" in copilot
-    assert "3 * 60" in copilot
+    # Balanced cadence: T+0 initial, T+5 reminder, T+10 -> L2, T+15 -> L3 (URGENT), then a level-3
+    # reminder every 15 minutes indefinitely until ACK - named constants, not inline literals.
+    assert 'BROTH_LOG_COPILOT_L1_ESCALATE_SECONDS = 600' in copilot
+    assert 'BROTH_LOG_COPILOT_L2_ESCALATE_SECONDS = 300' in copilot
+    assert 'BROTH_LOG_COPILOT_REMINDER_SECONDS = 300' in copilot
+    assert 'BROTH_LOG_COPILOT_L3_REMINDER_SECONDS = 900' in copilot
     # Level 3 has no reminder cap: crossing 10 reminders records a one-time 'fallback_reminder'
     # audit marker but keeps reminding indefinitely - it must never switch to a terminal state
     # that would silently stop the Telegram pushes.

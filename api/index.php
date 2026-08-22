@@ -270,6 +270,14 @@ function db_migrate(SQLite3 $db): void {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS broth_log_telegram_alert_intake_errors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        branch TEXT,
+        station TEXT,
+        reason TEXT NOT NULL,
+        batch_context TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE TABLE IF NOT EXISTS campaigns (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -901,6 +909,49 @@ function validate_telegram_alert(array $alert): array {
     return $alert;
 }
 
+// broth_log_validate_telegram_alert_safe() lives in broth-log-core.php (pure, no DB/routing
+// dependency) so it can be unit tested directly. Same rules as validate_telegram_alert() above,
+// but returns a structured result instead of calling err() (a hard exit) - a hard exit here would
+// be unsafe for a multi-alert batch.
+
+function record_telegram_alert_intake_error(?string $branch, ?string $station, string $reason, string $batchContext): void {
+    run("INSERT INTO broth_log_telegram_alert_intake_errors (branch,station,reason,batch_context) VALUES (?,?,?,?)", [
+        $branch,
+        $station,
+        $reason,
+        substr($batchContext, 0, 60),
+    ]);
+}
+
+// Processes a batch of alerts with per-alert failure isolation: a malformed alert is recorded and
+// skipped, every other alert in the batch - any branch - still reaches both the one-way alert path
+// and, when enabled, the Copilot incident path.
+function broth_log_process_telegram_alert_batch(array $alerts, string $batchContext = ''): array {
+    $results = [];
+    $active = [];
+    foreach ($alerts as $alert) {
+        if (!is_array($alert)) continue;
+        $validation = broth_log_validate_telegram_alert_safe($alert);
+        if (!$validation['ok']) {
+            record_telegram_alert_intake_error($validation['branch'] ?? null, $validation['station'] ?? null, $validation['reason'], $batchContext);
+            $results[] = ['sent' => false, 'skipped' => 'invalid', 'reason' => $validation['reason']];
+            continue;
+        }
+        $validated = $validation['alert'];
+        $active[] = telegram_alert_fingerprint($validated);
+        $result = telegram_process_alert($validated);
+        if (broth_log_copilot_enabled()) {
+            $result['incidentId'] = broth_log_copilot_create_incident($validated);
+            if ($result['incidentId'] !== '') {
+                $result['copilotNotification'] = broth_log_copilot_notify_incident($result['incidentId']);
+            }
+        }
+        $results[] = $result;
+    }
+    $resolved = mark_resolved_telegram_alerts($active);
+    return ['processed' => count($results), 'resolved' => $resolved, 'results' => $results];
+}
+
 function telegram_dashboard_link(array $alert): string {
     $branch = strtoupper(trim((string)($alert['branch'] ?? 'B1')));
     $date = trim((string)($alert['businessDate'] ?? $alert['business_date'] ?? ''));
@@ -1139,23 +1190,8 @@ if ($path === '/broth-log/telegram/alerts' && $METHOD === 'POST') {
     telegram_cron_or_admin();
     $alerts = $BODY['alerts'] ?? [];
     if (!is_array($alerts)) err('alerts must be an array.');
-    $results = [];
-    $active = [];
-    foreach ($alerts as $alert) {
-        if (!is_array($alert)) continue;
-        $validated = validate_telegram_alert($alert);
-        $active[] = telegram_alert_fingerprint($validated);
-        $result = telegram_process_alert($validated);
-        if (broth_log_copilot_enabled()) {
-            $result['incidentId'] = broth_log_copilot_create_incident($validated);
-            if ($result['incidentId'] !== '') {
-                $result['copilotNotification'] = broth_log_copilot_notify_incident($result['incidentId']);
-            }
-        }
-        $results[] = $result;
-    }
-    $resolved = mark_resolved_telegram_alerts($active);
-    ok(['telegram' => telegram_config_status(), 'processed' => count($results), 'resolved' => $resolved, 'results' => $results]);
+    $batch = broth_log_process_telegram_alert_batch($alerts, 'cron');
+    ok(['telegram' => telegram_config_status()] + $batch);
 }
 
 if ($path === '/broth-log/telegram/webhook' && $METHOD === 'POST') {

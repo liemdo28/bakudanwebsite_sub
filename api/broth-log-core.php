@@ -293,6 +293,43 @@ function broth_log_critical_alerts_for_branch(string $branch, string $date): arr
     return $alerts;
 }
 
+// Validates an alert the same way as api/index.php's validate_telegram_alert(), but returns a
+// structured result instead of calling err() (a hard PHP exit). validate_telegram_alert() is used
+// for single-alert manual/admin actions where an exit-on-invalid is acceptable; this version exists
+// specifically for the batch alert-intake path, where a hard exit on one malformed alert would
+// abort every remaining alert in the batch - silently suppressing another store's valid,
+// unrelated food-safety alert. Kept here (not in index.php) because it has no DB/routing
+// dependency, so it can be unit tested directly.
+function broth_log_validate_telegram_alert_safe(array $alert): array {
+    $branch = strtoupper(trim((string)($alert['branch'] ?? '')));
+    $severity = strtolower(trim((string)($alert['severity'] ?? '')));
+    $station = trim((string)($alert['station'] ?? ''));
+    $businessDate = trim((string)($alert['businessDate'] ?? $alert['business_date'] ?? ''));
+    $branchForLog = $branch !== '' ? $branch : null;
+    $stationForLog = $station !== '' ? substr($station, 0, 120) : null;
+    if (!in_array($branch, ['B1', 'B2', 'B3'], true)) {
+        return ['ok' => false, 'reason' => 'invalid_branch', 'branch' => $branchForLog, 'station' => $stationForLog];
+    }
+    if ($severity !== 'critical') {
+        return ['ok' => false, 'reason' => 'not_critical', 'branch' => $branchForLog, 'station' => $stationForLog];
+    }
+    if ($station === '' || strlen($station) > 120) {
+        return ['ok' => false, 'reason' => 'invalid_station', 'branch' => $branchForLog, 'station' => $stationForLog];
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $businessDate)) {
+        return ['ok' => false, 'reason' => 'invalid_business_date', 'branch' => $branchForLog, 'station' => $stationForLog];
+    }
+    $alert['branch'] = $branch;
+    $alert['severity'] = $severity;
+    $alert['businessDate'] = $businessDate;
+    $alert['station'] = $station;
+    $alert['responseId'] = trim((string)($alert['responseId'] ?? $alert['response_id'] ?? ''));
+    if ($alert['responseId'] === '') {
+        $alert['responseId'] = hash('sha256', json_encode([$branch, $businessDate, $station, $alert['businessTime'] ?? '', $alert['employee'] ?? '']));
+    }
+    return ['ok' => true, 'alert' => $alert];
+}
+
 function broth_log_summary(array $records): array {
     $issues = [];
     foreach ($records as $record) $issues = array_merge($issues, $record['issues']);

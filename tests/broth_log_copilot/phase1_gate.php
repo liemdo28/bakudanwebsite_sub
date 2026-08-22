@@ -339,6 +339,17 @@ try {
     expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_incident_events WHERE incident_id=? AND event_type='acknowledged'", [$incidentId])['c'] ?? -1, 1, 'exactly one acknowledged audit event even after a second valid token is consumed');
     expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Incident acknowledged'), 'second valid-token ACK attempt does not send a duplicate confirmation');
 
+    // Regression: ack()/resolve()/apply_escalation_action() used to collapse every Throwable in
+    // their BEGIN IMMEDIATE / COMMIT block into 'lock_failed', even when the exception was not
+    // actually SQLite lock contention - hiding the real cause from anyone debugging a failure.
+    expect_eq(broth_log_copilot_classify_db_exception(new Exception('database is locked')), 'lock_failed', 'a genuine SQLite lock message is classified as lock_failed');
+    expect_eq(broth_log_copilot_classify_db_exception(new Exception('database table is locked')), 'lock_failed', 'the table-locked variant is also classified as lock_failed');
+    expect_eq(broth_log_copilot_classify_db_exception(new Exception('DATABASE IS LOCKED')), 'lock_failed', 'lock classification is case-insensitive, matching how SQLite driver messages can vary');
+    expect_eq(broth_log_copilot_classify_db_exception(new Exception('near "SELCT": syntax error')), 'internal_error', 'an unrelated SQL/runtime exception is classified as internal_error, not mislabeled as a lock');
+    expect_eq(broth_log_copilot_classify_db_exception(new Exception('UNIQUE constraint failed: broth_log_incidents.active_key')), 'internal_error', 'a constraint-violation exception is classified as internal_error, not mislabeled as a lock');
+    $rawMessageException = new Exception('UNIQUE constraint failed: broth_log_incidents.active_key with secret-looking-value-XYZ');
+    expect_true(!str_contains(broth_log_copilot_classify_db_exception($rawMessageException), 'secret-looking-value-XYZ'), 'the classified reason never leaks the raw exception message text');
+
     expect_eq(broth_log_copilot_ack($incidentId, ['telegram_user_id' => '999', 'allowed_branch_list' => ['B2']])['reason'], 'forbidden', 'cross-branch ACK is rejected');
     expect_eq(broth_log_copilot_resolve($incidentId, $user, null, 'fixed')['reason'], 'missing_resolution_evidence', 'resolve requires recheck temperature');
     expect_eq(broth_log_copilot_resolve($incidentId, $user, 45, 'fixed')['reason'], 'recheck_still_unsafe', 'resolve rejects unsafe recheck');

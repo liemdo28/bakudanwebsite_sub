@@ -173,12 +173,24 @@ function broth_log_gviz_table(string $branch): array {
     return $json['table'] ?? ['cols' => [], 'rows' => []];
 }
 
+function broth_log_derive_business_date_from_submission(string $submittedAt): string {
+    $parsed = DateTimeImmutable::createFromFormat('n/j/Y G:i:s', trim($submittedAt), new DateTimeZone(BROTH_LOG_BUSINESS_TIMEZONE));
+    return $parsed ? broth_log_business_date($parsed) : '';
+}
+
 function broth_log_normalize_row(array $row, array $cols, string $sheetBranch): array {
     $index = broth_log_build_index($cols);
     $cells = $row['c'] ?? [];
     $get = fn(string $field) => ($index[$field] ?? -1) >= 0 ? broth_log_cell_value($cells[$index[$field]] ?? null) : '';
     $branch = strtoupper($get('branch') ?: $sheetBranch);
+    // The sheet's own "business date" field is preserved exactly when present. Only when it is
+    // blank do we derive a business date from the submission timestamp (always present, always
+    // reliable) using the same business-date/timezone rule used everywhere else in this system -
+    // never an arbitrary guess, and never overriding a value the form actually recorded.
     $businessDate = $get('businessDate');
+    if ($businessDate === '') {
+        $businessDate = broth_log_derive_business_date_from_submission($get('submittedAt'));
+    }
     $responseId = $get('responseId');
     if ($responseId === '') {
         $responseId = implode('|', [$branch, $businessDate, $get('businessTime'), $get('employeeName'), $get('submittedAt')]);

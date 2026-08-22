@@ -774,6 +774,26 @@ try {
     expect_true(broth_log_copilot_is_production_ops_chat($opsGroupChatId), 'the configured routing destination is recognized as the production Ops chat');
     expect_true(!broth_log_copilot_is_production_ops_chat('some-unrelated-chat'), 'an arbitrary chat id is not recognized as the production Ops chat');
 
+    // Regression: real Telegram group chat ids are numeric-looking strings (e.g. "-5367135326").
+    // Using a chat id as a PHP array key (as an earlier draft did, to dedupe) silently coerces a
+    // numeric-string key to a real int, which then fails hash_equals()'s strict string-only type
+    // check with a TypeError - crashing the production worker on every tick as long as any
+    // /pilotid message stayed queued, and starving the escalation-reminder loop that runs after
+    // it in the same script. Caught only by testing with a genuinely numeric chat id, not the
+    // non-numeric one used everywhere else in this test file.
+    $numericOpsGroupChatId = '-5367135399';
+    run("INSERT OR REPLACE INTO broth_log_routing_rules (branch,stage,level,telegram_user_ids,chat_id,active) VALUES (?,?,?,?,?,1)",
+        ['B1', 'staging', 1, json_encode(['999']), $numericOpsGroupChatId]);
+    expect_true(broth_log_copilot_is_production_ops_chat($numericOpsGroupChatId), 'a numeric-string chat id is matched correctly, with no TypeError from array-key coercion');
+    broth_log_copilot_enqueue_webhook([
+        'update_id' => 5099,
+        'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $numericOpsGroupChatId], 'message_id' => 599],
+    ]);
+    $pilotNumericChatProcessed = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(find_processed($pilotNumericChatProcessed, '5099')['status'] ?? '', 'processed', '/pilotid through a real numeric-shaped chat id is processed without crashing the worker');
+    run("INSERT OR REPLACE INTO broth_log_routing_rules (branch,stage,level,telegram_user_ids,chat_id,active) VALUES (?,?,?,?,?,1)",
+        ['B1', 'staging', 1, json_encode(['999']), $opsGroupChatId]);
+
     $authorizedUsersBefore = count(q("SELECT * FROM broth_log_authorized_users"));
     $routingSnapshotBefore = q("SELECT branch,stage,level,telegram_user_ids,chat_id,active FROM broth_log_routing_rules ORDER BY branch,stage,level");
 

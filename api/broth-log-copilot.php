@@ -9,6 +9,22 @@ const BROTH_LOG_COPILOT_CONTEXT_TTL_HOURS = 24;
 const BROTH_LOG_COPILOT_INCIDENT_RETENTION_MONTHS = 12;
 const BROTH_LOG_COPILOT_ESCALATION_LOCK_SECONDS = 120;
 
+// Balanced escalation cadence (approved business decision, replaces the prior 9-min-escalate /
+// 3-min-reminder-at-every-level schedule). Target real-world timeline, given the production
+// worker runs every 5 minutes: T+0 initial alert, T+5 reminder, T+10 escalate to L2, T+15
+// escalate to L3 (URGENT), then a reminder every 15 minutes indefinitely until ACK - no cap,
+// no silent stop. L1's escalate threshold is 10 minutes (not 9) so the T+5 reminder still lands
+// before escalation; L2's is only 5 minutes (time already spent in L1 doesn't count - level
+// timing is always relative to level_entered_at) so L2 sends its own alert at T+10 and escalates
+// to L3 at T+15 without an intermediate L2 reminder. L3's reminder interval governs every
+// reminder at level 3, indefinitely - the first one included, since escalating into level 3
+// already sets last_reminder_at to the escalation moment (see broth_log_copilot_apply_escalation_action()),
+// so the first L3 reminder naturally waits a full interval rather than firing on the very next tick.
+const BROTH_LOG_COPILOT_L1_ESCALATE_SECONDS = 600;
+const BROTH_LOG_COPILOT_L2_ESCALATE_SECONDS = 300;
+const BROTH_LOG_COPILOT_REMINDER_SECONDS = 300;
+const BROTH_LOG_COPILOT_L3_REMINDER_SECONDS = 900;
+
 function broth_log_copilot_enabled(): bool {
     return in_array(strtolower(trim((string)(getenv('TELEGRAM_COPILOT_ENABLED') ?: 'false'))), ['1','true','yes','on'], true);
 }
@@ -740,15 +756,20 @@ function broth_log_copilot_due_escalations(?DateTimeImmutable $now = null): arra
         $levelStart = !empty($incident['level_entered_at']) ? new DateTimeImmutable($incident['level_entered_at'] . ' UTC') : $created;
         $last = $incident['last_reminder_at'] ? new DateTimeImmutable($incident['last_reminder_at'] . ' UTC') : null;
         $ageInLevel = $now->getTimestamp() - $levelStart->getTimestamp();
-        $sinceLast = $last ? $now->getTimestamp() - $last->getTimestamp() : PHP_INT_MAX;
+        // Falls back to level-entry time (not an artificial "infinitely overdue" sentinel) when no
+        // reminder has fired yet at this level, so the very first reminder still has to wait a full
+        // interval like every subsequent one - not fire on whatever tick happens to run first.
+        $sinceLast = $now->getTimestamp() - ($last ?? $levelStart)->getTimestamp();
         $level = (int)$incident['current_level'];
-        if ($level < 3 && $ageInLevel >= 9 * 60) {
+        $escalateThreshold = $level === 1 ? BROTH_LOG_COPILOT_L1_ESCALATE_SECONDS : BROTH_LOG_COPILOT_L2_ESCALATE_SECONDS;
+        $reminderThreshold = $level === 3 ? BROTH_LOG_COPILOT_L3_REMINDER_SECONDS : BROTH_LOG_COPILOT_REMINDER_SECONDS;
+        if ($level < 3 && $ageInLevel >= $escalateThreshold) {
             $due[] = ['action' => 'escalate', 'incident' => $incident, 'to_level' => $level + 1];
-        } elseif ($sinceLast >= 3 * 60) {
-            // Level 3 has no reminder cap and never goes silent: it keeps reminding every 3
-            // minutes indefinitely until ACK. The one-time crossing into "MOD fallback should
-            // now engage" is recorded as a parallel audit marker (fallback_reminder), not as a
-            // terminal state that would stop the Telegram pushes.
+        } elseif ($sinceLast >= $reminderThreshold) {
+            // Level 3 has no reminder cap and never goes silent: it keeps reminding every
+            // BROTH_LOG_COPILOT_L3_REMINDER_SECONDS indefinitely until ACK. The one-time crossing
+            // into "MOD fallback should now engage" is recorded as a parallel audit marker
+            // (fallback_reminder), not as a terminal state that would stop the Telegram pushes.
             $action = ($level === 3 && (int)$incident['reminder_count'] === 10) ? 'fallback_reminder' : 'remind';
             $due[] = ['action' => $action, 'incident' => $incident, 'level' => $level];
         }
@@ -799,7 +820,8 @@ function broth_log_copilot_apply_escalation_action(array $action, ?DateTimeImmut
     if ($action['action'] === 'fallback_reminder') {
         // One-time audit marker that MOD manual fallback should now engage. State stays
         // escalated_level_3 (not a terminal state) and execution falls through to the same
-        // reminder logic below, so Telegram pushes keep going every 3 minutes until ACK.
+        // reminder logic below, so Telegram pushes keep going every BROTH_LOG_COPILOT_L3_REMINDER_SECONDS
+        // (15 minutes) until ACK.
         broth_log_copilot_audit($incident['incident_id'], 'fallback_required', null, ['fallback' => broth_log_copilot_env('TELEGRAM_LEVEL3_FALLBACK', 'operations manual fallback')]);
     }
     run("UPDATE broth_log_incidents SET state=CASE WHEN state='detected' THEN 'notified_level_1' ELSE state END, last_reminder_at=?, reminder_count=reminder_count+1, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$ts, $incident['incident_id'], $lockToken]);

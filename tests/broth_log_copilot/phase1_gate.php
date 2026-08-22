@@ -281,11 +281,16 @@ try {
     expect_eq(count($sentMessages), $sentBeforeIncident + 1, 'incident notification sends once');
     $notification = $sentMessages[$sentBeforeIncident]['payload'];
     expect_true(str_starts_with($notification['text'], 'TEST'), 'incident notification uses TEST prefix in staging');
-    expect_true(str_contains($notification['text'], 'Store: B1'), 'incident notification includes store');
+    expect_true(str_contains($notification['text'], 'B1'), 'incident notification includes the store label');
     expect_true(str_contains($notification['text'], 'Prep Area Cooler'), 'incident notification includes station');
-    expect_true(str_contains($notification['text'], 'Recorded: 120F'), 'incident notification shows the correct recorded temperature (regression: was truncated to 12F)');
-    expect_true(str_contains($notification['text'], 'Level: 1'), 'incident notification includes the escalation level');
-    expect_true(str_contains($notification['text'], 'Employee: Unassigned'), 'incident notification falls back to Unassigned when no employee is known');
+    expect_true(str_contains($notification['text'], '120°F'), 'incident notification shows the correct recorded temperature (regression: was truncated to 12F)');
+    expect_true(str_contains($notification['text'], 'too high'), 'a max-violation (<=) incident is worded as "too high", not guessed or generic, since the direction is deterministically known');
+    expect_true(str_contains($notification['text'], 'Required: ≤ 40°F'), 'the required limit is shown using the correct operator and value');
+    expect_true(!str_contains($notification['text'], 'Level:'), 'the concise Telegram body never displays the internal escalation level number');
+    expect_true(!str_contains($notification['text'], 'Employee'), 'the concise Telegram body never displays the employee name');
+    expect_true(!str_contains($notification['text'], 'Business:'), 'the concise Telegram body never displays business date/time');
+    expect_true(!str_contains($notification['text'], 'Ref:') && !str_contains($notification['text'], $incidentId), 'the concise Telegram body never displays the incident reference/ID');
+    expect_eq(q1("SELECT employee_name FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['employee_name'] ?? '', '', 'employee_name is still stored on the incident row even though it is hidden from the Telegram body');
     expect_true(isset($notification['reply_markup']['inline_keyboard'][0][0]['callback_data']), 'incident notification includes inline ACK button');
     $ackData = $notification['reply_markup']['inline_keyboard'][0][0]['callback_data'];
     $resolveData = $notification['reply_markup']['inline_keyboard'][0][1]['callback_data'];
@@ -296,7 +301,64 @@ try {
 
     $employeeIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-with-employee', 'employee' => 'Jordan Rivera']));
     broth_log_copilot_notify_incident($employeeIncidentId);
-    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Employee: Jordan Rivera'), 'incident notification shows the real employee name when known');
+    expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Jordan Rivera'), 'a known employee name is still never shown in the concise Telegram body');
+    expect_eq(q1("SELECT employee_name FROM broth_log_incidents WHERE incident_id=?", [$employeeIncidentId])['employee_name'] ?? '', 'Jordan Rivera', 'the real employee name is still stored on the incident row - hidden from Telegram only, not removed from the record');
+
+    // --- Concise Telegram alert presentation: min-violation direction, reminder/urgent tiers,
+    // B2/B3 labels, controlled-test labeling, and full temperature-format regression. ---
+    $minAlert = array_replace($alert, ['responseId' => 'resp-min-violation', 'stationKey' => 'bowlWarmer', 'station' => 'Bowl Warmer', 'temperature' => '0F', 'target' => '>= 100F']);
+    $minIncidentId = broth_log_copilot_create_incident($minAlert);
+    broth_log_copilot_notify_incident($minIncidentId);
+    $minNotifyText = $sentMessages[count($sentMessages) - 1]['payload']['text'];
+    expect_true(str_contains($minNotifyText, 'too low'), 'a min-violation (>=) incident notify is worded as "too low"');
+    expect_true(str_contains($minNotifyText, 'Required: ≥ 100°F'), 'a min-violation required line uses the >= operator symbol and correct value');
+    expect_true(str_contains($minNotifyText, '0°F'), 'a min-violation shows the correct recorded temperature, including a genuine zero value');
+
+    run("UPDATE broth_log_incidents SET last_reminder_at=NULL, reminder_count=0 WHERE incident_id=?", [$minIncidentId]);
+    $minReminderResult = broth_log_copilot_apply_escalation_action_with_notification(['action' => 'remind', 'incident' => q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$minIncidentId]), 'level' => 1], new DateTimeImmutable('2026-08-20 00:20:00 UTC'));
+    $minReminderText = $sentMessages[count($sentMessages) - 1]['payload']['text'];
+    expect_true(str_contains($minReminderText, 'still below limit'), 'a min-violation reminder is worded as "still below limit"');
+    expect_true(str_contains($minReminderText, 'REMINDER'), 'a level-1 reminder uses the REMINDER header, not the initial-alert header');
+
+    // Max-violation reminder wording, on the original B1 Prep Area Cooler incident.
+    run("UPDATE broth_log_incidents SET last_reminder_at=NULL, reminder_count=0 WHERE incident_id=?", [$incidentId]);
+    broth_log_copilot_apply_escalation_action_with_notification(['action' => 'remind', 'incident' => q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$incidentId]), 'level' => 1], new DateTimeImmutable('2026-08-20 00:20:00 UTC'));
+    $maxReminderText = $sentMessages[count($sentMessages) - 1]['payload']['text'];
+    expect_true(str_contains($maxReminderText, 'still above limit'), 'a max-violation reminder is worded as "still above limit"');
+
+    // Urgent/level-3 presentation never exposes internal escalation-state language.
+    $urgentIncident = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
+    $urgentIncident['current_level'] = 3;
+    $urgentText = broth_log_copilot_incident_message($urgentIncident, 'reminder');
+    expect_true(str_contains($urgentText, 'URGENT'), 'a level-3 message uses the URGENT header');
+    expect_true(str_contains($urgentText, 'still out of range'), 'a level-3 message is worded as "still out of range", not a reminder-tier phrase');
+    expect_true(str_contains($urgentText, 'Manager action required'), 'a level-3 message tells the manager action is required, not "please check and re-temp"');
+    foreach (['Level 3', 'level_3', 'escalated_level_3', 'current_level', 'state machine', 'routing level'] as $forbidden) {
+        expect_true(!str_contains($urgentText, $forbidden), "the urgent message never exposes the internal phrase \"{$forbidden}\"");
+    }
+
+    // B2 / B3 labels are not hardcoded - the branch is read from the incident, not assumed to be B1.
+    $b2Incident = array_replace($urgentIncident, ['branch' => 'B2', 'current_level' => 1]);
+    expect_true(str_contains(broth_log_copilot_incident_message($b2Incident, 'notify'), 'B2'), 'a B2 incident notification correctly labels the store as B2, not hardcoded to B1');
+    $b3Incident = array_replace($urgentIncident, ['branch' => 'B3', 'current_level' => 1]);
+    expect_true(str_contains(broth_log_copilot_incident_message($b3Incident, 'notify'), 'B3'), 'a B3 incident notification correctly labels the store as B3, not hardcoded to B1');
+
+    // Controlled-test incidents remain unmistakably labeled at every tier, including urgent.
+    $testIncident = array_replace($urgentIncident, ['branch' => 'B2', 'employee_name' => 'CONTROLLED TEST', 'current_level' => 1]);
+    $testNotifyText = broth_log_copilot_incident_message($testIncident, 'notify');
+    expect_true(str_contains($testNotifyText, 'CONTROLLED TEST'), 'a controlled-test notification is unmistakably labeled as a test');
+    expect_true(str_contains($testNotifyText, 'TEST ONLY'), 'a controlled-test notification tells the reader no action is required');
+    $testIncident['current_level'] = 3;
+    $testUrgentText = broth_log_copilot_incident_message($testIncident, 'reminder');
+    expect_true(str_contains($testUrgentText, 'CONTROLLED TEST'), 'a controlled-test message remains labeled as a test even at level 3, not silently switching to the real URGENT header');
+
+    // Temperature formatting regression, through the real concise-message path (not just the raw
+    // formatter): must never truncate a trailing zero into a different number.
+    foreach ([['0', '0°F'], ['10', '10°F'], ['20', '20°F'], ['40', '40°F'], ['100', '100°F'], ['120', '120°F'], ['-2', '-2°F'], ['10.5', '10.5°F']] as [$raw, $expectedText]) {
+        $tempIncident = array_replace($urgentIncident, ['temperature_f' => (float)$raw, 'current_level' => 1]);
+        $rendered = broth_log_copilot_incident_message($tempIncident, 'notify');
+        expect_true(str_contains($rendered, $expectedText), "a recorded temperature of {$raw} renders as exactly \"{$expectedText}\", never truncated (e.g. 10 must never become 1, 20 must never become 2, 100 must never become 1, 120 must never become 12)");
+    }
 
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1020,

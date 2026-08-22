@@ -466,6 +466,12 @@ function broth_log_copilot_extract_explicit_date(string $normalizedText, DateTim
     return ['matched' => false, 'date' => null, 'error' => null];
 }
 
+// Deterministic, anchored match only - deliberately does not use str_contains, so ordinary text
+// that happens to mention "pilotid" never triggers manager onboarding.
+function broth_log_copilot_is_pilot_id_text(string $text): bool {
+    return (bool)preg_match('#^/pilotid(@\w+)?\s*$#i', trim($text));
+}
+
 function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImmutable $now = null): array {
     $preferred = $user['preferred_language'] ?? null;
     $lang = broth_log_copilot_detect_language($text, $preferred);
@@ -473,7 +479,8 @@ function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImm
     $explicitDate = broth_log_copilot_extract_explicit_date($n, $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')));
 
     $intent = null;
-    if (preg_match('#^/(start|help)#i', $text) || str_contains($n, 'help') || str_contains($n, 'ayuda') || str_contains($n, 'giup')) $intent = 'help';
+    if (broth_log_copilot_is_pilot_id_text($text)) $intent = 'pilot_id';
+    elseif (preg_match('#^/(start|help)#i', $text) || str_contains($n, 'help') || str_contains($n, 'ayuda') || str_contains($n, 'giup')) $intent = 'help';
     elseif (preg_match('#^/(today|status)#i', $text) || str_contains($n, 'today') || str_contains($n, 'hoy') || str_contains($n, 'hom nay') || str_contains($n, 'status')) $intent = 'today_summary';
     elseif (preg_match('#^/(critical|issues)#i', $text) || str_contains($n, 'critical') || str_contains($n, 'critico') || str_contains($n, 'nghiem trong')) $intent = 'critical_issues';
     elseif (str_contains($n, 'open') || str_contains($n, 'pending') || str_contains($n, 'pendiente') || str_contains($n, 'con mo') || str_contains($n, 'chua xu ly')) $intent = 'open_issues';
@@ -872,6 +879,40 @@ function broth_log_copilot_route_chat_ids(string $branch, int $level): array {
     return $chatId !== '' ? [$chatId] : [];
 }
 
+// The "production Ops group" for /pilotid purposes is defined the same way as every other
+// Copilot destination: whatever chat(s) the currently active B1/B2/B3 routing rows resolve to.
+// This reuses broth_log_copilot_active_route()'s stage-awareness (pilot vs staging), so a
+// staging-only chat is never included when this runs under the production worker - no separate
+// hardcoded chat id, and onboarding trusts exactly the same destination real alerts already use.
+function broth_log_copilot_production_ops_chat_ids(): array {
+    $chatIds = [];
+    foreach (['B1', 'B2', 'B3'] as $branch) {
+        for ($level = 1; $level <= 3; $level++) {
+            foreach (broth_log_copilot_route_chat_ids($branch, $level) as $chatId) {
+                $chatIds[$chatId] = true;
+            }
+        }
+    }
+    return array_keys($chatIds);
+}
+
+function broth_log_copilot_is_production_ops_chat(string $chatId): bool {
+    if ($chatId === '') return false;
+    foreach (broth_log_copilot_production_ops_chat_ids() as $configured) {
+        if (hash_equals($configured, $chatId)) return true;
+    }
+    return false;
+}
+
+// /pilotid grants zero access. It exists only so an unauthorized manager's numeric Telegram id -
+// already captured by the webhook into broth_log_bot_inbox, the same as every other inbound
+// message - becomes visible to a human for approval. It never reads or writes
+// broth_log_authorized_users or broth_log_routing_rules.
+function broth_log_copilot_pilot_id_response(?array $user, string $lang): array {
+    $key = $user ? 'pilot_id_already_registered' : 'pilot_id_received';
+    return ['intent' => 'pilot_id', 'message' => broth_log_copilot_tr($key, $lang)];
+}
+
 function broth_log_copilot_incident_message_labels(string $lang): array {
     $t = fn(string $en, string $es, string $vi): string => match ($lang) { 'es' => $es, 'vi' => $vi, default => $en };
     return [
@@ -1109,6 +1150,8 @@ const BROTH_LOG_COPILOT_I18N = [
     'temperature_lookup_result' => ['en' => '%s at %s %s: %s (target %s).', 'es' => '%s en %s %s: %s (objetivo %s).', 'vi' => '%s tai %s %s: %s (muc tieu %s).'],
     'sop_comparison_none' => ['en' => 'No reading recorded for %s at %s %s to compare against SOP.', 'es' => 'No hay lectura registrada para %s en %s %s para comparar con el SOP.', 'vi' => 'Khong co so do nao duoc ghi cho %s tai %s %s de so sanh voi SOP.'],
     'sop_comparison_result' => ['en' => '%s at %s %s: entered %s vs SOP target %s -> %s.', 'es' => '%s en %s %s: ingresado %s vs objetivo SOP %s -> %s.', 'vi' => '%s tai %s %s: nhap %s so voi muc tieu SOP %s -> %s.'],
+    'pilot_id_received' => ['en' => "Identity received.\nWaiting for manager access approval.", 'es' => "Identidad recibida.\nEsperando aprobacion de acceso de gerente.", 'vi' => "Da nhan dang danh tinh.\nDang cho quan ly phe duyet quyen truy cap."],
+    'pilot_id_already_registered' => ['en' => 'Identity already registered.', 'es' => 'Identidad ya registrada.', 'vi' => 'Danh tinh da duoc dang ky.'],
 ];
 
 const BROTH_LOG_COPILOT_SEVERITY_WORDS = [
@@ -1183,6 +1226,9 @@ function broth_log_copilot_format_response(array $parsed, array $user): string {
     $intent = $parsed['intent'] ?? 'help';
 
     if ($intent === 'help') return broth_log_copilot_tr('help', $lang);
+    // pilot_id is always intercepted earlier in broth_log_copilot_process_inbox() before this
+    // function is reached; this is a defensive fallback only, never expected to fire in production.
+    if ($intent === 'pilot_id') return broth_log_copilot_tr('pilot_id_already_registered', $lang);
     if (in_array($intent, ['ack', 'resolve'], true)) return broth_log_copilot_tr('ack_resolve_need_incident', $lang);
     if (!in_array($intent, ['today_summary', 'critical_issues', 'open_issues', 'missing_logs', 'temperature_lookup', 'sop_comparison'], true)) {
         return broth_log_copilot_tr('unknown_intent', $lang);
@@ -1360,6 +1406,31 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
     foreach (q("SELECT * FROM broth_log_bot_inbox WHERE status='queued' ORDER BY received_at ASC LIMIT ?", [$limit]) as $row) {
         $telegramUserId = (string)($row['telegram_user_id'] ?? '');
         $user = broth_log_copilot_authorized_user($telegramUserId);
+
+        // /pilotid is the one command an unauthorized sender may use - checked before the
+        // authorization gate below on purpose, and scoped to real production message updates only
+        // (never callback_query). It only responds inside the real production Ops chat(s);
+        // everywhere else (DM, staging, any other chat) it falls straight through to the same
+        // deny-by-default path as every other command, with no distinguishing reply. It never
+        // creates, modifies, or reads broth_log_authorized_users beyond the read-only lookup above,
+        // and never touches broth_log_routing_rules.
+        if ((string)($row['update_type'] ?? '') === 'message'
+            && broth_log_copilot_is_pilot_id_text((string)$row['message_text'])
+            && broth_log_copilot_is_production_ops_chat((string)$row['chat_id'])) {
+            $lang = $user['preferred_language'] ?? broth_log_copilot_detect_language((string)$row['message_text']);
+            $response = broth_log_copilot_pilot_id_response($user, $lang);
+            $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $response['message']);
+            if (!empty($send['sent'])) {
+                run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => 'pilot_id', 'outbound' => 'sent'];
+                continue;
+            }
+            $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
+            run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
+            $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => 'pilot_id', 'outbound' => 'failed', 'reason' => $reason];
+            continue;
+        }
+
         if (!$user) {
             run("UPDATE broth_log_bot_inbox SET status='denied', processed_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
             $processed[] = ['update_id' => $row['update_id'], 'status' => 'denied'];

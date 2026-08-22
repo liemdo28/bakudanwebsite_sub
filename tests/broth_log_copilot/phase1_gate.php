@@ -762,6 +762,94 @@ try {
     expect_eq(broth_log_copilot_format_number(3.0), '3', 'format_number renders a small whole number correctly');
     expect_eq(broth_log_copilot_temp_text(10.0, 'en'), '10F', 'temp_text uses the corrected formatter, not the old truncating one');
 
+    // --- /pilotid manager onboarding: usable by an unauthorized sender, grants zero access ---
+    $pilotUnauthorizedId = '778899';
+    $opsGroupChatId = 'ops-group-chat-for-pilotid-test';
+    foreach (['B1', 'B2', 'B3'] as $pilotBranch) {
+        for ($pilotLevel = 1; $pilotLevel <= 3; $pilotLevel++) {
+            run("INSERT OR REPLACE INTO broth_log_routing_rules (branch,stage,level,telegram_user_ids,chat_id,active) VALUES (?,?,?,?,?,1)",
+                [$pilotBranch, 'staging', $pilotLevel, json_encode(['999']), $opsGroupChatId]);
+        }
+    }
+    expect_true(broth_log_copilot_is_production_ops_chat($opsGroupChatId), 'the configured routing destination is recognized as the production Ops chat');
+    expect_true(!broth_log_copilot_is_production_ops_chat('some-unrelated-chat'), 'an arbitrary chat id is not recognized as the production Ops chat');
+
+    $authorizedUsersBefore = count(q("SELECT * FROM broth_log_authorized_users"));
+    $routingSnapshotBefore = q("SELECT branch,stage,level,telegram_user_ids,chat_id,active FROM broth_log_routing_rules ORDER BY branch,stage,level");
+
+    // 1 + 5: an unauthorized sender can run /pilotid, and only inside the real production Ops chat.
+    expect_true(broth_log_copilot_authorized_user($pilotUnauthorizedId) === null, 'the pilotid test sender starts out unauthorized');
+    broth_log_copilot_enqueue_webhook([
+        'update_id' => 5001,
+        'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 501],
+    ]);
+    $pilotProcessed1 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    $pilotRow1 = find_processed($pilotProcessed1, '5001');
+    expect_eq($pilotRow1['status'] ?? '', 'processed', 'unauthorized sender in the real Ops chat: /pilotid is processed, not denied');
+    expect_eq($pilotRow1['intent'] ?? '', 'pilot_id', 'the processed row is tagged with the pilot_id intent');
+    expect_eq($sentMessages[count($sentMessages) - 1]['payload']['text'], 'TEST - ' . broth_log_copilot_tr('pilot_id_received', 'en'), 'unauthorized /pilotid gets the identity-received waiting-for-approval reply');
+
+    // 9 + 10: numeric sender id is captured internally in the inbox row, but never appears in the reply text.
+    $pilotInboxRow1 = q1("SELECT telegram_user_id FROM broth_log_bot_inbox WHERE update_id='5001'");
+    expect_eq($pilotInboxRow1['telegram_user_id'] ?? '', $pilotUnauthorizedId, 'the numeric sender id is captured internally in the inbox row');
+    expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], $pilotUnauthorizedId), 'the numeric sender id never appears in the Telegram reply text');
+
+    // 11 + 12: no authorization or routing mutation happened.
+    expect_eq(count(q("SELECT * FROM broth_log_authorized_users")), $authorizedUsersBefore, 'no authorized-user row was created by /pilotid');
+    expect_true(q("SELECT branch,stage,level,telegram_user_ids,chat_id,active FROM broth_log_routing_rules ORDER BY branch,stage,level") === $routingSnapshotBefore, 'no routing row was changed by /pilotid');
+
+    // 2, 3, 4: the same still-unauthorized sender remains fully denied for every real command.
+    broth_log_copilot_enqueue_webhook(['update_id' => 5002, 'message' => ['text' => 'today B1', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 502]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 5003, 'message' => ['text' => '/ack', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 503]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 5004, 'message' => ['text' => '/resolve', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 504]]);
+    $pilotProcessed2 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(find_processed($pilotProcessed2, '5002')['status'] ?? '', 'denied', 'the same unauthorized sender still cannot run a real query command (today B1)');
+    expect_eq(find_processed($pilotProcessed2, '5003')['status'] ?? '', 'denied', 'the same unauthorized sender still cannot ACK');
+    expect_eq(find_processed($pilotProcessed2, '5004')['status'] ?? '', 'denied', 'the same unauthorized sender still cannot Resolve');
+
+    // 6, 7, 8: /pilotid from any chat other than the real production Ops chat gets no special
+    // treatment - it falls straight through to the same deny-by-default path as everything else.
+    broth_log_copilot_enqueue_webhook(['update_id' => 5005, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => 'some-other-group-chat'], 'message_id' => 505]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 5006, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $pilotUnauthorizedId], 'message_id' => 506]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 5007, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => 'other-staging-bot-chat'], 'message_id' => 507]]);
+    $pilotProcessed3 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(find_processed($pilotProcessed3, '5005')['status'] ?? '', 'denied', 'wrong (unknown) group is rejected for /pilotid, no special reply');
+    expect_eq(find_processed($pilotProcessed3, '5006')['status'] ?? '', 'denied', 'a private DM (chat id == sender id) is rejected for /pilotid');
+    expect_eq(find_processed($pilotProcessed3, '5007')['status'] ?? '', 'denied', 'an unrelated staging/other chat is rejected for /pilotid');
+
+    // 13: repeated /pilotid from the same sender in the real Ops chat is idempotent.
+    broth_log_copilot_enqueue_webhook(['update_id' => 5008, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 508]]);
+    $pilotProcessed4 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    $pilotRow4 = find_processed($pilotProcessed4, '5008');
+    expect_eq($pilotRow4['status'] ?? '', 'processed', 'a second /pilotid from the same still-unauthorized sender is processed the same way');
+    expect_eq($pilotRow4['intent'] ?? '', 'pilot_id', 'the repeated /pilotid is still tagged pilot_id');
+    expect_eq($sentMessages[count($sentMessages) - 1]['payload']['text'], 'TEST - ' . broth_log_copilot_tr('pilot_id_received', 'en'), 'repeated /pilotid gets the identical waiting-for-approval reply, not a different one');
+    expect_eq(count(q("SELECT * FROM broth_log_authorized_users")), $authorizedUsersBefore, 'repeating /pilotid still creates no authorized-user row');
+
+    // 14: the bot-username-suffixed form also works.
+    broth_log_copilot_enqueue_webhook(['update_id' => 5009, 'message' => ['text' => '/pilotid@brothlog_bot', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 509]]);
+    $pilotProcessed5 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(find_processed($pilotProcessed5, '5009')['status'] ?? '', 'processed', '/pilotid@brothlog_bot (group-suffixed form) is recognized the same as /pilotid');
+    expect_eq(find_processed($pilotProcessed5, '5009')['intent'] ?? '', 'pilot_id', '/pilotid@brothlog_bot is tagged with the pilot_id intent');
+
+    // 15: arbitrary text mentioning "pilotid" does not trigger onboarding.
+    expect_true(!broth_log_copilot_is_pilot_id_text('please run pilotid for me'), 'arbitrary text containing "pilotid" is not recognized as the onboarding command');
+    expect_true(!broth_log_copilot_is_pilot_id_text('/pilotid now please'), 'trailing text after /pilotid is not recognized as the anchored onboarding command');
+    broth_log_copilot_enqueue_webhook(['update_id' => 5010, 'message' => ['text' => 'please run pilotid for me', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 510]]);
+    $pilotProcessed6 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(find_processed($pilotProcessed6, '5010')['status'] ?? '', 'denied', 'arbitrary text mentioning pilotid from an unauthorized sender is denied like any other unrecognized command, not treated as onboarding');
+
+    // 16: an already-authorized user gets a harmless "already registered" reply, with zero mutation.
+    expect_true(broth_log_copilot_authorized_user('101') !== null, 'sanity: telegram id 101 is the already-authorized B1 manager fixture');
+    $existingUserBefore = q1("SELECT telegram_user_id,display_name,role,allowed_branches,active FROM broth_log_authorized_users WHERE telegram_user_id='101'");
+    broth_log_copilot_enqueue_webhook(['update_id' => 5011, 'message' => ['text' => '/pilotid', 'from' => ['id' => 101], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 511]]);
+    $pilotProcessed7 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    $pilotRow7 = find_processed($pilotProcessed7, '5011');
+    expect_eq($pilotRow7['status'] ?? '', 'processed', 'an already-authorized user sending /pilotid is processed');
+    expect_eq($pilotRow7['intent'] ?? '', 'pilot_id', 'the already-authorized reply is still tagged pilot_id');
+    expect_eq($sentMessages[count($sentMessages) - 1]['payload']['text'], 'TEST - ' . broth_log_copilot_tr('pilot_id_already_registered', 'en'), 'an already-authorized user gets the harmless "already registered" reply, not the waiting-for-approval one');
+    expect_true(q1("SELECT telegram_user_id,display_name,role,allowed_branches,active FROM broth_log_authorized_users WHERE telegram_user_id='101'") === $existingUserBefore, 'the already-authorized user\'s row is completely unchanged by /pilotid');
+
     // Cross-cutting: across every message sent by any test in this run (queries, incident
     // notifications, ACK/resolve confirmations, reminders, escalations), none was ever addressed
     // to the one-way-alert sentinel chat - proving Copilot's destination selection never leaks

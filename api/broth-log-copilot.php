@@ -875,7 +875,10 @@ function broth_log_copilot_incident_message_labels(string $lang): array {
     ];
 }
 
-function broth_log_copilot_incident_message(array $incident, string $kind, string $lang = 'en'): string {
+// Full field-by-field message, kept for ack_confirm/resolve_confirm (and any future kind not
+// covered by the concise proactive templates below). Not shown to managers for the proactive push
+// path (notify/reminder/escalation) - see broth_log_copilot_concise_incident_message() for that.
+function broth_log_copilot_verbose_incident_message(array $incident, string $kind, string $lang = 'en'): string {
     $l = broth_log_copilot_incident_message_labels($lang);
     $label = $l['kind'][$kind] ?? $l['kind']['default'];
     $lines = [
@@ -892,6 +895,109 @@ function broth_log_copilot_incident_message(array $incident, string $kind, strin
         $l['level'] . ': ' . (string)($incident['current_level'] ?? 1),
     ];
     return implode("\n", array_map(fn($line) => substr($line, 0, 180), $lines));
+}
+
+// Direction of violation, derived from the incident's own sop_target string (e.g. "<= 0F" or
+// ">= 100F", stored verbatim from the real SOP comparison at detection time - never re-derived
+// from the temperature itself, so this can never guess wrong). Returns null when the operator
+// cannot be determined (e.g. an unconfigured/unknown station), in which case the message falls
+// back to a generic "out of range" phrasing rather than fabricating a direction.
+function broth_log_copilot_incident_direction(array $incident): ?string {
+    $sopTarget = trim((string)($incident['sop_target'] ?? ''));
+    if (str_starts_with($sopTarget, '<=')) return 'max';
+    if (str_starts_with($sopTarget, '>=')) return 'min';
+    return null;
+}
+
+function broth_log_copilot_sop_target_number(array $incident): ?float {
+    $sopTarget = (string)($incident['sop_target'] ?? '');
+    if (preg_match('/(-?\d+(?:\.\d+)?)/', $sopTarget, $m)) return (float)$m[1];
+    return null;
+}
+
+// Controlled-test incidents are marked via the same free-text convention used throughout manual
+// production validation this session: "CONTROLLED TEST" in the employee or corrective-action
+// field. No schema change - presentation only reads an existing, already-audited field.
+function broth_log_copilot_incident_is_controlled_test(array $incident): bool {
+    return str_contains((string)($incident['employee_name'] ?? ''), 'CONTROLLED TEST')
+        || str_contains((string)($incident['corrective_action'] ?? ''), 'CONTROLLED TEST');
+}
+
+function broth_log_copilot_concise_alert_labels(string $lang): array {
+    $t = fn(string $en, string $es, string $vi): string => match ($lang) { 'es' => $es, 'vi' => $vi, default => $en };
+    return [
+        'temperature_alert' => $t('Temperature Alert', 'Alerta de Temperatura', 'Canh Bao Nhiet Do'),
+        'reminder' => $t('REMINDER', 'RECORDATORIO', 'NHAC NHO'),
+        'urgent' => $t('URGENT', 'URGENTE', 'KHAN CAP'),
+        'too_high' => $t('too high', 'muy alto', 'qua cao'),
+        'too_low' => $t('too low', 'muy bajo', 'qua thap'),
+        'out_of_range' => $t('out of range', 'fuera de rango', 'ngoai pham vi'),
+        'still_above_limit' => $t('still above limit', 'aun por encima del limite', 'van tren gioi han'),
+        'still_below_limit' => $t('still below limit', 'aun por debajo del limite', 'van duoi gioi han'),
+        'still_out_of_range' => $t('still out of range', 'aun fuera de rango', 'van ngoai pham vi'),
+        'required' => $t('Required', 'Requerido', 'Yeu cau'),
+        'sop_not_configured' => $t('SOP target not configured', 'objetivo SOP no configurado', 'chua cau hinh muc tieu SOP'),
+        'please_check' => $t('Please check and re-temp.', 'Por favor revisa y vuelve a medir la temperatura.', 'Vui long kiem tra va do lai nhiet do.'),
+        'manager_action' => $t('Manager action required.', 'Se requiere accion del gerente.', 'Can quan ly xu ly.'),
+        'test_only' => $t('TEST ONLY — no action required.', 'SOLO PRUEBA - no se requiere accion.', 'CHI LA THU NGHIEM - khong can hanh dong.'),
+        'not_recorded' => $t('not recorded', 'no registrado', 'chua ghi'),
+    ];
+}
+
+// Manager-facing proactive push (initial alert, reminder, escalation): short enough to read in
+// 2-3 seconds. Deliberately omits business date/time, employee, corrective-action text, severity
+// label, incident ref/ID, and escalation-level number - none of that is removed from the incident
+// record, audit trail, or dashboard, only from this specific Telegram message body. Escalation
+// level still controls presentation tier (urgent styling at level 3+) without ever printing the
+// level number or internal state name.
+function broth_log_copilot_concise_incident_message(array $incident, string $kind, string $lang = 'en'): string {
+    $l = broth_log_copilot_concise_alert_labels($lang);
+    $branch = (string)$incident['branch'];
+    $station = (string)$incident['station_label'];
+    $tempF = $incident['temperature_f'] ?? null;
+    $tempText = $tempF === null ? $l['not_recorded'] : broth_log_copilot_format_number((float)$tempF) . '°F';
+    $direction = broth_log_copilot_incident_direction($incident);
+    $targetNum = broth_log_copilot_sop_target_number($incident);
+    $isTest = broth_log_copilot_incident_is_controlled_test($incident);
+    $isUrgent = (int)($incident['current_level'] ?? 1) >= 3;
+
+    if ($isTest) {
+        $header = '🧪 CONTROLLED TEST – ' . $branch;
+    } elseif ($isUrgent) {
+        $header = '🔴 ' . $l['urgent'] . ' – ' . $branch;
+    } elseif ($kind === 'notify') {
+        $header = '🚨 ' . $branch . ' – ' . $l['temperature_alert'];
+    } else {
+        $header = '⚠️ ' . $l['reminder'] . ' – ' . $branch;
+    }
+
+    if ($isUrgent) {
+        $statusWord = $l['still_out_of_range'];
+    } elseif ($kind === 'notify') {
+        $statusWord = $direction === 'max' ? $l['too_high'] : ($direction === 'min' ? $l['too_low'] : $l['out_of_range']);
+    } else {
+        $statusWord = $direction === 'max' ? $l['still_above_limit'] : ($direction === 'min' ? $l['still_below_limit'] : $l['still_out_of_range']);
+    }
+    $statusLine = $station . ': ' . $tempText . ' — ' . $statusWord;
+
+    if ($direction === 'max' && $targetNum !== null) {
+        $requiredLine = $l['required'] . ': ≤ ' . broth_log_copilot_format_number($targetNum) . '°F';
+    } elseif ($direction === 'min' && $targetNum !== null) {
+        $requiredLine = $l['required'] . ': ≥ ' . broth_log_copilot_format_number($targetNum) . '°F';
+    } else {
+        $requiredLine = $l['required'] . ': ' . $l['sop_not_configured'];
+    }
+
+    $footer = $isTest ? $l['test_only'] : ($isUrgent ? $l['manager_action'] : $l['please_check']);
+
+    return implode("\n", [$header, '', $statusLine, $requiredLine, '', $footer]);
+}
+
+function broth_log_copilot_incident_message(array $incident, string $kind, string $lang = 'en'): string {
+    if (in_array($kind, ['notify', 'reminder', 'escalation'], true)) {
+        return broth_log_copilot_concise_incident_message($incident, $kind, $lang);
+    }
+    return broth_log_copilot_verbose_incident_message($incident, $kind, $lang);
 }
 
 function broth_log_copilot_incident_reply_markup(string $incidentId, ?DateTimeImmutable $now = null): array {

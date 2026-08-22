@@ -885,21 +885,24 @@ function broth_log_copilot_route_chat_ids(string $branch, int $level): array {
 // staging-only chat is never included when this runs under the production worker - no separate
 // hardcoded chat id, and onboarding trusts exactly the same destination real alerts already use.
 function broth_log_copilot_production_ops_chat_ids(): array {
+    // Deliberately does not dedupe via array keys: a numeric-looking chat id (real Telegram chat
+    // ids for groups/DMs commonly are, e.g. "-5367135326") gets silently coerced from string to
+    // int as a PHP array key, which then fails hash_equals()'s strict string-only type check below.
     $chatIds = [];
     foreach (['B1', 'B2', 'B3'] as $branch) {
         for ($level = 1; $level <= 3; $level++) {
             foreach (broth_log_copilot_route_chat_ids($branch, $level) as $chatId) {
-                $chatIds[$chatId] = true;
+                $chatIds[] = $chatId;
             }
         }
     }
-    return array_keys($chatIds);
+    return array_values(array_unique($chatIds));
 }
 
 function broth_log_copilot_is_production_ops_chat(string $chatId): bool {
     if ($chatId === '') return false;
     foreach (broth_log_copilot_production_ops_chat_ids() as $configured) {
-        if (hash_equals($configured, $chatId)) return true;
+        if (hash_equals((string)$configured, $chatId)) return true;
     }
     return false;
 }

@@ -634,6 +634,20 @@ function broth_log_copilot_audit(string $incidentId, string $eventType, ?string 
     ]);
 }
 
+// The BEGIN IMMEDIATE / COMMIT blocks in ack(), resolve(), and apply_escalation_action() catch
+// every Throwable identically and used to always report 'lock_failed', even when the exception was
+// not actually SQLite lock contention (SQLITE_BUSY/SQLITE_LOCKED) - e.g. a genuine SQL/runtime
+// error would be mislabeled the same way, hiding the real cause from anyone debugging it.
+// SQLite3 (with enableExceptions) reports lock contention with a specific, stable message text;
+// anything else is a real internal error and must not be reported as if it were transient.
+function broth_log_copilot_classify_db_exception(Throwable $e): string {
+    $message = strtolower($e->getMessage());
+    if (str_contains($message, 'database is locked') || str_contains($message, 'database table is locked')) {
+        return 'lock_failed';
+    }
+    return 'internal_error';
+}
+
 function broth_log_copilot_ack(string $incidentId, array $actor, ?DateTimeImmutable $now = null): array {
     if (!broth_log_copilot_enabled()) return ['ok' => false, 'reason' => 'disabled'];
     $ts = ($now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
@@ -661,7 +675,7 @@ function broth_log_copilot_ack(string $incidentId, array $actor, ?DateTimeImmuta
         db()->exec('COMMIT');
     } catch (Throwable $e) {
         try { db()->exec('ROLLBACK'); } catch (Throwable $ignored) {}
-        return ['ok' => false, 'reason' => 'lock_failed'];
+        return ['ok' => false, 'reason' => broth_log_copilot_classify_db_exception($e)];
     }
     broth_log_copilot_audit($incidentId, 'acknowledged', (string)$actor['telegram_user_id'], []);
     return ['ok' => true, 'incident_id' => $incidentId];
@@ -704,7 +718,7 @@ function broth_log_copilot_resolve(string $incidentId, array $actor, ?float $rec
         db()->exec('COMMIT');
     } catch (Throwable $e) {
         try { db()->exec('ROLLBACK'); } catch (Throwable $ignored) {}
-        return ['ok' => false, 'reason' => 'lock_failed'];
+        return ['ok' => false, 'reason' => broth_log_copilot_classify_db_exception($e)];
     }
     broth_log_copilot_audit($incidentId, 'resolved', (string)$actor['telegram_user_id'], ['recheck_temperature_f' => $recheckTemp, 'note' => $note]);
     return ['ok' => true, 'incident_id' => $incidentId];
@@ -773,7 +787,7 @@ function broth_log_copilot_apply_escalation_action(array $action, ?DateTimeImmut
         $incident = $fresh;
     } catch (Throwable $e) {
         try { db()->exec('ROLLBACK'); } catch (Throwable $ignored) {}
-        return ['ok' => false, 'reason' => 'lock_failed', 'incident_id' => $incident['incident_id']];
+        return ['ok' => false, 'reason' => broth_log_copilot_classify_db_exception($e), 'incident_id' => $incident['incident_id']];
     }
     if ($action['action'] === 'escalate') {
         $level = (int)$action['to_level'];
@@ -985,6 +999,7 @@ const BROTH_LOG_COPILOT_REASON_WORDS = [
     'recheck_still_unsafe' => ['en' => 'recheck temperature is still unsafe', 'es' => 'la temperatura de reverificacion sigue sin ser segura', 'vi' => 'nhiet do kiem tra lai van chua an toan'],
     'unknown_station_config' => ['en' => 'this station has no configured SOP target - contact an admin, this cannot be auto-resolved', 'es' => 'esta estacion no tiene un objetivo SOP configurado - contacta a un administrador, esto no se puede resolver automaticamente', 'vi' => 'tram nay chua co muc tieu SOP - hay lien he quan tri vien, khong the tu dong giai quyet'],
     'lock_failed' => ['en' => 'please try again', 'es' => 'intenta de nuevo', 'vi' => 'vui long thu lai'],
+    'internal_error' => ['en' => 'an internal error occurred, please try again or contact an admin', 'es' => 'ocurrio un error interno, intenta de nuevo o contacta a un administrador', 'vi' => 'da xay ra loi he thong, hay thu lai hoac lien he quan tri vien'],
 ];
 
 function broth_log_copilot_tr(string $key, string $lang, array $args = []): string {

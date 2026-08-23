@@ -144,6 +144,16 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         expires_at TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    -- Deliberately separate from broth_log_authorized_users: a person can register a private bot
+    -- chat with zero authorization, and authorization can exist with zero private registration.
+    -- Never used to grant access on its own - only joined against active manager authorization to
+    -- compute DM eligibility.
+    CREATE TABLE IF NOT EXISTS broth_log_private_chat_registrations (
+        telegram_user_id TEXT PRIMARY KEY,
+        private_chat_id TEXT NOT NULL,
+        registered_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE TABLE IF NOT EXISTS broth_log_outbound_deliveries (
         delivery_key TEXT PRIMARY KEY,
         incident_id TEXT,
@@ -169,6 +179,7 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_status TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_error TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_sent_at TEXT",
+        "ALTER TABLE broth_log_bot_inbox ADD COLUMN chat_type TEXT",
         "ALTER TABLE broth_log_outbound_deliveries ADD COLUMN send_attempts INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE broth_log_outbound_deliveries ADD COLUMN outbound_error TEXT",
         "ALTER TABLE broth_log_outbound_deliveries ADD COLUMN sent_at TEXT",
@@ -216,6 +227,10 @@ function broth_log_copilot_extract_update(array $update): array {
         'update_id' => (string)($update['update_id'] ?? ''),
         'telegram_user_id' => isset($from['id']) ? (string)$from['id'] : '',
         'chat_id' => isset($chat['id']) ? (string)$chat['id'] : '',
+        // Telegram's own chat.type field ("private"/"group"/"supergroup"/"channel") - the
+        // authoritative signal for whether an update came from a 1:1 bot conversation, never
+        // inferred from comparing chat_id to telegram_user_id.
+        'chat_type' => isset($chat['type']) ? (string)$chat['type'] : '',
         'message_id' => isset($message['message_id']) ? (string)$message['message_id'] : '',
         'update_type' => $callback ? 'callback_query' : 'message',
         'text' => trim((string)$text),
@@ -228,11 +243,12 @@ function broth_log_copilot_enqueue_webhook(array $update): array {
     if ($meta['update_id'] === '' || !in_array($meta['update_type'], ['message','callback_query'], true)) {
         return ['queued' => false, 'reason' => 'unsupported_update'];
     }
-    run("INSERT OR IGNORE INTO broth_log_bot_inbox (update_id,telegram_user_id,chat_id,message_id,update_type,payload_json,message_text)
-         VALUES (?,?,?,?,?,?,?)", [
+    run("INSERT OR IGNORE INTO broth_log_bot_inbox (update_id,telegram_user_id,chat_id,chat_type,message_id,update_type,payload_json,message_text)
+         VALUES (?,?,?,?,?,?,?,?)", [
         $meta['update_id'],
         $meta['telegram_user_id'],
         $meta['chat_id'],
+        $meta['chat_type'],
         $meta['message_id'],
         $meta['update_type'],
         json_encode(broth_log_copilot_sanitized_update_payload($update, $meta)),
@@ -247,6 +263,7 @@ function broth_log_copilot_sanitized_update_payload(array $update, array $meta):
         'update_type' => $meta['update_type'],
         'telegram_user_id' => $meta['telegram_user_id'],
         'chat_id' => $meta['chat_id'],
+        'chat_type' => $meta['chat_type'],
         'message_id' => $meta['message_id'],
         'message_text' => broth_log_copilot_sanitize_message($meta['text']),
         'received_keys' => array_values(array_intersect(array_keys($update), ['message','edited_message','callback_query'])),
@@ -470,6 +487,64 @@ function broth_log_copilot_extract_explicit_date(string $normalizedText, DateTim
 // that happens to mention "pilotid" never triggers manager onboarding.
 function broth_log_copilot_is_pilot_id_text(string $text): bool {
     return (bool)preg_match('#^/pilotid(@\w+)?\s*$#i', trim($text));
+}
+
+// Same anchored-match discipline as /pilotid: only the exact command, never inferred from
+// surrounding text. Scoped separately for /start vs /alerts so the caller can pick the right reply.
+function broth_log_copilot_is_private_start_text(string $text): bool {
+    return (bool)preg_match('#^/start(@\w+)?\s*$#i', trim($text));
+}
+
+function broth_log_copilot_is_private_alerts_status_text(string $text): bool {
+    return (bool)preg_match('#^/alerts(@\w+)?\s*$#i', trim($text));
+}
+
+// Whether $user (already-looked-up broth_log_authorized_users row, possibly null) currently
+// qualifies for manager private alerts - role + active only. Branch is checked separately by the
+// caller wherever a specific branch's eligibility matters (this helper just answers "are private
+// alerts on for this person at all", used for the /start and /alerts replies).
+function broth_log_copilot_is_active_manager(?array $user): bool {
+    return $user !== null && ($user['role'] ?? '') === 'manager' && (int)($user['active'] ?? 0) === 1;
+}
+
+// Builds the reply for a private-chat /start or /alerts message. Never reveals whether ANY other
+// person is registered/authorized, never reveals numeric ids, never reveals branch data beyond the
+// sender's own approved store name. $isStatusCommand distinguishes /alerts (status query) from
+// /start (connection message) - both share the same authorization lookup and safe-reply shape.
+function broth_log_copilot_private_registration_response(?array $user, string $lang, bool $isStatusCommand): array {
+    $isManager = broth_log_copilot_is_active_manager($user);
+    if ($isStatusCommand) {
+        if ($isManager) {
+            $branches = $user['allowed_branch_list'] ?? [];
+            $store = $branches ? strtoupper((string)$branches[0]) : '';
+            return ['intent' => 'private_alerts_status', 'message' => broth_log_copilot_tr('private_alerts_status_on', $lang, [$store])];
+        }
+        return ['intent' => 'private_alerts_status', 'message' => broth_log_copilot_tr('private_alerts_status_pending', $lang)];
+    }
+    if ($isManager) {
+        return ['intent' => 'private_start', 'message' => broth_log_copilot_tr('private_start_enabled', $lang)];
+    }
+    return ['intent' => 'private_start', 'message' => broth_log_copilot_tr('private_start_connected', $lang)];
+}
+
+// Manager DM eligibility for a given branch: active manager whose allowed_branches contains the
+// branch, AND who has established a real private bot conversation (a row in
+// broth_log_private_chat_registrations). Deliberately separate from broth_log_copilot_route_chat_ids()
+// (the group-routing lookup /pilotid's Ops-chat gate also depends on) so that adding a manager's
+// private chat here can never widen what counts as the production Ops group.
+function broth_log_copilot_manager_dm_chat_ids(string $branch): array {
+    $branchUpper = strtoupper($branch);
+    $chatIds = [];
+    foreach (q("SELECT au.allowed_branches, pcr.private_chat_id
+                FROM broth_log_authorized_users au
+                INNER JOIN broth_log_private_chat_registrations pcr ON pcr.telegram_user_id = au.telegram_user_id
+                WHERE au.role='manager' AND au.active=1") as $row) {
+        $branches = json_decode((string)$row['allowed_branches'], true) ?: [];
+        if (in_array($branchUpper, array_map('strtoupper', $branches), true) && (string)$row['private_chat_id'] !== '') {
+            $chatIds[] = (string)$row['private_chat_id'];
+        }
+    }
+    return array_values(array_unique($chatIds));
 }
 
 function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImmutable $now = null): array {
@@ -1103,7 +1178,13 @@ function broth_log_copilot_notify_incident(string $incidentId, ?DateTimeImmutabl
     if (!broth_log_copilot_enabled()) return ['sent' => false, 'reason' => 'disabled'];
     $incident = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
     if (!$incident || in_array($incident['state'], ['resolved','closed'], true)) return ['sent' => false, 'reason' => 'incident_not_open'];
-    $chats = broth_log_copilot_route_chat_ids((string)$incident['branch'], 1);
+    // Ops group is mandatory; eligible managers' private DMs are additive. Merged (not appended
+    // separately) so the existing per-chat loop below fans out to every destination identically -
+    // one canonical incident, N independently failure-isolated deliveries.
+    $chats = array_values(array_unique(array_merge(
+        broth_log_copilot_route_chat_ids((string)$incident['branch'], 1),
+        broth_log_copilot_manager_dm_chat_ids((string)$incident['branch'])
+    )));
     if (!$chats) return ['sent' => false, 'reason' => 'no_active_route'];
     $results = [];
     foreach ($chats as $chatId) {
@@ -1155,6 +1236,10 @@ const BROTH_LOG_COPILOT_I18N = [
     'sop_comparison_result' => ['en' => '%s at %s %s: entered %s vs SOP target %s -> %s.', 'es' => '%s en %s %s: ingresado %s vs objetivo SOP %s -> %s.', 'vi' => '%s tai %s %s: nhap %s so voi muc tieu SOP %s -> %s.'],
     'pilot_id_received' => ['en' => "Identity received.\nWaiting for manager access approval.", 'es' => "Identidad recibida.\nEsperando aprobacion de acceso de gerente.", 'vi' => "Da nhan dang danh tinh.\nDang cho quan ly phe duyet quyen truy cap."],
     'pilot_id_already_registered' => ['en' => 'Identity already registered.', 'es' => 'Identidad ya registrada.', 'vi' => 'Danh tinh da duoc dang ky.'],
+    'private_start_connected' => ['en' => "Broth Log Alerts\n\nYour Telegram account is connected to the bot. Manager access requires approval.", 'es' => "Broth Log Alertas\n\nTu cuenta de Telegram esta conectada al bot. El acceso de gerente requiere aprobacion.", 'vi' => "Broth Log Canh Bao\n\nTai khoan Telegram cua ban da ket noi voi bot. Quyen truy cap quan ly can duoc phe duyet."],
+    'private_start_enabled' => ['en' => "Broth Log Alerts\n\nPrivate alerts are enabled for your approved store.", 'es' => "Broth Log Alertas\n\nLas alertas privadas estan habilitadas para tu tienda aprobada.", 'vi' => "Broth Log Canh Bao\n\nCanh bao rieng tu da duoc bat cho chi nhanh ban duoc duyet."],
+    'private_alerts_status_pending' => ['en' => 'Private alerts: Waiting for approval', 'es' => 'Alertas privadas: Esperando aprobacion', 'vi' => 'Canh bao rieng tu: Dang cho phe duyet'],
+    'private_alerts_status_on' => ['en' => "Private alerts: ON\nStore: %s", 'es' => "Alertas privadas: ACTIVADAS\nTienda: %s", 'vi' => "Canh bao rieng tu: BAT\nChi nhanh: %s"],
 ];
 
 const BROTH_LOG_COPILOT_SEVERITY_WORDS = [
@@ -1392,7 +1477,12 @@ function broth_log_copilot_apply_escalation_action_with_notification(array $acti
     if (!$incident) return $result + ['outbound' => 'incident_missing'];
     $kind = $result['action'] === 'fallback' ? 'fallback' : ($result['action'] === 'escalated' ? 'escalation' : 'reminder');
     $level = (int)($result['level'] ?? $incident['current_level'] ?? 1);
-    $chats = broth_log_copilot_route_chat_ids((string)$incident['branch'], $level);
+    // Same merge as broth_log_copilot_notify_incident(): eligible managers get every reminder/
+    // escalation the group does, not just the initial alert - "the same incident" per destination.
+    $chats = array_values(array_unique(array_merge(
+        broth_log_copilot_route_chat_ids((string)$incident['branch'], $level),
+        broth_log_copilot_manager_dm_chat_ids((string)$incident['branch'])
+    )));
     $sent = 0;
     foreach ($chats as $chatId) {
         $deliveryKey = 'incident:' . $incident['incident_id'] . ':' . $kind . ':' . ($incident['reminder_count'] ?? 0) . ':' . $level . ':' . $chatId;
@@ -1438,6 +1528,34 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
                 $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
                 run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
                 $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => 'pilot_id', 'outbound' => 'failed', 'reason' => $reason];
+                continue;
+            }
+
+            // /start and /alerts in a private bot chat are the other pre-authorization carve-out:
+            // any sender may register their private chat for future DM delivery, and check their
+            // own status, without gaining any data access now. Scoped to chat_type='private' (the
+            // real Telegram field, never inferred from chat_id == telegram_user_id) so this can
+            // never be triggered from the Ops group or any other chat. Registration only writes to
+            // broth_log_private_chat_registrations - never broth_log_authorized_users - keeping
+            // identity/delivery registration and human-approved authorization fully independent.
+            if ((string)($row['update_type'] ?? '') === 'message'
+                && (string)($row['chat_type'] ?? '') === 'private'
+                && (broth_log_copilot_is_private_start_text((string)$row['message_text']) || broth_log_copilot_is_private_alerts_status_text((string)$row['message_text']))) {
+                $lang = $user['preferred_language'] ?? broth_log_copilot_detect_language((string)$row['message_text']);
+                $isStatusCommand = broth_log_copilot_is_private_alerts_status_text((string)$row['message_text']);
+                if (!$isStatusCommand) {
+                    run("INSERT OR REPLACE INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id, registered_at, updated_at) VALUES (?,?,datetime('now'),datetime('now'))", [$telegramUserId, (string)$row['chat_id']]);
+                }
+                $response = broth_log_copilot_private_registration_response($user, $lang, $isStatusCommand);
+                $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $response['message']);
+                if (!empty($send['sent'])) {
+                    run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+                    $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $response['intent'], 'outbound' => 'sent'];
+                    continue;
+                }
+                $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
+                run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $response['intent'], 'outbound' => 'failed', 'reason' => $reason];
                 continue;
             }
 

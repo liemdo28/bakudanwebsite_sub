@@ -959,6 +959,240 @@ try {
     expect_eq(find_processed($transientProcessed, '6031')['status'] ?? '', 'queued', 'a genuine transient lock failure leaves the row queued for a natural retry, unlike a permanent failure');
     expect_eq(q1("SELECT status FROM broth_log_bot_inbox WHERE update_id='6031'")['status'] ?? '', 'queued', 'the persisted inbox row status also remains queued for a transient failure');
 
+    // --- Per-manager private DM alert routing (additive to existing Ops group delivery) ---
+    // Numeric-shaped chat ids throughout (matching real Telegram's private-chat id format) are
+    // deliberate - see (U) below.
+    $dmManagerA = '301'; $dmManagerAChat = '910301001';           // B1, active, registers a private chat
+    $dmManagerB = '302'; $dmManagerBChat = '910302002';           // B1, active, registers a private chat (second B1 manager)
+    $dmManagerC = '303'; $dmManagerCChat = '910303003';           // B2, active, registers a private chat
+    $dmManagerInactive = '304'; $dmManagerInactiveChat = '910304004'; // B1, INACTIVE, registers a private chat anyway
+    $dmManagerNoReg = '305';                                       // B1, active, NEVER registers a private chat
+    $dmUnauthorizedPrivate = '306'; $dmUnauthorizedPrivateChat = '910306006'; // never authorized at all
+
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$dmManagerA, 'Manager Alice', 'manager', json_encode(['B1'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$dmManagerB, 'Manager Bob', 'manager', json_encode(['B1'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$dmManagerC, 'Manager Cara', 'manager', json_encode(['B2'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,0)", [$dmManagerInactive, 'Manager Dan (inactive)', 'manager', json_encode(['B1'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$dmManagerNoReg, 'Manager Erin (no DM)', 'manager', json_encode(['B1'])]);
+
+    // Register private chats via the real webhook -> process_inbox pipeline, not a raw INSERT.
+    // Registration and authorization are independent - even the inactive manager can register.
+    foreach ([[$dmManagerA, $dmManagerAChat, 7001], [$dmManagerB, $dmManagerBChat, 7002], [$dmManagerC, $dmManagerCChat, 7003], [$dmManagerInactive, $dmManagerInactiveChat, 7004]] as [$uid, $chat, $updateId]) {
+        broth_log_copilot_enqueue_webhook(['update_id' => $updateId, 'message' => ['text' => '/start', 'from' => ['id' => (int)$uid], 'chat' => ['id' => $chat, 'type' => 'private'], 'message_id' => $updateId]]);
+    }
+    $dmRegisterProcessed = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    foreach ([7001, 7002, 7003, 7004] as $uid) {
+        expect_eq(find_processed($dmRegisterProcessed, (string)$uid)['status'] ?? '', 'processed', "private /start registration processes cleanly for update {$uid}");
+    }
+    expect_eq(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmManagerA])['private_chat_id'] ?? '', $dmManagerAChat, 'Alice\'s real private chat id is captured from the actual /start update, never derived or assumed');
+
+    // G: unauthorized private user also gets a safe, non-informative reply - registration alone
+    // never authorizes, and they never appear in any branch's DM-eligible set.
+    broth_log_copilot_enqueue_webhook(['update_id' => 7005, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmUnauthorizedPrivate], 'chat' => ['id' => $dmUnauthorizedPrivateChat, 'type' => 'private'], 'message_id' => 7005]]);
+    $dmUnauthProcessed = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(find_processed($dmUnauthProcessed, '7005')['status'] ?? '', 'processed', 'an unauthorized private /start is still processed (registration only, zero data access)');
+    expect_eq($sentMessages[count($sentMessages) - 1]['payload']['text'], 'TEST - ' . broth_log_copilot_tr('private_start_connected', 'en'), 'unauthorized private /start gets the safe "connected, awaiting approval" reply, never protected data');
+    expect_true(broth_log_copilot_authorized_user($dmUnauthorizedPrivate) === null, 'registering a private chat alone never creates authorization');
+    expect_true(!in_array($dmUnauthorizedPrivateChat, array_merge(broth_log_copilot_manager_dm_chat_ids('B1'), broth_log_copilot_manager_dm_chat_ids('B2'), broth_log_copilot_manager_dm_chat_ids('B3')), true), 'G: an unauthorized private user, even after registering, is never DM-eligible for any branch');
+
+    // D/E/F/H: exactly Alice and Bob are B1-DM-eligible - not the inactive manager, not Erin
+    // (authorized but never registered), not anyone from another branch.
+    $dmB1Eligible = broth_log_copilot_manager_dm_chat_ids('B1');
+    expect_true(in_array($dmManagerAChat, $dmB1Eligible, true), 'Alice is DM-eligible for B1');
+    expect_true(in_array($dmManagerBChat, $dmB1Eligible, true), 'H: Bob (a second B1 manager) is also DM-eligible for B1');
+    expect_eq(count($dmB1Eligible), 2, 'D/E/F: exactly 2 eligible B1 DM chats - the inactive manager and the unregistered manager (Erin) contribute none');
+
+    // A/B/C: a real B1 incident notification reaches the Ops group and Alice, never Cara (B2) or
+    // the inactive B1 manager.
+    $dmIncidentB1 = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-dm-b1']));
+    expect_true(broth_log_copilot_notify_incident($dmIncidentB1)['sent'] ?? false, 'B1 incident notification sends successfully');
+    $dmDeliveredB1 = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$dmIncidentB1]), 'chat_id');
+    expect_true(in_array($opsGroupChatId, $dmDeliveredB1, true), 'A: the Ops group receives the B1 incident');
+    expect_true(in_array($dmManagerAChat, $dmDeliveredB1, true), 'B: Alice (B1 manager) receives a private DM for the B1 incident');
+    expect_true(!in_array($dmManagerCChat, $dmDeliveredB1, true), 'C: Cara (B2 manager) does NOT receive the B1 incident');
+    expect_true(!in_array($dmManagerInactiveChat, $dmDeliveredB1, true), 'D: the inactive B1 manager does NOT receive the B1 incident despite having a registered private chat');
+    expect_eq(count(array_filter($dmDeliveredB1, fn($c) => $c === $dmManagerAChat)), 1, 'H: Alice receives exactly one DM for the B1 incident, not a duplicate');
+    expect_eq(count(array_filter($dmDeliveredB1, fn($c) => $c === $dmManagerBChat)), 1, 'H: Bob receives exactly one DM for the B1 incident, not a duplicate');
+
+    // Cross-check: a B2 incident reaches Cara, never the B1 managers.
+    $dmIncidentB2 = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B2', 'stationKey' => 'bowlWarmer', 'station' => 'Bowl Warmer', 'target' => '>= 100F', 'responseId' => 'resp-dm-b2']));
+    broth_log_copilot_notify_incident($dmIncidentB2);
+    $dmDeliveredB2 = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$dmIncidentB2]), 'chat_id');
+    expect_true(in_array($dmManagerCChat, $dmDeliveredB2, true), 'Cara (B2 manager) receives the B2 incident privately');
+    expect_true(!in_array($dmManagerAChat, $dmDeliveredB2, true), 'Alice (B1 manager) does NOT receive the B2 incident');
+    expect_true(!in_array($dmManagerBChat, $dmDeliveredB2, true), 'Bob (B1 manager) does NOT receive the B2 incident');
+
+    // I/J: one manager's DM fails while the group and the other manager still succeed; retrying
+    // only resends to the previously-failed destination, never duplicating an already-sent one.
+    $dmIncidentFailure = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-dm-failure']));
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $dmManagerAChat): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        if ((string)($payload['chat_id'] ?? '') === $dmManagerAChat) {
+            return ['sent' => false, 'reason' => 'simulated transient failure for Alice only'];
+        }
+        return ['sent' => true, 'mock' => true];
+    };
+    broth_log_copilot_notify_incident($dmIncidentFailure);
+    $dmFailureByChatId = [];
+    foreach (q("SELECT chat_id, status FROM broth_log_outbound_deliveries WHERE incident_id=?", [$dmIncidentFailure]) as $row) {
+        $dmFailureByChatId[$row['chat_id']] = $row['status'];
+    }
+    expect_eq($dmFailureByChatId[$opsGroupChatId] ?? '', 'sent', 'I: the Ops group still succeeds when a manager DM fails');
+    expect_eq($dmFailureByChatId[$dmManagerBChat] ?? '', 'sent', 'I: Bob still succeeds when Alice\'s DM fails');
+    expect_eq($dmFailureByChatId[$dmManagerAChat] ?? '', 'failed', 'I: only Alice\'s DM is recorded as failed');
+
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+    $dmBeforeRetryCount = count($sentMessages);
+    broth_log_copilot_notify_incident($dmIncidentFailure);
+    $dmRetryChatIds = array_column(array_column(array_slice($sentMessages, $dmBeforeRetryCount), 'payload'), 'chat_id');
+    expect_true(in_array($dmManagerAChat, $dmRetryChatIds, true), 'J: retrying resends to the previously-failed destination (Alice)');
+    expect_true(!in_array($opsGroupChatId, $dmRetryChatIds, true), 'J: retry does NOT resend to the already-successful group');
+    expect_true(!in_array($dmManagerBChat, $dmRetryChatIds, true), 'J: retry does NOT resend to the already-successful Bob');
+    expect_eq(q1("SELECT status FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=?", [$dmIncidentFailure, $dmManagerAChat])['status'] ?? '', 'sent', 'Alice\'s delivery is now sent after the successful retry');
+
+    // K/L/M/N: ACK pressed from a manager's private DM acknowledges the canonical incident
+    // globally, denies wrong-branch attempts, and rejects replays - the same actor-based rules
+    // already enforced for the Ops group, unaffected by which chat the button was pressed in.
+    $dmAckIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-dm-ack']));
+    run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$dmAckIncidentId]);
+    $dmAckNow = new DateTimeImmutable('2026-08-22 01:00:00 UTC');
+    $dmAckDue = array_values(array_filter(broth_log_copilot_due_escalations($dmAckNow), fn($d) => $d['incident']['incident_id'] === $dmAckIncidentId));
+    broth_log_copilot_apply_escalation_action_with_notification($dmAckDue[0], $dmAckNow); // fans out to group + Alice + Bob
+
+    $ackExpiresAt = $dmAckNow->modify('+15 minutes')->getTimestamp();
+    $ackToken = broth_log_copilot_create_callback_token('ack', $dmAckIncidentId, $ackExpiresAt);
+    broth_log_copilot_enqueue_webhook(['update_id' => 7101, 'callback_query' => ['id' => 'cb-7101', 'data' => $ackToken, 'from' => ['id' => (int)$dmManagerA], 'message' => ['chat' => ['id' => $dmManagerAChat, 'type' => 'private'], 'message_id' => 9101]]]);
+    $dmAckProcessed = broth_log_copilot_process_inbox(10, $dmAckNow);
+    expect_eq(find_processed($dmAckProcessed, '7101')['status'] ?? '', 'processed', 'K: ACK pressed from Alice\'s private DM is processed');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '', 'acknowledged', 'K: the canonical incident is acknowledged');
+
+    $dmAckStillDue = array_values(array_filter(broth_log_copilot_due_escalations($dmAckNow->modify('+30 minutes')), fn($d) => $d['incident']['incident_id'] === $dmAckIncidentId));
+    expect_true(empty($dmAckStillDue), 'L: ACK from Alice\'s DM stops future reminders for the incident everywhere - group, Alice, and Bob alike');
+
+    $wrongBranchExpiresAt = $dmAckNow->modify('+15 minutes')->getTimestamp();
+    $wrongBranchToken = broth_log_copilot_create_callback_token('ack', $dmIncidentB1, $wrongBranchExpiresAt);
+    broth_log_copilot_enqueue_webhook(['update_id' => 7102, 'callback_query' => ['id' => 'cb-7102', 'data' => $wrongBranchToken, 'from' => ['id' => (int)$dmManagerC], 'message' => ['chat' => ['id' => $dmManagerCChat, 'type' => 'private'], 'message_id' => 9102]]]);
+    broth_log_copilot_process_inbox(10, $dmAckNow);
+    expect_true((q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmIncidentB1])['state'] ?? '') !== 'acknowledged', 'M: Cara (B2 manager) pressing ACK on a B1 incident from her own DM does NOT acknowledge it - branch mismatch denies the action');
+
+    broth_log_copilot_enqueue_webhook(['update_id' => 7103, 'callback_query' => ['id' => 'cb-7103', 'data' => $ackToken, 'from' => ['id' => (int)$dmManagerA], 'message' => ['chat' => ['id' => $dmManagerAChat, 'type' => 'private'], 'message_id' => 9103]]]);
+    broth_log_copilot_process_inbox(10, $dmAckNow);
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '', 'acknowledged', 'N: replaying the already-consumed ACK token from the DM has no additional effect - state is unchanged, not reprocessed');
+
+    // O/P: Resolve from a DM uses the exact same safety rules as the group - unsafe recheck
+    // rejected, safe recheck closes the canonical incident globally.
+    $bobUser = broth_log_copilot_authorized_user($dmManagerB);
+    $unsafeResolve = broth_log_copilot_resolve($dmAckIncidentId, $bobUser, 45.0, 'checked', $dmAckNow); // still above the <=40F cooler target
+    expect_true(!($unsafeResolve['ok'] ?? true), 'O: an unsafe recheck temperature is rejected, regardless of which surface (group or DM) it came from');
+    expect_true((q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '') !== 'resolved', 'O: the incident remains open after a rejected unsafe resolve');
+    $safeResolve = broth_log_copilot_resolve($dmAckIncidentId, $bobUser, 35.0, 'closed door and moved product', $dmAckNow);
+    expect_true($safeResolve['ok'] ?? false, 'P: a safe recheck temperature resolves the incident');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '', 'resolved', 'P: the canonical incident is resolved globally, the same as if Resolve had come from the group');
+
+    // R: deactivating a manager immediately stops future DMs without deleting their registration.
+    run("UPDATE broth_log_authorized_users SET active=0 WHERE telegram_user_id=?", [$dmManagerA]);
+    $dmB1AfterDeactivation = broth_log_copilot_manager_dm_chat_ids('B1');
+    expect_true(!in_array($dmManagerAChat, $dmB1AfterDeactivation, true), 'R: a deactivated manager is immediately excluded from DM eligibility');
+    expect_true(in_array($dmManagerBChat, $dmB1AfterDeactivation, true), 'R: deactivating Alice does not affect Bob\'s eligibility');
+    expect_true(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmManagerA]) !== null, 'R: Alice\'s private-chat registration record is preserved, not deleted, even though she is now deactivated');
+
+    // S: changing Bob's branch from B1 to B2 - old branch stops, new branch starts, purely by
+    // human-edited allowed_branches, never inferred.
+    run("UPDATE broth_log_authorized_users SET allowed_branches=? WHERE telegram_user_id=?", [json_encode(['B2']), $dmManagerB]);
+    expect_true(!in_array($dmManagerBChat, broth_log_copilot_manager_dm_chat_ids('B1'), true), 'S: after the branch change, Bob no longer receives B1 DMs');
+    expect_true(in_array($dmManagerBChat, broth_log_copilot_manager_dm_chat_ids('B2'), true), 'S: after the branch change, Bob now receives B2 DMs');
+
+    // /alerts status command: authorized manager sees ON + current store, unauthorized sees pending.
+    broth_log_copilot_enqueue_webhook(['update_id' => 7301, 'message' => ['text' => '/alerts', 'from' => ['id' => (int)$dmManagerB], 'chat' => ['id' => $dmManagerBChat, 'type' => 'private'], 'message_id' => 9301]]);
+    broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq($sentMessages[count($sentMessages) - 1]['payload']['text'] ?? '', 'TEST - ' . broth_log_copilot_tr('private_alerts_status_on', 'en', ['B2']), '/alerts for Bob (now B2-authorized after the branch change) shows ON plus his current store');
+    broth_log_copilot_enqueue_webhook(['update_id' => 7302, 'message' => ['text' => '/alerts', 'from' => ['id' => (int)$dmUnauthorizedPrivate], 'chat' => ['id' => $dmUnauthorizedPrivateChat, 'type' => 'private'], 'message_id' => 9302]]);
+    broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq($sentMessages[count($sentMessages) - 1]['payload']['text'] ?? '', 'TEST - ' . broth_log_copilot_tr('private_alerts_status_pending', 'en'), '/alerts for an unauthorized private user shows the pending status, not any store data');
+
+    // T: a poison row must not block private-DM registration processing OR eligible-incident
+    // reminders in the same batch (extends the PR #33 isolation guarantee to the new carve-out).
+    $poisonDmIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-dm-poison']));
+    run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$poisonDmIncidentId]);
+    $poisonDmNow = new DateTimeImmutable('2026-08-22 02:00:00 UTC');
+    $poisonDmDue = array_values(array_filter(broth_log_copilot_due_escalations($poisonDmNow), fn($d) => $d['incident']['incident_id'] === $poisonDmIncidentId));
+    expect_true(!empty($poisonDmDue), 'sanity: the DM-eligible incident is genuinely due for this poison-row test');
+
+    broth_log_copilot_enqueue_webhook(['update_id' => 7201, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmManagerC], 'chat' => ['id' => $dmManagerCChat, 'type' => 'private'], 'message_id' => 9201]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 7202, 'message' => ['text' => 'today B2', 'from' => ['id' => (int)$dmManagerC], 'chat' => ['id' => 999, 'type' => 'group'], 'message_id' => 9202]]);
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) { throw new RuntimeException('simulated poison row for DM test'); };
+    $poisonDmProcessed = broth_log_copilot_process_inbox(10, $poisonDmNow);
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    expect_eq(find_processed($poisonDmProcessed, '7201')['status'] ?? '', 'processed', 'T: a private registration row is unaffected by a poison row elsewhere in the same batch');
+    expect_eq(find_processed($poisonDmProcessed, '7202')['status'] ?? '', 'processing_failed', 'T: the poison row itself still fails cleanly in this DM-mixed batch');
+
+    $poisonDmEscalationResult = broth_log_copilot_apply_escalation_action_with_notification($poisonDmDue[0], $poisonDmNow);
+    expect_eq($poisonDmEscalationResult['action'] ?? '', 'reminded', 'T: the escalation/reminder phase for a DM-eligible incident still completes after a poison row in the same tick');
+    expect_true(($poisonDmEscalationResult['outbound_sent'] ?? 0) >= 1, 'T: at least one destination (group and/or manager DM) receives the reminder despite the poison row');
+
+    // U: this entire block deliberately used numeric-shaped chat ids throughout (e.g. '910301001'),
+    // matching real Telegram's private-chat id format. Reaching this point without an uncaught
+    // TypeError already proves the PR #32-class array-key-coercion bug does not recur here.
+    expect_true(true, 'U: numeric-shaped Telegram chat ids throughout this block never triggered a hash_equals/array-key TypeError regression');
+
+    // Re-registration idempotency: the same sender privately sending /start twice (even with a
+    // different observed chat id, as could legitimately happen) ends in exactly one row - the
+    // most recent real chat.id wins, never two active destinations for one registration.
+    $dmReregId = '307'; $dmReregChatFirst = '910307001'; $dmReregChatSecond = '910307002';
+    broth_log_copilot_enqueue_webhook(['update_id' => 7401, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmReregId], 'chat' => ['id' => $dmReregChatFirst, 'type' => 'private'], 'message_id' => 9401]]);
+    broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    broth_log_copilot_enqueue_webhook(['update_id' => 7402, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmReregId], 'chat' => ['id' => $dmReregChatSecond, 'type' => 'private'], 'message_id' => 9402]]);
+    broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(count(q("SELECT * FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmReregId])), 1, 'repeated /start from the same sender leaves exactly one registration row, not a duplicate');
+    expect_eq(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmReregId])['private_chat_id'] ?? '', $dmReregChatSecond, 'the most recently observed real chat.id wins on re-registration');
+    expect_true(broth_log_copilot_authorized_user($dmReregId) === null, 'repeated /start never creates or mutates authorization');
+
+    // Hijack resistance: two different senders registering in the same batch can never have their
+    // telegram_user_id and private_chat_id cross-wired. The registration write reads only
+    // $row['telegram_user_id'] (from.id) and $row['chat_id'] (chat.id) of the single update it
+    // came from - never message text, and the anchored /start pattern does not even parse
+    // arguments, so there is no field through which one sender could supply another's identity.
+    // X additionally carries an irrelevant 'username' claiming to be Y, proving that field is
+    // never read for registration either.
+    $dmHijackX = '308'; $dmHijackXChat = '910308001';
+    $dmHijackY = '309'; $dmHijackYChat = '910309001';
+    broth_log_copilot_enqueue_webhook(['update_id' => 7403, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmHijackX, 'username' => 'impersonator_of_Y'], 'chat' => ['id' => $dmHijackXChat, 'type' => 'private'], 'message_id' => 9403]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 7404, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmHijackY], 'chat' => ['id' => $dmHijackYChat, 'type' => 'private'], 'message_id' => 9404]]);
+    broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmHijackX])['private_chat_id'] ?? '', $dmHijackXChat, 'X is bound only to X\'s own observed chat id, unaffected by an irrelevant username field');
+    expect_eq(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmHijackY])['private_chat_id'] ?? '', $dmHijackYChat, 'Y is bound only to Y\'s own observed chat id, registered independently and concurrently with X');
+    expect_true(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmHijackX])['private_chat_id'] !== $dmHijackYChat, 'X\'s registration was never cross-wired to Y\'s chat id');
+
+    // Destination dedup: if a manager's private chat id ever coincided with the group's chat id
+    // (pathological but possible), the merged destination list must still contain it exactly once.
+    $dmDedupManager = '310';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$dmDedupManager, 'Manager Dedup-Test', 'manager', json_encode(['B1'])]);
+    run("INSERT OR REPLACE INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id, registered_at, updated_at) VALUES (?,?,datetime('now'),datetime('now'))", [$dmDedupManager, $opsGroupChatId]);
+    $dmDedupChats = array_values(array_unique(array_merge(
+        broth_log_copilot_route_chat_ids('B1', 1),
+        broth_log_copilot_manager_dm_chat_ids('B1')
+    )));
+    expect_eq(count(array_filter($dmDedupChats, fn($c) => $c === $opsGroupChatId)), 1, 'a manager private chat id coinciding with the group chat id appears exactly once in the merged destination list, never sent twice');
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$dmDedupManager]);
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmDedupManager]);
+
+    // Owner private registration must never make the owner a manager-DM recipient - this feature
+    // is scoped to role='manager' only, and the owner's existing (unrelated) monitoring is
+    // untouched by this deploy regardless of whether the owner ever privately messages the bot.
+    $dmOwnerId = '311'; $dmOwnerChat = '910311001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$dmOwnerId, 'Owner', 'owner', json_encode(['B1','B2','B3'])]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 7501, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmOwnerId], 'chat' => ['id' => $dmOwnerChat, 'type' => 'private'], 'message_id' => 9501]]);
+    broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmOwnerId])['private_chat_id'] ?? '', $dmOwnerChat, 'the owner CAN register a private chat like anyone else');
+    foreach (['B1', 'B2', 'B3'] as $ownerCheckBranch) {
+        expect_true(!in_array($dmOwnerChat, broth_log_copilot_manager_dm_chat_ids($ownerCheckBranch), true), "the owner's private registration never makes them a manager-DM recipient for {$ownerCheckBranch} (role='owner', not 'manager')");
+    }
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$dmOwnerId]);
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmOwnerId]);
+
     // Cross-cutting: across every message sent by any test in this run (queries, incident
     // notifications, ACK/resolve confirmations, reminders, escalations), none was ever addressed
     // to the one-way-alert sentinel chat - proving Copilot's destination selection never leaks

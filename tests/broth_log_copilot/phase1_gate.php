@@ -763,16 +763,31 @@ try {
     expect_eq(broth_log_copilot_temp_text(10.0, 'en'), '10F', 'temp_text uses the corrected formatter, not the old truncating one');
 
     // --- /pilotid manager onboarding: usable by an unauthorized sender, grants zero access ---
+    // The Manager Onboarding Group is now a THIRD, independent Telegram surface - configured via
+    // TELEGRAM_MANAGER_ONBOARDING_CHAT_ID, never derived from broth_log_routing_rules. $opsGroupChatId
+    // (routing-based) continues to represent the Alert/Fallback group used throughout the rest of
+    // this file for proactive delivery - it is deliberately NOT the onboarding group anymore.
     $pilotUnauthorizedId = '778899';
     $opsGroupChatId = 'ops-group-chat-for-pilotid-test';
+    $onboardingGroupChatId = 'manager-onboarding-group-chat-for-test';
     foreach (['B1', 'B2', 'B3'] as $pilotBranch) {
         for ($pilotLevel = 1; $pilotLevel <= 3; $pilotLevel++) {
             run("INSERT OR REPLACE INTO broth_log_routing_rules (branch,stage,level,telegram_user_ids,chat_id,active) VALUES (?,?,?,?,?,1)",
                 [$pilotBranch, 'staging', $pilotLevel, json_encode(['999']), $opsGroupChatId]);
         }
     }
-    expect_true(broth_log_copilot_is_production_ops_chat($opsGroupChatId), 'the configured routing destination is recognized as the production Ops chat');
-    expect_true(!broth_log_copilot_is_production_ops_chat('some-unrelated-chat'), 'an arbitrary chat id is not recognized as the production Ops chat');
+    putenv('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID=' . $onboardingGroupChatId);
+
+    // Missing config fails closed: with no onboarding chat configured, nothing is ever accepted.
+    putenv('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID');
+    expect_true(broth_log_copilot_manager_onboarding_chat_ids() === [], 'with no config, there are zero recognized onboarding chats');
+    expect_true(!broth_log_copilot_is_manager_onboarding_chat($onboardingGroupChatId), 'with no config, even the real onboarding group chat id is not recognized - fails closed, not open');
+    expect_true(!broth_log_copilot_is_manager_onboarding_chat($opsGroupChatId), 'with no config, the Alert/Fallback group is (still) not mistaken for the onboarding group either');
+    putenv('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID=' . $onboardingGroupChatId);
+
+    expect_true(broth_log_copilot_is_manager_onboarding_chat($onboardingGroupChatId), 'the configured TELEGRAM_MANAGER_ONBOARDING_CHAT_ID is recognized as the trusted onboarding chat');
+    expect_true(!broth_log_copilot_is_manager_onboarding_chat('some-unrelated-chat'), 'an arbitrary chat id is not recognized as the onboarding chat');
+    expect_true(!broth_log_copilot_is_manager_onboarding_chat($opsGroupChatId), 'the Alert/Fallback group (routing-configured) is explicitly NOT the onboarding group - the two configurations are fully independent now');
 
     // Regression: real Telegram group chat ids are numeric-looking strings (e.g. "-5367135326").
     // Using a chat id as a PHP array key (as an earlier draft did, to dedupe) silently coerces a
@@ -781,33 +796,37 @@ try {
     // /pilotid message stayed queued, and starving the escalation-reminder loop that runs after
     // it in the same script. Caught only by testing with a genuinely numeric chat id, not the
     // non-numeric one used everywhere else in this test file.
-    $numericOpsGroupChatId = '-5367135399';
-    run("INSERT OR REPLACE INTO broth_log_routing_rules (branch,stage,level,telegram_user_ids,chat_id,active) VALUES (?,?,?,?,?,1)",
-        ['B1', 'staging', 1, json_encode(['999']), $numericOpsGroupChatId]);
-    expect_true(broth_log_copilot_is_production_ops_chat($numericOpsGroupChatId), 'a numeric-string chat id is matched correctly, with no TypeError from array-key coercion');
+    $numericOnboardingChatId = '-5367135399';
+    putenv('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID=' . $numericOnboardingChatId);
+    expect_true(broth_log_copilot_is_manager_onboarding_chat($numericOnboardingChatId), 'a numeric-string chat id is matched correctly, with no TypeError from array-key coercion');
     broth_log_copilot_enqueue_webhook([
         'update_id' => 5099,
-        'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $numericOpsGroupChatId], 'message_id' => 599],
+        'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $numericOnboardingChatId], 'message_id' => 599],
     ]);
     $pilotNumericChatProcessed = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
     expect_eq(find_processed($pilotNumericChatProcessed, '5099')['status'] ?? '', 'processed', '/pilotid through a real numeric-shaped chat id is processed without crashing the worker');
-    run("INSERT OR REPLACE INTO broth_log_routing_rules (branch,stage,level,telegram_user_ids,chat_id,active) VALUES (?,?,?,?,?,1)",
-        ['B1', 'staging', 1, json_encode(['999']), $opsGroupChatId]);
+    putenv('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID=' . $onboardingGroupChatId);
 
     $authorizedUsersBefore = count(q("SELECT * FROM broth_log_authorized_users"));
     $routingSnapshotBefore = q("SELECT branch,stage,level,telegram_user_ids,chat_id,active FROM broth_log_routing_rules ORDER BY branch,stage,level");
 
-    // 1 + 5: an unauthorized sender can run /pilotid, and only inside the real production Ops chat.
+    // 1 + 5: an unauthorized sender can run /pilotid, and only inside the real Manager Onboarding Group.
     expect_true(broth_log_copilot_authorized_user($pilotUnauthorizedId) === null, 'the pilotid test sender starts out unauthorized');
     broth_log_copilot_enqueue_webhook([
         'update_id' => 5001,
-        'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 501],
+        'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $onboardingGroupChatId], 'message_id' => 501],
     ]);
     $pilotProcessed1 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
     $pilotRow1 = find_processed($pilotProcessed1, '5001');
-    expect_eq($pilotRow1['status'] ?? '', 'processed', 'unauthorized sender in the real Ops chat: /pilotid is processed, not denied');
+    expect_eq($pilotRow1['status'] ?? '', 'processed', 'unauthorized sender in the real Manager Onboarding Group: /pilotid is processed, not denied');
     expect_eq($pilotRow1['intent'] ?? '', 'pilot_id', 'the processed row is tagged with the pilot_id intent');
     expect_eq($sentMessages[count($sentMessages) - 1]['payload']['text'], 'TEST - ' . broth_log_copilot_tr('pilot_id_received', 'en'), 'unauthorized /pilotid gets the identity-received waiting-for-approval reply');
+
+    // 2: /pilotid sent in the OLD Alert/Fallback group is now rejected - onboarding no longer
+    // accepts the group that alerts are delivered to, only the dedicated onboarding group.
+    broth_log_copilot_enqueue_webhook(['update_id' => 5012, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 512]]);
+    $pilotOldGroupProcessed = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(find_processed($pilotOldGroupProcessed, '5012')['status'] ?? '', 'denied', '2: /pilotid sent in the old Alert/Fallback group is rejected - it is no longer accepted for onboarding');
 
     // 9 + 10: numeric sender id is captured internally in the inbox row, but never appears in the reply text.
     $pilotInboxRow1 = q1("SELECT telegram_user_id FROM broth_log_bot_inbox WHERE update_id='5001'");
@@ -819,26 +838,33 @@ try {
     expect_true(q("SELECT branch,stage,level,telegram_user_ids,chat_id,active FROM broth_log_routing_rules ORDER BY branch,stage,level") === $routingSnapshotBefore, 'no routing row was changed by /pilotid');
 
     // 2, 3, 4: the same still-unauthorized sender remains fully denied for every real command.
-    broth_log_copilot_enqueue_webhook(['update_id' => 5002, 'message' => ['text' => 'today B1', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 502]]);
-    broth_log_copilot_enqueue_webhook(['update_id' => 5003, 'message' => ['text' => '/ack', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 503]]);
-    broth_log_copilot_enqueue_webhook(['update_id' => 5004, 'message' => ['text' => '/resolve', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 504]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 5002, 'message' => ['text' => 'today B1', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $onboardingGroupChatId], 'message_id' => 502]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 5003, 'message' => ['text' => '/ack', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $onboardingGroupChatId], 'message_id' => 503]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 5004, 'message' => ['text' => '/resolve', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $onboardingGroupChatId], 'message_id' => 504]]);
     $pilotProcessed2 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
     expect_eq(find_processed($pilotProcessed2, '5002')['status'] ?? '', 'denied', 'the same unauthorized sender still cannot run a real query command (today B1)');
     expect_eq(find_processed($pilotProcessed2, '5003')['status'] ?? '', 'denied', 'the same unauthorized sender still cannot ACK');
     expect_eq(find_processed($pilotProcessed2, '5004')['status'] ?? '', 'denied', 'the same unauthorized sender still cannot Resolve');
 
-    // 6, 7, 8: /pilotid from any chat other than the real production Ops chat gets no special
+    // 3 + 4: /pilotid from any chat other than the real Manager Onboarding Group gets no special
     // treatment - it falls straight through to the same deny-by-default path as everything else.
     broth_log_copilot_enqueue_webhook(['update_id' => 5005, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => 'some-other-group-chat'], 'message_id' => 505]]);
     broth_log_copilot_enqueue_webhook(['update_id' => 5006, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $pilotUnauthorizedId], 'message_id' => 506]]);
     broth_log_copilot_enqueue_webhook(['update_id' => 5007, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => 'other-staging-bot-chat'], 'message_id' => 507]]);
     $pilotProcessed3 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
-    expect_eq(find_processed($pilotProcessed3, '5005')['status'] ?? '', 'denied', 'wrong (unknown) group is rejected for /pilotid, no special reply');
-    expect_eq(find_processed($pilotProcessed3, '5006')['status'] ?? '', 'denied', 'a private DM (chat id == sender id) is rejected for /pilotid');
+    expect_eq(find_processed($pilotProcessed3, '5005')['status'] ?? '', 'denied', '4: wrong (unknown) group is rejected for /pilotid, no special reply');
+    expect_eq(find_processed($pilotProcessed3, '5006')['status'] ?? '', 'denied', '3: a private DM (chat id == sender id) is rejected for /pilotid');
     expect_eq(find_processed($pilotProcessed3, '5007')['status'] ?? '', 'denied', 'an unrelated staging/other chat is rejected for /pilotid');
 
-    // 13: repeated /pilotid from the same sender in the real Ops chat is idempotent.
-    broth_log_copilot_enqueue_webhook(['update_id' => 5008, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 508]]);
+    // 5: staging isolation - a chat id only configured under a staging-style env var name is never
+    // accepted by the production lookup, since TELEGRAM_MANAGER_ONBOARDING_CHAT_ID is read from
+    // whichever env file BAKUDAN_TELEGRAM_ENV_FILE points at, and production/staging always use
+    // entirely separate env files - never a shared or fallback path.
+    $stagingOnlyChatId = 'staging-only-onboarding-chat';
+    expect_true(!broth_log_copilot_is_manager_onboarding_chat($stagingOnlyChatId), '5: a chat id that is not the configured production value is rejected, modeling staging isolation - no cross-environment fallback exists in this lookup');
+
+    // 13: repeated /pilotid from the same sender in the real onboarding group is idempotent.
+    broth_log_copilot_enqueue_webhook(['update_id' => 5008, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $onboardingGroupChatId], 'message_id' => 508]]);
     $pilotProcessed4 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
     $pilotRow4 = find_processed($pilotProcessed4, '5008');
     expect_eq($pilotRow4['status'] ?? '', 'processed', 'a second /pilotid from the same still-unauthorized sender is processed the same way');
@@ -847,7 +873,7 @@ try {
     expect_eq(count(q("SELECT * FROM broth_log_authorized_users")), $authorizedUsersBefore, 'repeating /pilotid still creates no authorized-user row');
 
     // 14: the bot-username-suffixed form also works.
-    broth_log_copilot_enqueue_webhook(['update_id' => 5009, 'message' => ['text' => '/pilotid@brothlog_bot', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 509]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 5009, 'message' => ['text' => '/pilotid@brothlog_bot', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $onboardingGroupChatId], 'message_id' => 509]]);
     $pilotProcessed5 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
     expect_eq(find_processed($pilotProcessed5, '5009')['status'] ?? '', 'processed', '/pilotid@brothlog_bot (group-suffixed form) is recognized the same as /pilotid');
     expect_eq(find_processed($pilotProcessed5, '5009')['intent'] ?? '', 'pilot_id', '/pilotid@brothlog_bot is tagged with the pilot_id intent');
@@ -855,14 +881,14 @@ try {
     // 15: arbitrary text mentioning "pilotid" does not trigger onboarding.
     expect_true(!broth_log_copilot_is_pilot_id_text('please run pilotid for me'), 'arbitrary text containing "pilotid" is not recognized as the onboarding command');
     expect_true(!broth_log_copilot_is_pilot_id_text('/pilotid now please'), 'trailing text after /pilotid is not recognized as the anchored onboarding command');
-    broth_log_copilot_enqueue_webhook(['update_id' => 5010, 'message' => ['text' => 'please run pilotid for me', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 510]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 5010, 'message' => ['text' => 'please run pilotid for me', 'from' => ['id' => (int)$pilotUnauthorizedId], 'chat' => ['id' => $onboardingGroupChatId], 'message_id' => 510]]);
     $pilotProcessed6 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
     expect_eq(find_processed($pilotProcessed6, '5010')['status'] ?? '', 'denied', 'arbitrary text mentioning pilotid from an unauthorized sender is denied like any other unrecognized command, not treated as onboarding');
 
     // 16: an already-authorized user gets a harmless "already registered" reply, with zero mutation.
     expect_true(broth_log_copilot_authorized_user('101') !== null, 'sanity: telegram id 101 is the already-authorized B1 manager fixture');
     $existingUserBefore = q1("SELECT telegram_user_id,display_name,role,allowed_branches,active FROM broth_log_authorized_users WHERE telegram_user_id='101'");
-    broth_log_copilot_enqueue_webhook(['update_id' => 5011, 'message' => ['text' => '/pilotid', 'from' => ['id' => 101], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 511]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 5011, 'message' => ['text' => '/pilotid', 'from' => ['id' => 101], 'chat' => ['id' => $onboardingGroupChatId], 'message_id' => 511]]);
     $pilotProcessed7 = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
     $pilotRow7 = find_processed($pilotProcessed7, '5011');
     expect_eq($pilotRow7['status'] ?? '', 'processed', 'an already-authorized user sending /pilotid is processed');
@@ -1213,15 +1239,18 @@ try {
     expect_true(in_array($opsGroupChatId, $cutPreDelivered, true), '1: before cutover, the Ops group still receives the B1 incident');
     expect_true(in_array($cutManagerAChat, $cutPreDelivered, true), '1: before cutover, eligible B1 managers still also receive it (unchanged additive behavior)');
 
-    // 15: /pilotid's Ops-group identity is completely independent of alert-delivery mode.
-    expect_true(broth_log_copilot_is_production_ops_chat($opsGroupChatId), '15: the Ops group is recognized as the trusted onboarding chat before any cutover');
+    // 15: the Manager Onboarding Group's identity is completely independent of alert-delivery
+    // mode AND of the Alert/Fallback group's own routing configuration.
+    expect_true(broth_log_copilot_is_manager_onboarding_chat($onboardingGroupChatId), '15: the Manager Onboarding Group is recognized as the trusted onboarding chat before any cutover');
+    expect_true(!broth_log_copilot_is_manager_onboarding_chat($opsGroupChatId), '15: the Alert/Fallback group is still not the onboarding group, before any cutover');
 
     // 2/6: cut B1 over to manager_dm mode - both eligible managers get their own DM, the group
     // gets nothing. 3: B2 stays in the default mode, independently of B1's cutover.
     run("INSERT OR REPLACE INTO broth_log_branch_alert_mode (branch, mode, updated_at) VALUES ('B1','manager_dm',datetime('now'))");
     expect_eq(broth_log_copilot_branch_alert_mode('B1'), 'manager_dm', 'B1 is now in manager_dm mode');
     expect_eq(broth_log_copilot_branch_alert_mode('B2'), 'ops_fallback', '3: B2 remains in the default ops_fallback mode, independent of B1\'s cutover');
-    expect_true(broth_log_copilot_is_production_ops_chat($opsGroupChatId), '15: the Ops group is STILL recognized as the trusted onboarding chat after B1 is cut over');
+    expect_true(broth_log_copilot_is_manager_onboarding_chat($onboardingGroupChatId), '15: the Manager Onboarding Group is STILL recognized as the trusted onboarding chat after B1 is cut over');
+    expect_true(!broth_log_copilot_is_manager_onboarding_chat($opsGroupChatId), '15: the Alert/Fallback group is STILL not the onboarding group after B1 is cut over - cutover mode never affects onboarding identity');
 
     $cutIncidentB1 = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-b1']));
     broth_log_copilot_notify_incident($cutIncidentB1);
@@ -1375,6 +1404,75 @@ try {
     expect_true(true, '21: numeric-shaped ids throughout the cutover block never triggered a regression, extending the PR #32 guarantee to broth_log_copilot_deliver_proactive_alert()');
 
     run("DELETE FROM broth_log_branch_alert_mode");
+
+    // --- Manager Onboarding Group: hard zero-alert guarantee across every proactive stage ---
+    // 7-12: walk one incident through every stage (initial, L1 reminder, L2 escalation, L3
+    // escalation, L3 repeated reminder) under manager_dm mode, and a second incident through the
+    // zero-eligible-manager fallback path, asserting ZERO delivery rows of any status for the
+    // onboarding group chat id at every single point - not just zero successes.
+    $onboardManagerId = '501'; $onboardManagerChat = '910501001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$onboardManagerId, 'Onboarding-Test Manager', 'manager', json_encode(['B1'])]);
+    run("INSERT OR REPLACE INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id, registered_at, updated_at) VALUES (?,?,datetime('now'),datetime('now'))", [$onboardManagerId, $onboardManagerChat]);
+    run("INSERT OR REPLACE INTO broth_log_branch_alert_mode (branch, mode, updated_at) VALUES ('B1','manager_dm',datetime('now'))");
+
+    $noOnboardingLeak = function (string $incidentId, string $label) use ($onboardingGroupChatId) {
+        expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=?", [$incidentId, $onboardingGroupChatId])['c'] ?? -1, 0, "{$label}: zero delivery attempts of any status exist for the Manager Onboarding Group");
+    };
+
+    $onboardWalkId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-onboarding-walk']));
+    broth_log_copilot_notify_incident($onboardWalkId);
+    $noOnboardingLeak($onboardWalkId, '7: initial notification');
+
+    $onboardWalkNow = new DateTimeImmutable('2026-08-23 00:00:00 UTC');
+    run("UPDATE broth_log_incidents SET level_entered_at=?, last_reminder_at=NULL, reminder_count=0 WHERE incident_id=?", [$onboardWalkNow->format('Y-m-d H:i:s'), $onboardWalkId]);
+    $onboardDue1 = array_values(array_filter(broth_log_copilot_due_escalations($onboardWalkNow->modify('+5 minutes')), fn($d) => $d['incident']['incident_id'] === $onboardWalkId));
+    broth_log_copilot_apply_escalation_action_with_notification($onboardDue1[0], $onboardWalkNow->modify('+5 minutes'));
+    $noOnboardingLeak($onboardWalkId, '8: L1 reminder');
+
+    $onboardDue2 = array_values(array_filter(broth_log_copilot_due_escalations($onboardWalkNow->modify('+10 minutes')), fn($d) => $d['incident']['incident_id'] === $onboardWalkId));
+    broth_log_copilot_apply_escalation_action_with_notification($onboardDue2[0], $onboardWalkNow->modify('+10 minutes'));
+    $noOnboardingLeak($onboardWalkId, '9: L2 escalation');
+
+    $onboardDue3 = array_values(array_filter(broth_log_copilot_due_escalations($onboardWalkNow->modify('+15 minutes')), fn($d) => $d['incident']['incident_id'] === $onboardWalkId));
+    broth_log_copilot_apply_escalation_action_with_notification($onboardDue3[0], $onboardWalkNow->modify('+15 minutes'));
+    $noOnboardingLeak($onboardWalkId, '10: L3 escalation');
+
+    $onboardDue4 = array_values(array_filter(broth_log_copilot_due_escalations($onboardWalkNow->modify('+30 minutes')), fn($d) => $d['incident']['incident_id'] === $onboardWalkId));
+    broth_log_copilot_apply_escalation_action_with_notification($onboardDue4[0], $onboardWalkNow->modify('+30 minutes'));
+    $noOnboardingLeak($onboardWalkId, '11: L3 repeated reminder');
+
+    // 12: the zero-eligible-manager emergency fallback path goes to the Alert/Fallback group, NEVER
+    // to the Manager Onboarding Group. Uses B3 (genuinely zero eligible managers at this point in
+    // the suite - B1 still has the earlier cutover test's active managers, which would otherwise
+    // satisfy coverage and mask this specific fallback scenario).
+    run("INSERT OR REPLACE INTO broth_log_branch_alert_mode (branch, mode, updated_at) VALUES ('B3','manager_dm',datetime('now'))");
+    expect_true(empty(broth_log_copilot_manager_dm_chat_ids('B3')), 'sanity: B3 has zero eligible managers at this point in the suite');
+    $onboardFallbackId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B3', 'stationKey' => 'pastaBoilerRight', 'station' => 'Pasta Boiler Right', 'target' => '>= 200F', 'responseId' => 'resp-onboarding-fallback']));
+    broth_log_copilot_notify_incident($onboardFallbackId);
+    $noOnboardingLeak($onboardFallbackId, '12: emergency fallback');
+    expect_true(in_array($opsGroupChatId, array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$onboardFallbackId]), 'chat_id'), true), '12: the emergency fallback correctly goes to the Alert/Fallback group instead');
+
+    // 17: the Manager Onboarding Group chat id never becomes a manager-DM destination for any
+    // branch - it is never registered as anyone's private_chat_id, so it structurally cannot leak
+    // into broth_log_copilot_manager_dm_chat_ids().
+    foreach (['B1', 'B2', 'B3'] as $onboardCheckBranch) {
+        expect_true(!in_array($onboardingGroupChatId, broth_log_copilot_manager_dm_chat_ids($onboardCheckBranch), true), "17: the onboarding group chat id is never a manager-DM destination for {$onboardCheckBranch}");
+    }
+
+    // 18: owner exclusion from manager DM delivery is unchanged by this PR (already covered
+    // extensively in PR #34's dedicated owner test) - direct re-check that the guarantee still
+    // holds with the onboarding group now in play alongside it.
+    $onboardOwnerId = '502'; $onboardOwnerChat = '910502001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$onboardOwnerId, 'Owner', 'owner', json_encode(['B1','B2','B3'])]);
+    run("INSERT OR REPLACE INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id, registered_at, updated_at) VALUES (?,?,datetime('now'),datetime('now'))", [$onboardOwnerId, $onboardOwnerChat]);
+    foreach (['B1', 'B2', 'B3'] as $onboardOwnerBranch) {
+        expect_true(!in_array($onboardOwnerChat, broth_log_copilot_manager_dm_chat_ids($onboardOwnerBranch), true), "18: the owner's private registration never makes them a manager-DM recipient for {$onboardOwnerBranch}");
+    }
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$onboardOwnerId]);
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$onboardOwnerId]);
+
+    run("DELETE FROM broth_log_branch_alert_mode");
+    run("UPDATE broth_log_authorized_users SET active=0 WHERE telegram_user_id=?", [$onboardManagerId]);
 
     // Cross-cutting: across every message sent by any test in this run (queries, incident
     // notifications, ACK/resolve confirmations, reminders, escalations), none was ever addressed

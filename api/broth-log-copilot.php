@@ -1006,33 +1006,23 @@ function broth_log_copilot_route_chat_ids(string $branch, int $level): array {
     return $chatId !== '' ? [$chatId] : [];
 }
 
-// OPS_GROUP_IDENTITY, deliberately kept separate from PROACTIVE_ALERT_DESTINATION. The trusted
-// onboarding/admin group for /pilotid purposes is defined the same way it always has been -
-// whatever chat(s) the currently active B1/B2/B3 routing rows resolve to (reusing
-// broth_log_copilot_active_route()'s stage-awareness, so a staging-only chat is never included
-// under the production worker). This function answers ONLY "is this the trusted onboarding
-// group" and is never used to decide where a food-safety alert is sent - that decision belongs
-// entirely to broth_log_copilot_deliver_proactive_alert() / broth_log_copilot_manager_dm_chat_ids().
-// A branch's alert-delivery cutover to manager_dm mode never touches broth_log_routing_rules at
-// all, so this identity - and /pilotid - are completely unaffected by cutover state.
-function broth_log_copilot_ops_chat_ids(): array {
-    // Deliberately does not dedupe via array keys: a numeric-looking chat id (real Telegram chat
-    // ids for groups/DMs commonly are, e.g. "-5367135326") gets silently coerced from string to
-    // int as a PHP array key, which then fails hash_equals()'s strict string-only type check below.
-    $chatIds = [];
-    foreach (['B1', 'B2', 'B3'] as $branch) {
-        for ($level = 1; $level <= 3; $level++) {
-            foreach (broth_log_copilot_route_chat_ids($branch, $level) as $chatId) {
-                $chatIds[] = $chatId;
-            }
-        }
-    }
-    return array_values(array_unique($chatIds));
+// MANAGER_ONBOARDING_GROUP_IDENTITY - deliberately independent of ALERT_FALLBACK_DESTINATION
+// (broth_log_copilot_route_chat_ids() / broth_log_copilot_deliver_proactive_alert()) and of
+// MANAGER_DM_DESTINATION (broth_log_copilot_manager_dm_chat_ids()). This is now a THIRD, separate
+// Telegram surface: a dedicated group used only for /pilotid and onboarding admin, never a
+// proactive alert or fallback destination. Configured explicitly via TELEGRAM_MANAGER_ONBOARDING_CHAT_ID
+// (same env-file mechanism as every other Copilot chat/secret, so staging and production are
+// already isolated by using entirely separate env files - never a shared fallback path). No
+// hardcoded chat id in source, and no fallback to broth_log_routing_rules or the Alert/Fallback
+// group: if the env var is unset, this returns empty and /pilotid fails closed everywhere.
+function broth_log_copilot_manager_onboarding_chat_ids(): array {
+    $chatId = broth_log_copilot_env('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID');
+    return $chatId !== '' ? [$chatId] : [];
 }
 
-function broth_log_copilot_is_production_ops_chat(string $chatId): bool {
+function broth_log_copilot_is_manager_onboarding_chat(string $chatId): bool {
     if ($chatId === '') return false;
-    foreach (broth_log_copilot_ops_chat_ids() as $configured) {
+    foreach (broth_log_copilot_manager_onboarding_chat_ids() as $configured) {
         if (hash_equals((string)$configured, $chatId)) return true;
     }
     return false;
@@ -1559,14 +1549,16 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
 
             // /pilotid is the one command an unauthorized sender may use - checked before the
             // authorization gate below on purpose, and scoped to real production message updates only
-            // (never callback_query). It only responds inside the real production Ops chat(s);
-            // everywhere else (DM, staging, any other chat) it falls straight through to the same
-            // deny-by-default path as every other command, with no distinguishing reply. It never
-            // creates, modifies, or reads broth_log_authorized_users beyond the read-only lookup above,
-            // and never touches broth_log_routing_rules.
+            // (never callback_query). It only responds inside the dedicated Manager Onboarding
+            // Group (broth_log_copilot_is_manager_onboarding_chat(), backed by
+            // TELEGRAM_MANAGER_ONBOARDING_CHAT_ID - never the Alert/Fallback group, never a
+            // private DM, never any other chat); everywhere else it falls straight through to the
+            // same deny-by-default path as every other command, with no distinguishing reply. It
+            // never creates, modifies, or reads broth_log_authorized_users beyond the read-only
+            // lookup above, and never touches broth_log_routing_rules.
             if ((string)($row['update_type'] ?? '') === 'message'
                 && broth_log_copilot_is_pilot_id_text((string)$row['message_text'])
-                && broth_log_copilot_is_production_ops_chat((string)$row['chat_id'])) {
+                && broth_log_copilot_is_manager_onboarding_chat((string)$row['chat_id'])) {
                 $lang = $user['preferred_language'] ?? broth_log_copilot_detect_language((string)$row['message_text']);
                 $response = broth_log_copilot_pilot_id_response($user, $lang);
                 $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $response['message']);

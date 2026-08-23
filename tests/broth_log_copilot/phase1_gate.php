@@ -1179,6 +1179,20 @@ try {
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$dmDedupManager]);
     run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmDedupManager]);
 
+    // Owner private registration must never make the owner a manager-DM recipient - this feature
+    // is scoped to role='manager' only, and the owner's existing (unrelated) monitoring is
+    // untouched by this deploy regardless of whether the owner ever privately messages the bot.
+    $dmOwnerId = '311'; $dmOwnerChat = '910311001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$dmOwnerId, 'Owner', 'owner', json_encode(['B1','B2','B3'])]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 7501, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmOwnerId], 'chat' => ['id' => $dmOwnerChat, 'type' => 'private'], 'message_id' => 9501]]);
+    broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmOwnerId])['private_chat_id'] ?? '', $dmOwnerChat, 'the owner CAN register a private chat like anyone else');
+    foreach (['B1', 'B2', 'B3'] as $ownerCheckBranch) {
+        expect_true(!in_array($dmOwnerChat, broth_log_copilot_manager_dm_chat_ids($ownerCheckBranch), true), "the owner's private registration never makes them a manager-DM recipient for {$ownerCheckBranch} (role='owner', not 'manager')");
+    }
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$dmOwnerId]);
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmOwnerId]);
+
     // Cross-cutting: across every message sent by any test in this run (queries, incident
     // notifications, ACK/resolve confirmations, reminders, escalations), none was ever addressed
     // to the one-way-alert sentinel chat - proving Copilot's destination selection never leaks

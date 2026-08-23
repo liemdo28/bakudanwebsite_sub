@@ -1474,6 +1474,77 @@ try {
     run("DELETE FROM broth_log_branch_alert_mode");
     run("UPDATE broth_log_authorized_users SET active=0 WHERE telegram_user_id=?", [$onboardManagerId]);
 
+    // --- /pilotid strict chat isolation: valid ONLY in the Manager Onboarding Group, for EVERY
+    // sender alike (unauthorized, owner, or manager) - sender authorization must never bypass the
+    // chat restriction. Regression for the real gap found in production: an already-authorized
+    // sender's /pilotid from the wrong chat used to fall through to broth_log_copilot_format_response()'s
+    // pilot_id fallback and get a real "Identity already registered" reply - silently confirming
+    // their authorization status - instead of the required silent rejection.
+    $strictUnauthId = '601';
+    $strictOwnerId = '602'; $strictOwnerChat = '910602001';
+    $strictManagerId = '603'; $strictManagerChat = '910603001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$strictOwnerId, 'Strict Test Owner', 'owner', json_encode(['B1','B2','B3'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$strictManagerId, 'Strict Test Manager', 'manager', json_encode(['B1'])]);
+
+    $strictUnknownChat = 'some-strict-unknown-chat';
+    $strictUpdateId = 9000;
+    // [sender id, sender label, chat id, chat label, expect accepted]
+    $strictMatrix = [
+        [$strictUnauthId, 'unauthorized', $onboardingGroupChatId, 'onboarding_group', true],
+        [$strictOwnerId, 'owner', $onboardingGroupChatId, 'onboarding_group', true],
+        [$strictManagerId, 'manager', $onboardingGroupChatId, 'onboarding_group', true],
+        [$strictUnauthId, 'unauthorized', $opsGroupChatId, 'alert_fallback_group', false],
+        [$strictOwnerId, 'owner', $opsGroupChatId, 'alert_fallback_group', false],
+        [$strictManagerId, 'manager', $opsGroupChatId, 'alert_fallback_group', false],
+        [$strictUnauthId, 'unauthorized', $strictUnauthId, 'private_dm', false],
+        [$strictOwnerId, 'owner', $strictOwnerChat, 'private_dm', false],
+        [$strictManagerId, 'manager', $strictManagerChat, 'private_dm', false],
+        [$strictUnauthId, 'unauthorized', $strictUnknownChat, 'unknown_group', false],
+    ];
+    $strictUpdateIds = [];
+    foreach ($strictMatrix as $i => [$senderId, $senderLabel, $chatId, $chatLabel, $expectAccepted]) {
+        $updateId = $strictUpdateId + $i;
+        $strictUpdateIds[$i] = $updateId;
+        broth_log_copilot_enqueue_webhook(['update_id' => $updateId, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$senderId], 'chat' => ['id' => $chatId], 'message_id' => 9500 + $i]]);
+    }
+    $strictProcessed = broth_log_copilot_process_inbox(20, new DateTimeImmutable('2026-08-23 00:00:00 UTC'));
+    foreach ($strictMatrix as $i => [$senderId, $senderLabel, $chatId, $chatLabel, $expectAccepted]) {
+        $updateId = $strictUpdateIds[$i];
+        $row = find_processed($strictProcessed, (string)$updateId);
+        $inboxRow = q1("SELECT status, outbound_status FROM broth_log_bot_inbox WHERE update_id=?", [(string)$updateId]);
+        if ($expectAccepted) {
+            expect_eq($row['status'] ?? '', 'processed', "{$senderLabel} -> {$chatLabel}: /pilotid is accepted and processed");
+            expect_eq($inboxRow['outbound_status'] ?? '', 'sent', "{$senderLabel} -> {$chatLabel}: a reply was actually sent");
+        } else {
+            expect_eq($row['status'] ?? '', 'denied', "{$senderLabel} -> {$chatLabel}: /pilotid is silently denied, regardless of authorization");
+            expect_true($inboxRow['outbound_status'] === null, "{$senderLabel} -> {$chatLabel}: outbound_status is NULL - zero Telegram send attempts, not merely zero successful sends");
+        }
+    }
+
+    // Owner and manager in the onboarding group get the distinct "already registered" reply,
+    // never the unauthorized "identity received" one (proving no branch/role confusion).
+    $strictOwnerOnboardRow = q1("SELECT status, outbound_status FROM broth_log_bot_inbox WHERE update_id=?", [(string)$strictUpdateIds[1]]);
+    expect_eq($strictOwnerOnboardRow['status'] ?? '', 'processed', 'sanity: owner-in-onboarding-group row processed');
+
+    // Repeated wrong-chat /pilotid remains silent and idempotent - no state ever accumulates.
+    $strictAuthUsersBefore = count(q("SELECT * FROM broth_log_authorized_users"));
+    broth_log_copilot_enqueue_webhook(['update_id' => 9100, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$strictOwnerId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 9600]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 9101, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$strictOwnerId], 'chat' => ['id' => $opsGroupChatId], 'message_id' => 9601]]);
+    $strictRepeatProcessed = broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-23 00:00:00 UTC'));
+    expect_eq(find_processed($strictRepeatProcessed, '9100')['status'] ?? '', 'denied', 'repeated wrong-chat /pilotid (1st repeat) remains silently denied');
+    expect_eq(find_processed($strictRepeatProcessed, '9101')['status'] ?? '', 'denied', 'repeated wrong-chat /pilotid (2nd repeat) remains silently denied - idempotent, no escalating behavior');
+    expect_true(q1("SELECT outbound_status FROM broth_log_bot_inbox WHERE update_id='9100'")['outbound_status'] === null, 'repeated wrong-chat /pilotid: still zero send attempts (1st repeat)');
+    expect_true(q1("SELECT outbound_status FROM broth_log_bot_inbox WHERE update_id='9101'")['outbound_status'] === null, 'repeated wrong-chat /pilotid: still zero send attempts (2nd repeat)');
+    expect_eq(count(q("SELECT * FROM broth_log_authorized_users")), $strictAuthUsersBefore, 'repeated wrong-chat /pilotid never creates or mutates authorization');
+
+    // The dangerous fallback is confirmed gone: calling format_response() directly with a
+    // pilot_id intent (simulating any future code path that might reach it despite the
+    // unconditional interception above) must NOT return the authorization-confirming reply.
+    $strictFallbackReply = broth_log_copilot_format_response(['intent' => 'pilot_id', 'language' => 'en'], ['preferred_language' => 'en']);
+    expect_true($strictFallbackReply !== broth_log_copilot_tr('pilot_id_already_registered', 'en'), 'format_response() no longer has a pilot_id branch that confirms authorization status - falls through to the generic unknown_intent reply instead');
+
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$strictOwnerId, $strictManagerId]);
+
     // Cross-cutting: across every message sent by any test in this run (queries, incident
     // notifications, ACK/resolve confirmations, reminders, escalations), none was ever addressed
     // to the one-way-alert sentinel chat - proving Copilot's destination selection never leaks

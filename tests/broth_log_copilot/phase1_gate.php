@@ -1138,6 +1138,47 @@ try {
     // TypeError already proves the PR #32-class array-key-coercion bug does not recur here.
     expect_true(true, 'U: numeric-shaped Telegram chat ids throughout this block never triggered a hash_equals/array-key TypeError regression');
 
+    // Re-registration idempotency: the same sender privately sending /start twice (even with a
+    // different observed chat id, as could legitimately happen) ends in exactly one row - the
+    // most recent real chat.id wins, never two active destinations for one registration.
+    $dmReregId = '307'; $dmReregChatFirst = '910307001'; $dmReregChatSecond = '910307002';
+    broth_log_copilot_enqueue_webhook(['update_id' => 7401, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmReregId], 'chat' => ['id' => $dmReregChatFirst, 'type' => 'private'], 'message_id' => 9401]]);
+    broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    broth_log_copilot_enqueue_webhook(['update_id' => 7402, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmReregId], 'chat' => ['id' => $dmReregChatSecond, 'type' => 'private'], 'message_id' => 9402]]);
+    broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(count(q("SELECT * FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmReregId])), 1, 'repeated /start from the same sender leaves exactly one registration row, not a duplicate');
+    expect_eq(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmReregId])['private_chat_id'] ?? '', $dmReregChatSecond, 'the most recently observed real chat.id wins on re-registration');
+    expect_true(broth_log_copilot_authorized_user($dmReregId) === null, 'repeated /start never creates or mutates authorization');
+
+    // Hijack resistance: two different senders registering in the same batch can never have their
+    // telegram_user_id and private_chat_id cross-wired. The registration write reads only
+    // $row['telegram_user_id'] (from.id) and $row['chat_id'] (chat.id) of the single update it
+    // came from - never message text, and the anchored /start pattern does not even parse
+    // arguments, so there is no field through which one sender could supply another's identity.
+    // X additionally carries an irrelevant 'username' claiming to be Y, proving that field is
+    // never read for registration either.
+    $dmHijackX = '308'; $dmHijackXChat = '910308001';
+    $dmHijackY = '309'; $dmHijackYChat = '910309001';
+    broth_log_copilot_enqueue_webhook(['update_id' => 7403, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmHijackX, 'username' => 'impersonator_of_Y'], 'chat' => ['id' => $dmHijackXChat, 'type' => 'private'], 'message_id' => 9403]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 7404, 'message' => ['text' => '/start', 'from' => ['id' => (int)$dmHijackY], 'chat' => ['id' => $dmHijackYChat, 'type' => 'private'], 'message_id' => 9404]]);
+    broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmHijackX])['private_chat_id'] ?? '', $dmHijackXChat, 'X is bound only to X\'s own observed chat id, unaffected by an irrelevant username field');
+    expect_eq(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmHijackY])['private_chat_id'] ?? '', $dmHijackYChat, 'Y is bound only to Y\'s own observed chat id, registered independently and concurrently with X');
+    expect_true(q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmHijackX])['private_chat_id'] !== $dmHijackYChat, 'X\'s registration was never cross-wired to Y\'s chat id');
+
+    // Destination dedup: if a manager's private chat id ever coincided with the group's chat id
+    // (pathological but possible), the merged destination list must still contain it exactly once.
+    $dmDedupManager = '310';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$dmDedupManager, 'Manager Dedup-Test', 'manager', json_encode(['B1'])]);
+    run("INSERT OR REPLACE INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id, registered_at, updated_at) VALUES (?,?,datetime('now'),datetime('now'))", [$dmDedupManager, $opsGroupChatId]);
+    $dmDedupChats = array_values(array_unique(array_merge(
+        broth_log_copilot_route_chat_ids('B1', 1),
+        broth_log_copilot_manager_dm_chat_ids('B1')
+    )));
+    expect_eq(count(array_filter($dmDedupChats, fn($c) => $c === $opsGroupChatId)), 1, 'a manager private chat id coinciding with the group chat id appears exactly once in the merged destination list, never sent twice');
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$dmDedupManager]);
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmDedupManager]);
+
     // Cross-cutting: across every message sent by any test in this run (queries, incident
     // notifications, ACK/resolve confirmations, reminders, escalations), none was ever addressed
     // to the one-way-alert sentinel chat - proving Copilot's destination selection never leaks

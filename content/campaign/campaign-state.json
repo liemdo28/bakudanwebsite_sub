@@ -354,8 +354,31 @@
       ]
     },
     "campaign-2026-08-29-visiting-san-antonio-la-cantera": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-08-23T14:22:16.324522+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-08-23T14:22:21.309390+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260823-142216-visiting-san-antonio-bakudan-near-six-flags-fiesta-texas"
+        },
+        {
+          "event": "published",
+          "at": "2026-08-23T14:22:22.230149+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-08-31-dessert-after-ramen-mochi": {
       "status": "approved",

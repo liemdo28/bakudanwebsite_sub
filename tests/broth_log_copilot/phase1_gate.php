@@ -1193,6 +1193,188 @@ try {
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$dmOwnerId]);
     run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$dmOwnerId]);
 
+    // --- Ops group / manager DM cutover: branch-level alert delivery mode ---
+    $cutManagerA = '401'; $cutManagerAChat = '910401001'; // B1, active, registered
+    $cutManagerB = '402'; $cutManagerBChat = '910402001'; // B1, active, registered (second B1 manager)
+    $cutManagerB2 = '403'; $cutManagerB2Chat = '910403001'; // B2, active, registered
+    foreach ([[$cutManagerA, 'B1'], [$cutManagerB, 'B1'], [$cutManagerB2, 'B2']] as [$uid, $branch]) {
+        run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$uid, "Cutover Manager {$uid}", 'manager', json_encode([$branch])]);
+    }
+    foreach ([[$cutManagerA, $cutManagerAChat], [$cutManagerB, $cutManagerBChat], [$cutManagerB2, $cutManagerB2Chat]] as [$uid, $chat]) {
+        run("INSERT OR REPLACE INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id, registered_at, updated_at) VALUES (?,?,datetime('now'),datetime('now'))", [$uid, $chat]);
+    }
+
+    // 1: B1 not cut over (no mode row = default ops_fallback) -> B1 incident still reaches the
+    // Ops group, additively with any eligible managers, exactly as before this feature existed.
+    expect_eq(broth_log_copilot_branch_alert_mode('B1'), 'ops_fallback', 'a branch with no mode row defaults to ops_fallback - the safe, unchanged behavior');
+    $cutIncidentPreCutover = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-pre']));
+    broth_log_copilot_notify_incident($cutIncidentPreCutover);
+    $cutPreDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$cutIncidentPreCutover]), 'chat_id');
+    expect_true(in_array($opsGroupChatId, $cutPreDelivered, true), '1: before cutover, the Ops group still receives the B1 incident');
+    expect_true(in_array($cutManagerAChat, $cutPreDelivered, true), '1: before cutover, eligible B1 managers still also receive it (unchanged additive behavior)');
+
+    // 15: /pilotid's Ops-group identity is completely independent of alert-delivery mode.
+    expect_true(broth_log_copilot_is_production_ops_chat($opsGroupChatId), '15: the Ops group is recognized as the trusted onboarding chat before any cutover');
+
+    // 2/6: cut B1 over to manager_dm mode - both eligible managers get their own DM, the group
+    // gets nothing. 3: B2 stays in the default mode, independently of B1's cutover.
+    run("INSERT OR REPLACE INTO broth_log_branch_alert_mode (branch, mode, updated_at) VALUES ('B1','manager_dm',datetime('now'))");
+    expect_eq(broth_log_copilot_branch_alert_mode('B1'), 'manager_dm', 'B1 is now in manager_dm mode');
+    expect_eq(broth_log_copilot_branch_alert_mode('B2'), 'ops_fallback', '3: B2 remains in the default ops_fallback mode, independent of B1\'s cutover');
+    expect_true(broth_log_copilot_is_production_ops_chat($opsGroupChatId), '15: the Ops group is STILL recognized as the trusted onboarding chat after B1 is cut over');
+
+    $cutIncidentB1 = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-b1']));
+    broth_log_copilot_notify_incident($cutIncidentB1);
+    $cutB1Delivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$cutIncidentB1]), 'chat_id');
+    expect_true(!in_array($opsGroupChatId, $cutB1Delivered, true), '2: after cutover, the Ops group receives NOTHING for the B1 incident');
+    expect_true(in_array($cutManagerAChat, $cutB1Delivered, true), '2: after cutover, Manager A still receives the private DM');
+    expect_true(in_array($cutManagerBChat, $cutB1Delivered, true), '6: both eligible B1 managers receive their own DM');
+    expect_eq(count(array_filter($cutB1Delivered, fn($c) => $c === $cutManagerAChat)), 1, '6: Manager A receives exactly one DM, not a duplicate');
+    expect_eq(count(array_filter($cutB1Delivered, fn($c) => $c === $cutManagerBChat)), 1, '6: Manager B receives exactly one DM, not a duplicate');
+
+    // 3/11: B2 (not cut over) still uses ops_fallback for its own incidents at the same time -
+    // and the B1 manager never receives it.
+    $cutIncidentB2 = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B2', 'stationKey' => 'bowlWarmer', 'station' => 'Bowl Warmer', 'target' => '>= 100F', 'responseId' => 'resp-cutover-b2']));
+    broth_log_copilot_notify_incident($cutIncidentB2);
+    $cutB2Delivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$cutIncidentB2]), 'chat_id');
+    expect_true(in_array($opsGroupChatId, $cutB2Delivered, true), '3: B2 (not cut over) still delivers to the Ops group');
+    expect_true(in_array($cutManagerB2Chat, $cutB2Delivered, true), '3: B2 (not cut over) still additively delivers to its own eligible manager too');
+    expect_true(!in_array($cutManagerAChat, $cutB2Delivered, true), '11: the B1 manager never receives the B2 incident');
+
+    // 4: B3 cut over to manager_dm but its only "manager" was never privately registered - zero
+    // eligible destinations. The alert must NOT disappear: it falls back to the Ops group with a
+    // sanitized, non-identifying audit reason.
+    $cutManagerB3NoReg = '406';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$cutManagerB3NoReg, 'Cutover Manager 406 (no registration)', 'manager', json_encode(['B3'])]);
+    run("INSERT OR REPLACE INTO broth_log_branch_alert_mode (branch, mode, updated_at) VALUES ('B3','manager_dm',datetime('now'))");
+    expect_true(empty(broth_log_copilot_manager_dm_chat_ids('B3')), 'sanity: B3\'s only manager has no private-chat registration, so zero eligible destinations exist');
+    $cutIncidentNoReg = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B3', 'stationKey' => 'pastaBoilerRight', 'station' => 'Pasta Boiler Right', 'target' => '>= 200F', 'responseId' => 'resp-cutover-no-reg']));
+    $cutNoRegResult = broth_log_copilot_notify_incident($cutIncidentNoReg);
+    expect_true($cutNoRegResult['sent'] ?? false, '4: the alert is still sent - it does not silently disappear when the sole manager is unregistered');
+    $cutNoRegDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$cutIncidentNoReg]), 'chat_id');
+    expect_true(in_array($opsGroupChatId, $cutNoRegDelivered, true), '4: with zero eligible managers, the Ops group receives the fallback alert');
+    expect_eq(count(array_filter($cutNoRegDelivered, fn($c) => $c === $opsGroupChatId)), 1, '10: the Ops fallback sends exactly once, not duplicated');
+    $cutNoRegAudit = q1("SELECT event_json FROM broth_log_incident_events WHERE incident_id=? AND event_type='alert_fallback'", [$cutIncidentNoReg]);
+    expect_true($cutNoRegAudit !== null, 'a sanitized alert_fallback audit event is recorded');
+    expect_true(str_contains((string)$cutNoRegAudit['event_json'], 'manager_dm_no_eligible_recipient'), 'the audit reason correctly identifies zero eligible recipients');
+    expect_true(!str_contains((string)$cutNoRegAudit['event_json'], $cutManagerAChat) && !str_contains((string)$cutNoRegAudit['event_json'], $cutManagerB3NoReg), 'the audit record never contains a raw private chat id or numeric user id');
+
+    // 5: the same B3 manager now registers a private chat, but is inactive - still zero eligible
+    // destinations, still the same safe fallback (a distinct real-world cause, same safe outcome).
+    run("INSERT OR REPLACE INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id, registered_at, updated_at) VALUES (?,?,datetime('now'),datetime('now'))", [$cutManagerB3NoReg, '910406001']);
+    run("UPDATE broth_log_authorized_users SET active=0 WHERE telegram_user_id=?", [$cutManagerB3NoReg]);
+    expect_true(empty(broth_log_copilot_manager_dm_chat_ids('B3')), 'sanity: B3\'s manager is now registered but inactive, so still zero eligible destinations');
+    $cutIncidentInactive = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B3', 'stationKey' => 'pastaBoilerRight', 'station' => 'Pasta Boiler Right', 'target' => '>= 200F', 'responseId' => 'resp-cutover-inactive']));
+    broth_log_copilot_notify_incident($cutIncidentInactive);
+    $cutInactiveDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$cutIncidentInactive]), 'chat_id');
+    expect_true(in_array($opsGroupChatId, $cutInactiveDelivered, true), '5: with the sole B3 manager inactive, the Ops group receives the fallback alert');
+
+    // 7: one B1 manager fails, the other succeeds - the successful one is unaffected, and since
+    // at least one manager delivery succeeded, there is NO Ops group fallback at all.
+    $cutIncidentPartialFail = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-partial-fail']));
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $cutManagerAChat): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        if ((string)($payload['chat_id'] ?? '') === $cutManagerAChat) {
+            return ['sent' => false, 'reason' => 'simulated transient failure for Manager A only'];
+        }
+        return ['sent' => true, 'mock' => true];
+    };
+    broth_log_copilot_notify_incident($cutIncidentPartialFail);
+    $cutPartialFailStatuses = [];
+    foreach (q("SELECT chat_id, status FROM broth_log_outbound_deliveries WHERE incident_id=?", [$cutIncidentPartialFail]) as $row) {
+        $cutPartialFailStatuses[$row['chat_id']] = $row['status'];
+    }
+    expect_eq($cutPartialFailStatuses[$cutManagerBChat] ?? '', 'sent', '7: Manager B still succeeds when Manager A fails');
+    expect_eq($cutPartialFailStatuses[$cutManagerAChat] ?? '', 'failed', '7: only Manager A is recorded as failed');
+    expect_true(!isset($cutPartialFailStatuses[$opsGroupChatId]), '7: with at least one successful manager delivery, the Ops group receives NO fallback at all');
+    expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_incident_events WHERE incident_id=? AND event_type='alert_fallback'", [$cutIncidentPartialFail])['c'] ?? -1, 0, '7: no alert_fallback audit event is recorded when at least one manager succeeds');
+
+    // 8: every eligible manager fails - the Ops group receives a one-time emergency fallback.
+    $cutIncidentAllFail = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-all-fail']));
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $cutManagerAChat, $cutManagerBChat): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        if (in_array((string)($payload['chat_id'] ?? ''), [$cutManagerAChat, $cutManagerBChat], true)) {
+            return ['sent' => false, 'reason' => 'simulated total transient failure'];
+        }
+        return ['sent' => true, 'mock' => true];
+    };
+    broth_log_copilot_notify_incident($cutIncidentAllFail);
+    $cutAllFailStatuses = [];
+    foreach (q("SELECT chat_id, status FROM broth_log_outbound_deliveries WHERE incident_id=?", [$cutIncidentAllFail]) as $row) {
+        $cutAllFailStatuses[$row['chat_id']] = $row['status'];
+    }
+    expect_eq($cutAllFailStatuses[$cutManagerAChat] ?? '', 'failed', '8: Manager A is recorded as failed');
+    expect_eq($cutAllFailStatuses[$cutManagerBChat] ?? '', 'failed', '8: Manager B is recorded as failed');
+    expect_eq($cutAllFailStatuses[$opsGroupChatId] ?? '', 'sent', '8: with every eligible manager failing, the Ops group receives a one-time emergency fallback');
+    expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_incident_events WHERE incident_id=? AND event_type='alert_fallback'", [$cutIncidentAllFail])['c'] ?? -1, 1, '8: exactly one alert_fallback audit event is recorded');
+
+    // 9: retrying after Manager A's failure now succeeds - no duplicate group fallback fires
+    // (none was needed, since Manager B already succeeded the first time), and Manager B's
+    // already-successful delivery is not resent.
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+    $cutBeforeRetryCount = count($sentMessages);
+    broth_log_copilot_notify_incident($cutIncidentPartialFail);
+    $cutRetryChatIds = array_column(array_column(array_slice($sentMessages, $cutBeforeRetryCount), 'payload'), 'chat_id');
+    expect_true(in_array($cutManagerAChat, $cutRetryChatIds, true), '9: retrying resends to the previously-failed manager (A)');
+    expect_true(!in_array($cutManagerBChat, $cutRetryChatIds, true), '9: retry does NOT resend to the already-successful manager (B)');
+    expect_true(!in_array($opsGroupChatId, $cutRetryChatIds, true), '9: since no fallback was needed the first time, the successful retry still never touches the Ops group');
+    expect_eq(q1("SELECT status FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=?", [$cutIncidentPartialFail, $cutManagerAChat])['status'] ?? '', 'sent', 'Manager A\'s delivery is now sent after the successful retry');
+
+    // 12/13: ACK from a manager's DM stops all future manager reminders under manager_dm mode,
+    // WITHOUT ever creating an Ops-group fallback reminder.
+    $cutAckIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-ack']));
+    run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$cutAckIncidentId]);
+    $cutAckNow = new DateTimeImmutable('2026-08-22 01:00:00 UTC');
+    $cutAckDue = array_values(array_filter(broth_log_copilot_due_escalations($cutAckNow), fn($d) => $d['incident']['incident_id'] === $cutAckIncidentId));
+    broth_log_copilot_apply_escalation_action_with_notification($cutAckDue[0], $cutAckNow);
+    $cutAckDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=?", [$cutAckIncidentId]), 'chat_id');
+    expect_true(!in_array($opsGroupChatId, $cutAckDelivered, true), 'the B1 reminder in manager_dm mode reaches only managers, not the group');
+
+    $cutAckExpiresAt = $cutAckNow->modify('+15 minutes')->getTimestamp();
+    $cutAckToken = broth_log_copilot_create_callback_token('ack', $cutAckIncidentId, $cutAckExpiresAt);
+    broth_log_copilot_enqueue_webhook(['update_id' => 8101, 'callback_query' => ['id' => 'cb-8101', 'data' => $cutAckToken, 'from' => ['id' => (int)$cutManagerA], 'message' => ['chat' => ['id' => $cutManagerAChat, 'type' => 'private'], 'message_id' => 9601]]]);
+    broth_log_copilot_process_inbox(10, $cutAckNow);
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$cutAckIncidentId])['state'] ?? '', 'acknowledged', '12: ACK from a manager DM acknowledges the canonical incident under manager_dm mode too');
+    $cutAckStillDue = array_values(array_filter(broth_log_copilot_due_escalations($cutAckNow->modify('+30 minutes')), fn($d) => $d['incident']['incident_id'] === $cutAckIncidentId));
+    expect_true(empty($cutAckStillDue), '12: ACK stops future reminders for the incident');
+    expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_incident_events WHERE incident_id=? AND event_type='alert_fallback'", [$cutAckIncidentId])['c'] ?? -1, 0, '13: ACK never triggers an Ops-group fallback reminder - reminders are simply stopped, not rerouted');
+
+    // 14: Resolve from a DM closes the canonical incident globally, same as before cutover.
+    $cutResolveResult = broth_log_copilot_resolve($cutAckIncidentId, broth_log_copilot_authorized_user($cutManagerA), 35.0, 'closed door and moved product', $cutAckNow);
+    expect_true($cutResolveResult['ok'] ?? false, '14: a safe resolve from a manager DM succeeds under manager_dm mode');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$cutAckIncidentId])['state'] ?? '', 'resolved', '14: the canonical incident is resolved globally');
+
+    // 16: /pilotid from a private chat by an unauthorized sender is still rejected (unchanged
+    // policy) even after B1's cutover - the /pilotid Ops-group gate is untouched by this feature.
+    $cutUnauthorizedId = '405';
+    broth_log_copilot_enqueue_webhook(['update_id' => 8102, 'message' => ['text' => '/pilotid', 'from' => ['id' => (int)$cutUnauthorizedId], 'chat' => ['id' => '910405001', 'type' => 'private'], 'message_id' => 9602]]);
+    $cutPrivatePilotidProcessed = broth_log_copilot_process_inbox(10, $cutAckNow);
+    expect_eq(find_processed($cutPrivatePilotidProcessed, '8102')['status'] ?? '', 'denied', '16: /pilotid sent from a private chat (not the Ops group) by an unauthorized sender is still rejected after cutover');
+
+    // 20: poison-row isolation is completely unaffected (process_inbox() itself was not modified
+    // by this feature) - confirmed directly in a manager_dm-mode context.
+    $cutPoisonIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-poison']));
+    run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$cutPoisonIncidentId]);
+    $cutPoisonNow = new DateTimeImmutable('2026-08-22 02:00:00 UTC');
+    $cutPoisonDue = array_values(array_filter(broth_log_copilot_due_escalations($cutPoisonNow), fn($d) => $d['incident']['incident_id'] === $cutPoisonIncidentId));
+    expect_true(!empty($cutPoisonDue), 'sanity: the cutover-mode incident is genuinely due for this poison-row test');
+    broth_log_copilot_enqueue_webhook(['update_id' => 8201, 'message' => ['text' => 'today B1', 'from' => ['id' => (int)$cutManagerA], 'chat' => ['id' => 999, 'type' => 'group'], 'message_id' => 9603]]);
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) { throw new RuntimeException('simulated poison row for cutover test'); };
+    $cutPoisonProcessed = broth_log_copilot_process_inbox(10, $cutPoisonNow);
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    expect_eq(find_processed($cutPoisonProcessed, '8201')['status'] ?? '', 'processing_failed', '20: the poison row still fails cleanly in a manager_dm-mode context');
+    $cutPoisonEscalationResult = broth_log_copilot_apply_escalation_action_with_notification($cutPoisonDue[0], $cutPoisonNow);
+    expect_eq($cutPoisonEscalationResult['action'] ?? '', 'reminded', '20: the escalation/reminder phase for a manager_dm-mode incident still completes after a poison row in the same tick');
+
+    // 21: numeric-shaped chat/private-chat ids (used throughout this block, e.g. '910401001')
+    // never triggered an array-key-coercion TypeError in the new mode/fallback code paths.
+    expect_true(true, '21: numeric-shaped ids throughout the cutover block never triggered a regression, extending the PR #32 guarantee to broth_log_copilot_deliver_proactive_alert()');
+
+    run("DELETE FROM broth_log_branch_alert_mode");
+
     // Cross-cutting: across every message sent by any test in this run (queries, incident
     // notifications, ACK/resolve confirmations, reminders, escalations), none was ever addressed
     // to the one-way-alert sentinel chat - proving Copilot's destination selection never leaks

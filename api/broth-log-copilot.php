@@ -154,6 +154,14 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         registered_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    -- No row for a branch = 'ops_fallback' (today's exact behavior: Ops group + any registered
+    -- managers). A branch is only cut over to 'manager_dm' by a human explicitly inserting a row
+    -- here - never automatically, and never as a side effect of this migration running.
+    CREATE TABLE IF NOT EXISTS broth_log_branch_alert_mode (
+        branch TEXT PRIMARY KEY,
+        mode TEXT NOT NULL DEFAULT 'ops_fallback',
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE TABLE IF NOT EXISTS broth_log_outbound_deliveries (
         delivery_key TEXT PRIMARY KEY,
         incident_id TEXT,
@@ -545,6 +553,50 @@ function broth_log_copilot_manager_dm_chat_ids(string $branch): array {
         }
     }
     return array_values(array_unique($chatIds));
+}
+
+// 'ops_fallback' (default, no row required) = today's exact behavior: Ops group + any registered
+// managers, merged. 'manager_dm' = cut over: managers are the sole primary destination, with the
+// Ops group used only as an explicit, audited emergency fallback - never silently.
+function broth_log_copilot_branch_alert_mode(string $branch): string {
+    $row = q1("SELECT mode FROM broth_log_branch_alert_mode WHERE branch=?", [strtoupper($branch)]);
+    return (string)($row['mode'] ?? 'ops_fallback');
+}
+
+// Resolves destinations for one proactive alert (initial/reminder/escalation/L3) per the branch's
+// current cutover mode, sends via the caller-supplied $sendToChat closure, and applies the
+// fail-safe fallback rule for manager_dm mode: zero eligible managers, or every eligible manager's
+// send failing, falls back to the Ops group and records a sanitized reason - but at least one
+// successful manager delivery means no group fallback at all. Returns [chatId => sendResult] for
+// every destination actually attempted, so the caller can tally its own success count unchanged.
+function broth_log_copilot_deliver_proactive_alert(string $incidentId, string $branch, int $level, callable $sendToChat): array {
+    $branch = strtoupper($branch);
+    $groupChats = broth_log_copilot_route_chat_ids($branch, $level);
+    $managerChats = broth_log_copilot_manager_dm_chat_ids($branch);
+    $mode = broth_log_copilot_branch_alert_mode($branch);
+
+    if ($mode !== 'manager_dm') {
+        $chats = array_values(array_unique(array_merge($groupChats, $managerChats)));
+        $results = [];
+        foreach ($chats as $chatId) $results[$chatId] = $sendToChat($chatId);
+        return $results;
+    }
+
+    if (empty($managerChats)) {
+        broth_log_copilot_audit($incidentId, 'alert_fallback', null, ['branch' => $branch, 'reason' => 'manager_dm_no_eligible_recipient']);
+        $results = [];
+        foreach ($groupChats as $chatId) $results[$chatId] = $sendToChat($chatId);
+        return $results;
+    }
+
+    $results = [];
+    foreach ($managerChats as $chatId) $results[$chatId] = $sendToChat($chatId);
+    $anySucceeded = count(array_filter($results, fn($r) => !empty($r['sent']))) > 0;
+    if (!$anySucceeded) {
+        broth_log_copilot_audit($incidentId, 'alert_fallback', null, ['branch' => $branch, 'reason' => 'manager_dm_all_deliveries_failed']);
+        foreach ($groupChats as $chatId) $results[$chatId] = $sendToChat($chatId);
+    }
+    return $results;
 }
 
 function broth_log_copilot_parse(string $text, ?array $user = null, ?DateTimeImmutable $now = null): array {
@@ -954,12 +1006,16 @@ function broth_log_copilot_route_chat_ids(string $branch, int $level): array {
     return $chatId !== '' ? [$chatId] : [];
 }
 
-// The "production Ops group" for /pilotid purposes is defined the same way as every other
-// Copilot destination: whatever chat(s) the currently active B1/B2/B3 routing rows resolve to.
-// This reuses broth_log_copilot_active_route()'s stage-awareness (pilot vs staging), so a
-// staging-only chat is never included when this runs under the production worker - no separate
-// hardcoded chat id, and onboarding trusts exactly the same destination real alerts already use.
-function broth_log_copilot_production_ops_chat_ids(): array {
+// OPS_GROUP_IDENTITY, deliberately kept separate from PROACTIVE_ALERT_DESTINATION. The trusted
+// onboarding/admin group for /pilotid purposes is defined the same way it always has been -
+// whatever chat(s) the currently active B1/B2/B3 routing rows resolve to (reusing
+// broth_log_copilot_active_route()'s stage-awareness, so a staging-only chat is never included
+// under the production worker). This function answers ONLY "is this the trusted onboarding
+// group" and is never used to decide where a food-safety alert is sent - that decision belongs
+// entirely to broth_log_copilot_deliver_proactive_alert() / broth_log_copilot_manager_dm_chat_ids().
+// A branch's alert-delivery cutover to manager_dm mode never touches broth_log_routing_rules at
+// all, so this identity - and /pilotid - are completely unaffected by cutover state.
+function broth_log_copilot_ops_chat_ids(): array {
     // Deliberately does not dedupe via array keys: a numeric-looking chat id (real Telegram chat
     // ids for groups/DMs commonly are, e.g. "-5367135326") gets silently coerced from string to
     // int as a PHP array key, which then fails hash_equals()'s strict string-only type check below.
@@ -976,7 +1032,7 @@ function broth_log_copilot_production_ops_chat_ids(): array {
 
 function broth_log_copilot_is_production_ops_chat(string $chatId): bool {
     if ($chatId === '') return false;
-    foreach (broth_log_copilot_production_ops_chat_ids() as $configured) {
+    foreach (broth_log_copilot_ops_chat_ids() as $configured) {
         if (hash_equals((string)$configured, $chatId)) return true;
     }
     return false;
@@ -1178,29 +1234,23 @@ function broth_log_copilot_notify_incident(string $incidentId, ?DateTimeImmutabl
     if (!broth_log_copilot_enabled()) return ['sent' => false, 'reason' => 'disabled'];
     $incident = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
     if (!$incident || in_array($incident['state'], ['resolved','closed'], true)) return ['sent' => false, 'reason' => 'incident_not_open'];
-    // Ops group is mandatory; eligible managers' private DMs are additive. Merged (not appended
-    // separately) so the existing per-chat loop below fans out to every destination identically -
-    // one canonical incident, N independently failure-isolated deliveries.
-    $chats = array_values(array_unique(array_merge(
-        broth_log_copilot_route_chat_ids((string)$incident['branch'], 1),
-        broth_log_copilot_manager_dm_chat_ids((string)$incident['branch'])
-    )));
-    if (!$chats) return ['sent' => false, 'reason' => 'no_active_route'];
-    $results = [];
-    foreach ($chats as $chatId) {
-        $results[] = broth_log_copilot_send_idempotent(
+    $message = broth_log_copilot_incident_message($incident, 'notify');
+    $sendToChat = function (string $chatId) use ($incidentId, $message, $now): array {
+        return broth_log_copilot_send_idempotent(
             'incident:' . $incidentId . ':notify:' . $chatId,
             $incidentId,
             $chatId,
             'incident_notification',
-            broth_log_copilot_incident_message($incident, 'notify'),
+            $message,
             broth_log_copilot_incident_reply_markup($incidentId, $now)
         );
-    }
+    };
+    $results = broth_log_copilot_deliver_proactive_alert($incidentId, (string)$incident['branch'], 1, $sendToChat);
+    if (!$results) return ['sent' => false, 'reason' => 'no_active_route'];
     if (count(array_filter($results, fn($r) => !empty($r['sent']))) > 0) {
         broth_log_copilot_audit($incidentId, 'telegram_notified', null, ['level' => 1]);
     }
-    return ['sent' => count(array_filter($results, fn($r) => !empty($r['sent']))) > 0, 'results' => $results];
+    return ['sent' => count(array_filter($results, fn($r) => !empty($r['sent']))) > 0, 'results' => array_values($results)];
 }
 
 const BROTH_LOG_COPILOT_I18N = [
@@ -1477,18 +1527,18 @@ function broth_log_copilot_apply_escalation_action_with_notification(array $acti
     if (!$incident) return $result + ['outbound' => 'incident_missing'];
     $kind = $result['action'] === 'fallback' ? 'fallback' : ($result['action'] === 'escalated' ? 'escalation' : 'reminder');
     $level = (int)($result['level'] ?? $incident['current_level'] ?? 1);
-    // Same merge as broth_log_copilot_notify_incident(): eligible managers get every reminder/
-    // escalation the group does, not just the initial alert - "the same incident" per destination.
-    $chats = array_values(array_unique(array_merge(
-        broth_log_copilot_route_chat_ids((string)$incident['branch'], $level),
-        broth_log_copilot_manager_dm_chat_ids((string)$incident['branch'])
-    )));
-    $sent = 0;
-    foreach ($chats as $chatId) {
-        $deliveryKey = 'incident:' . $incident['incident_id'] . ':' . $kind . ':' . ($incident['reminder_count'] ?? 0) . ':' . $level . ':' . $chatId;
-        $send = broth_log_copilot_send_idempotent($deliveryKey, (string)$incident['incident_id'], $chatId, $kind, broth_log_copilot_incident_message($incident, $kind), broth_log_copilot_incident_reply_markup((string)$incident['incident_id'], $now));
-        if (!empty($send['sent'])) $sent++;
-    }
+    $incidentId = (string)$incident['incident_id'];
+    $reminderCount = $incident['reminder_count'] ?? 0;
+    $message = broth_log_copilot_incident_message($incident, $kind);
+    // Same destination resolution as broth_log_copilot_notify_incident(): eligible managers get
+    // every reminder/escalation the group would, honoring the branch's cutover mode and fail-safe
+    // fallback identically - "the same incident" per destination, at every stage.
+    $sendToChat = function (string $chatId) use ($incidentId, $kind, $reminderCount, $level, $message, $now): array {
+        $deliveryKey = 'incident:' . $incidentId . ':' . $kind . ':' . $reminderCount . ':' . $level . ':' . $chatId;
+        return broth_log_copilot_send_idempotent($deliveryKey, $incidentId, $chatId, $kind, $message, broth_log_copilot_incident_reply_markup($incidentId, $now));
+    };
+    $results = broth_log_copilot_deliver_proactive_alert($incidentId, (string)$incident['branch'], $level, $sendToChat);
+    $sent = count(array_filter($results, fn($r) => !empty($r['sent'])));
     return $result + ['outbound_sent' => $sent];
 }
 

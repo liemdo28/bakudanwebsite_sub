@@ -1354,9 +1354,14 @@ function broth_log_copilot_format_response(array $parsed, array $user): string {
     $intent = $parsed['intent'] ?? 'help';
 
     if ($intent === 'help') return broth_log_copilot_tr('help', $lang);
-    // pilot_id is always intercepted earlier in broth_log_copilot_process_inbox() before this
-    // function is reached; this is a defensive fallback only, never expected to fire in production.
-    if ($intent === 'pilot_id') return broth_log_copilot_tr('pilot_id_already_registered', $lang);
+    // pilot_id text is now unconditionally intercepted in broth_log_copilot_process_inbox()
+    // before this function is ever reached - correct-chat or not, authorized or not - so there is
+    // deliberately no pilot_id branch here. An earlier version of this fallback replied
+    // "Identity already registered" for any already-authorized sender regardless of chat,
+    // silently defeating the Manager Onboarding Group's chat restriction for exactly the senders
+    // (owner/managers) who most need it enforced. If intent ever reaches here as 'pilot_id'
+    // despite that, it falls through to the generic unknown_intent reply below - never a reply
+    // that confirms authorization status.
     if (in_array($intent, ['ack', 'resolve'], true)) return broth_log_copilot_tr('ack_resolve_need_incident', $lang);
     if (!in_array($intent, ['today_summary', 'critical_issues', 'open_issues', 'missing_logs', 'temperature_lookup', 'sop_comparison'], true)) {
         return broth_log_copilot_tr('unknown_intent', $lang);
@@ -1547,18 +1552,26 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
             $telegramUserId = (string)($row['telegram_user_id'] ?? '');
             $user = broth_log_copilot_authorized_user($telegramUserId);
 
-            // /pilotid is the one command an unauthorized sender may use - checked before the
-            // authorization gate below on purpose, and scoped to real production message updates only
-            // (never callback_query). It only responds inside the dedicated Manager Onboarding
-            // Group (broth_log_copilot_is_manager_onboarding_chat(), backed by
+            // /pilotid is valid ONLY inside the dedicated Manager Onboarding Group
+            // (broth_log_copilot_is_manager_onboarding_chat(), backed by
             // TELEGRAM_MANAGER_ONBOARDING_CHAT_ID - never the Alert/Fallback group, never a
-            // private DM, never any other chat); everywhere else it falls straight through to the
-            // same deny-by-default path as every other command, with no distinguishing reply. It
+            // private DM, never any other chat) - and this holds regardless of whether the sender
+            // is already authorized. Checked before the authorization gate below on purpose (an
+            // unauthorized sender must still be able to reach the onboarding chat), but the chat
+            // restriction itself is enforced unconditionally here, never left to the !$user gate:
+            // an authorized owner/manager does not bypass it just by being authorized. This is why
+            // the check is on message text alone first, branching on chat only afterward - a wrong
+            // chat is silently denied (zero Telegram send attempt, zero distinguishing reply) for
+            // every sender alike, matching the deny-by-default path for every other command. It
             // never creates, modifies, or reads broth_log_authorized_users beyond the read-only
             // lookup above, and never touches broth_log_routing_rules.
             if ((string)($row['update_type'] ?? '') === 'message'
-                && broth_log_copilot_is_pilot_id_text((string)$row['message_text'])
-                && broth_log_copilot_is_manager_onboarding_chat((string)$row['chat_id'])) {
+                && broth_log_copilot_is_pilot_id_text((string)$row['message_text'])) {
+                if (!broth_log_copilot_is_manager_onboarding_chat((string)$row['chat_id'])) {
+                    run("UPDATE broth_log_bot_inbox SET status='denied', processed_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+                    $processed[] = ['update_id' => $row['update_id'], 'status' => 'denied', 'intent' => 'pilot_id'];
+                    continue;
+                }
                 $lang = $user['preferred_language'] ?? broth_log_copilot_detect_language((string)$row['message_text']);
                 $response = broth_log_copilot_pilot_id_response($user, $lang);
                 $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $response['message']);

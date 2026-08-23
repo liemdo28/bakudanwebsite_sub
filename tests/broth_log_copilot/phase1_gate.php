@@ -1227,6 +1227,7 @@ try {
     broth_log_copilot_notify_incident($cutIncidentB1);
     $cutB1Delivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$cutIncidentB1]), 'chat_id');
     expect_true(!in_array($opsGroupChatId, $cutB1Delivered, true), '2: after cutover, the Ops group receives NOTHING for the B1 incident');
+    expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=?", [$cutIncidentB1, $opsGroupChatId])['c'] ?? -1, 0, '8: zero delivery attempts of any status (sent/failed/queued) exist for the Ops group on a successfully-delivered manager_dm incident - not deduplicated, not suppressed after the fact, never attempted at all');
     expect_true(in_array($cutManagerAChat, $cutB1Delivered, true), '2: after cutover, Manager A still receives the private DM');
     expect_true(in_array($cutManagerBChat, $cutB1Delivered, true), '6: both eligible B1 managers receive their own DM');
     expect_eq(count(array_filter($cutB1Delivered, fn($c) => $c === $cutManagerAChat)), 1, '6: Manager A receives exactly one DM, not a duplicate');

@@ -1563,6 +1563,211 @@ try {
     $leakedToOneWayChat = array_filter($sentMessages, fn($m) => ($m['payload']['chat_id'] ?? '') === 'one-way-alert-chat-should-never-be-used-by-copilot');
     expect_eq(count($leakedToOneWayChat), 0, 'no message sent anywhere in this test run was ever addressed to the one-way-alert chat sentinel');
 
+    // ========================================================================================
+    // ROLE-AWARE /help MENU (feature/broth-log-telegram-assistant-menu)
+    // ========================================================================================
+    putenv('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID=menu-test-onboarding-chat');
+    // 18:00 UTC = 13:00 America/Chicago (CDT) on the same calendar day - safely inside business
+    // date 2026-08-25 regardless of DST, unlike a UTC-midnight timestamp which is still the
+    // previous evening in Chicago and would silently resolve to the wrong business date.
+    $now25 = new DateTimeImmutable('2026-08-25 18:00:00 UTC');
+
+    $menuOwnerId = '801';
+    $menuGmId = '802';
+    $menuManagerId = '803'; // no display_name - exercises the handler-fallback-label path
+    $menuManagerNamedId = '804';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$menuOwnerId, 'Owner Test', 'owner', json_encode(['B1','B2','B3'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$menuGmId, 'GM Test', 'manager', json_encode(['B1','B2','B3'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$menuManagerId, '', 'manager', json_encode(['B1'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$menuManagerNamedId, 'Maria', 'manager', json_encode(['B1'])]);
+    $menuOwnerUser = broth_log_copilot_authorized_user($menuOwnerId);
+    $menuGmUser = broth_log_copilot_authorized_user($menuGmId);
+    $menuManagerUser = broth_log_copilot_authorized_user($menuManagerId);
+
+    expect_eq(broth_log_copilot_role_class($menuOwnerUser), 'owner', 'role_class: owner role -> owner menu');
+    expect_eq(broth_log_copilot_role_class($menuGmUser), 'gm', 'role_class: manager with 3 branches -> gm menu');
+    expect_eq(broth_log_copilot_role_class($menuManagerUser), 'store_manager', 'role_class: manager with 1 branch -> store_manager menu');
+
+    // --- 1/2/3: role-aware /help menus, exact button layout, callback_data size ---
+    $mgrHelp = broth_log_copilot_help_response($menuManagerUser, 'private');
+    expect_eq($mgrHelp['intent'], 'help_menu', 'Manager /help returns the role-aware menu');
+    $mgrKb = $mgrHelp['reply_markup']['inline_keyboard'];
+    expect_eq(count($mgrKb), 3, 'Manager menu has exactly 3 rows');
+    expect_eq([$mgrKb[0][0]['text'], $mgrKb[0][1]['text']], ["\u{1F4C5} Today's Log", "\u{1F5D3} Choose Date"], "Manager menu row 1: Today's Log | Choose Date");
+    expect_eq([$mgrKb[1][0]['text'], $mgrKb[1][1]['text']], ["\u{1F6A8} Today's Issues", "\u{1F50E} Issues by Date"], "Manager menu row 2: Today's Issues | Issues by Date");
+    expect_eq([$mgrKb[2][0]['text'], $mgrKb[2][1]['text']], ["\u{1F4CC} Open Issues", "\u{2753} Commands"], 'Manager menu row 3: Open Issues | Commands');
+
+    $gmHelp = broth_log_copilot_help_response($menuGmUser, 'private');
+    $gmKb = $gmHelp['reply_markup']['inline_keyboard'];
+    expect_eq(count($gmKb), 4, 'GM menu has exactly 4 rows');
+    expect_eq([$gmKb[0][0]['text'], $gmKb[0][1]['text']], ["\u{1F4C5} Today's Log", "\u{1F3EA} All Stores"], "GM menu row 1: Today's Log | All Stores");
+    expect_eq([$gmKb[1][0]['text'], $gmKb[1][1]['text']], ["\u{1F6A8} Today's Issues", "\u{1F4CC} Open Issues"], "GM menu row 2: Today's Issues | Open Issues");
+    expect_eq([$gmKb[2][0]['text'], $gmKb[2][1]['text']], ["\u{1F5D3} Log by Date", "\u{1F50E} Issues by Date"], 'GM menu row 3: Log by Date | Issues by Date');
+    expect_eq(count($gmKb[3]), 1, 'GM menu row 4 has exactly 1 button');
+    expect_eq($gmKb[3][0]['text'], "\u{2753} Commands", 'GM menu row 4: Commands');
+
+    $ownerHelp = broth_log_copilot_help_response($menuOwnerUser, 'private');
+    expect_eq(count($ownerHelp['reply_markup']['inline_keyboard']), 3, 'Owner/CEO menu has 3 rows');
+
+    foreach ([$mgrKb, $gmKb, $ownerHelp['reply_markup']['inline_keyboard']] as $kb) {
+        foreach ($kb as $row) {
+            foreach ($row as $btn) {
+                expect_true(strlen($btn['callback_data']) <= 64, "callback_data within Telegram's 64-byte limit: {$btn['callback_data']}");
+            }
+        }
+    }
+
+    // --- 4: unauthorized user /help gets no protected information (existing !$user gate, unaffected) ---
+    broth_log_copilot_enqueue_webhook(['update_id' => 9700, 'message' => ['text' => '/help', 'from' => ['id' => 999888777], 'chat' => ['id' => 'menu-unauth-chat', 'type' => 'private'], 'message_id' => 9700]]);
+    $unauthHelpProcessed = broth_log_copilot_process_inbox(10, $now25);
+    expect_eq(find_processed($unauthHelpProcessed, '9700')['status'] ?? '', 'denied', 'unauthorized /help is silently denied');
+
+    // --- 18/19: group isolation - onboarding / Alert-Fallback groups get no protected /help or menu data ---
+    $groupHelp = broth_log_copilot_help_response($menuManagerUser, 'group');
+    expect_eq($groupHelp['intent'], 'help_group_denied', '/help from a non-private chat returns the safe group-denied reply');
+    expect_true($groupHelp['reply_markup'] === null, 'group /help reply carries no keyboard');
+    expect_true(!str_contains($groupHelp['message'], 'B1') && !str_contains($groupHelp['message'], 'Broth Log Assistant'), 'group /help reply contains no store/menu content');
+    $groupMenuCb = broth_log_copilot_menu_callback_response('menu:today', $menuManagerUser, 'group', $now25);
+    expect_eq($groupMenuCb['intent'], 'menu_group_denied', 'a menu: callback tapped from a non-private chat is denied, never rendered');
+
+    // --- 5/6: branch authorization + forged callback denial ---
+    // Echoes back records for whichever business date is actually requested (both 2026-08-25 and
+    // the 2026-08-19 historical probe below), so both the "today" and "historical" header paths
+    // are genuinely exercised instead of one of them silently hitting the empty-submission branch.
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array {
+        if ($branch !== 'B1') return [];
+        return [[
+            'id' => 'menu-rec-1', 'branch' => 'B1', 'businessDate' => '2026-08-25', 'businessTime' => '08:00', 'employeeName' => 'Tester',
+            'readings' => [['key' => 'walkInFreezer', 'label' => 'Walk-In Freezer', 'category' => 'freezer', 'temperature' => 8.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => '']],
+            'issues' => [['key' => 'walkInFreezer', 'label' => 'Walk-In Freezer', 'category' => 'freezer', 'temperature' => 8.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => '', 'status' => 'Escalated']],
+        ], [
+            'id' => 'menu-rec-hist', 'branch' => 'B1', 'businessDate' => '2026-08-19', 'businessTime' => '08:00', 'employeeName' => 'Tester',
+            'readings' => [['key' => 'walkInFreezer', 'label' => 'Walk-In Freezer', 'category' => 'freezer', 'temperature' => 38.0, 'unit' => 'F', 'severity' => 'safe', 'target' => '<= 40F', 'correctiveAction' => '']],
+            'issues' => [],
+        ]];
+    };
+    $b1LogView = broth_log_copilot_menu_callback_response('menu:today', $menuManagerUser, 'private', $now25);
+    expect_true(str_contains($b1LogView['message'], 'B1') && str_contains($b1LogView['message'], 'Today'), "B1 manager: Today's Log auto-resolves to their own store, dated Today");
+    expect_true(str_contains($b1LogView['message'], 'Walk-In Freezer'), "B1 manager: Today's Log shows the real current critical issue");
+
+    $forgedB2 = broth_log_copilot_menu_callback_response('menu:log:B2:2026-08-25', $menuManagerUser, 'private', $now25);
+    expect_eq($forgedB2['intent'], 'menu_forbidden', 'B1 manager forging a B2 log callback is denied');
+    expect_true(!str_contains($forgedB2['message'], 'Walk-In'), 'forged B2 callback response leaks no store data');
+
+    // --- 14: historical log view never claims to be "Today" ---
+    $histLogView = broth_log_copilot_menu_callback_response('menu:log:B1:2026-08-19', $menuManagerUser, 'private', $now25);
+    expect_true(str_contains($histLogView['message'], '2026-08-19') && !str_contains($histLogView['message'], 'Today'), 'historical log view shows the picked date, never "Today"');
+
+    // --- 7: GM All Stores (B1+B2+B3), priority-branch surfacing ---
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array {
+        $isCritical = $branch === 'B1';
+        return [[
+            'id' => "menu-rec-$branch", 'branch' => $branch, 'businessDate' => '2026-08-25', 'businessTime' => '08:00', 'employeeName' => 'Tester',
+            'readings' => [['key' => 'walkInFreezer', 'label' => 'Walk-In Freezer', 'category' => 'freezer', 'temperature' => $isCritical ? 8.0 : 38.0, 'unit' => 'F', 'severity' => $isCritical ? 'critical' : 'safe', 'target' => '<= 0F', 'correctiveAction' => '']],
+            'issues' => $isCritical ? [['key' => 'walkInFreezer', 'label' => 'Walk-In Freezer', 'category' => 'freezer', 'temperature' => 8.0, 'unit' => 'F', 'severity' => 'critical', 'target' => '<= 0F', 'correctiveAction' => '', 'status' => 'Escalated']] : [],
+        ]];
+    };
+    $allStoresView = broth_log_copilot_menu_callback_response('menu:log:ALL:2026-08-25', $menuGmUser, 'private', $now25);
+    expect_true(str_contains($allStoresView['message'], 'B1') && str_contains($allStoresView['message'], 'B2') && str_contains($allStoresView['message'], 'B3'), 'GM All Stores view covers B1+B2+B3');
+    expect_true(str_contains($allStoresView['message'], 'Priority:'), 'GM All Stores view surfaces the priority branch when one store is critical');
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+
+    // --- 8/9/10/11/12/13: incident-based Today's Issues / Issues by Date + handler accountability ---
+    $menuIncUnack = 'menu-inc-unack-' . bin2hex(random_bytes(3));
+    $menuIncAck = 'menu-inc-ack-' . bin2hex(random_bytes(3));
+    $menuIncResolved = 'menu-inc-resolved-' . bin2hex(random_bytes(3));
+    $menuIncAckNoName = 'menu-inc-acknoname-' . bin2hex(random_bytes(3));
+    run("INSERT INTO broth_log_incidents (incident_id,fingerprint,active_key,branch,business_date,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [$menuIncUnack, $menuIncUnack, $menuIncUnack, 'B1', '2026-08-25', 'resp-1', 'walkInFreezer', 'Walk-In Freezer', 8.0, '<= 0F', 'critical', 'Close door', 'detected', 1, '2026-08-25 10:00:00']);
+    run("INSERT INTO broth_log_incidents (incident_id,fingerprint,active_key,branch,business_date,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,acknowledged_by,acknowledged_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [$menuIncAck, $menuIncAck, $menuIncAck, 'B1', '2026-08-25', 'resp-2', 'fryerRight', 'Fryer Right', 300.0, '>= 325F', 'critical', 'Adjust dial', 'acknowledged', 1, $menuManagerNamedId, '2026-08-25 10:05:00', '2026-08-25 10:00:00']);
+    run("INSERT INTO broth_log_incidents (incident_id,fingerprint,active_key,branch,business_date,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,acknowledged_by,resolved_by,resolved_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [$menuIncResolved, $menuIncResolved, $menuIncResolved, 'B2', '2026-08-19', 'resp-3', 'walkInFreezer', 'Walk-In Freezer', 19.0, '<= 0F', 'critical', 'Close door', 'resolved', 1, $menuManagerNamedId, $menuManagerNamedId, '2026-08-19 23:42:00', '2026-08-19 20:00:00']);
+    run("INSERT INTO broth_log_incidents (incident_id,fingerprint,active_key,branch,business_date,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,acknowledged_by,acknowledged_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [$menuIncAckNoName, $menuIncAckNoName, $menuIncAckNoName, 'B1', '2026-08-25', 'resp-4', 'lineFreezer', 'Line Freezer', 10.0, '<= 0F', 'critical', '', 'acknowledged', 1, $menuManagerId, '2026-08-25 10:10:00', '2026-08-25 10:00:00']);
+
+    $handlerUnack = broth_log_copilot_incident_handler_summary(q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$menuIncUnack]));
+    expect_eq($handlerUnack, ['status' => 'unacknowledged', 'display' => 'No one yet', 'display_name_known' => true], 'handler summary: unacknowledged -> No one yet');
+    $handlerAck = broth_log_copilot_incident_handler_summary(q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$menuIncAck]));
+    expect_eq($handlerAck['status'], 'acknowledged', 'handler summary: acknowledged status (not shown as resolved)');
+    expect_eq($handlerAck['display'], 'Maria', 'handler summary: acknowledged shows the real approved display name');
+    $handlerResolved = broth_log_copilot_incident_handler_summary(q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$menuIncResolved]));
+    expect_eq($handlerResolved['status'], 'resolved', 'handler summary: resolved status');
+    expect_eq($handlerResolved['display'], 'Maria', 'handler summary: resolved shows the real approved resolver name');
+    $handlerAckNoName = broth_log_copilot_incident_handler_summary(q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$menuIncAckNoName]));
+    expect_eq($handlerAckNoName['display'], 'Authorized Manager', 'handler summary: missing display_name falls back to a generic safe label, never the raw Telegram ID');
+    expect_true($handlerAckNoName['display_name_known'] === false, 'handler summary flags the display_name data-quality gap for audit/reporting');
+
+    $todayIssuesView = broth_log_copilot_menu_callback_response('menu:issues_today', $menuManagerUser, 'private', $now25);
+    expect_true(str_contains($todayIssuesView['message'], 'Walk-In Freezer'), "Today's Issues shows the unacknowledged critical incident");
+    expect_true(str_contains($todayIssuesView['message'], 'No one yet'), "Today's Issues: unacknowledged issue shows 'No one yet'");
+    expect_true(str_contains($todayIssuesView['message'], 'Maria') && str_contains($todayIssuesView['message'], 'ACKNOWLEDGED'), "Today's Issues: acknowledged issue shows the handler's name and ACKNOWLEDGED status, never as resolved");
+    expect_true(!str_contains($todayIssuesView['message'], $menuManagerNamedId) && !str_contains($todayIssuesView['message'], $menuManagerId), '11: handler display never contains a raw Telegram user ID');
+    expect_true(strpos($todayIssuesView['message'], 'Walk-In Freezer') < strpos($todayIssuesView['message'], 'Fryer Right'), 'issue priority: unacknowledged critical ranks above acknowledged critical');
+
+    $issuesByDateView = broth_log_copilot_menu_callback_response('menu:issues:B2:2026-08-19', $menuGmUser, 'private', $now25);
+    expect_true(str_contains($issuesByDateView['message'], 'Resolved') && str_contains($issuesByDateView['message'], 'Maria'), '10: Issues by Date shows a since-resolved incident in its current Resolved state with its resolver');
+    expect_true(str_contains($issuesByDateView['message'], '2026-08-19'), '12: Issues by Date header reflects the selected historical business date');
+
+    // --- 21: no menu callback can mutate an incident ---
+    $beforeSnapshot = q1("SELECT state, acknowledged_by, resolved_by FROM broth_log_incidents WHERE incident_id=?", [$menuIncUnack]);
+    foreach (['menu:today', 'menu:issues_today', 'menu:log:B1:2026-08-25', 'menu:fulllog:B1:2026-08-25', 'menu:issues:B1:2026-08-25', 'menu:open'] as $probe) {
+        broth_log_copilot_menu_callback_response($probe, $menuManagerUser, 'private', $now25);
+    }
+    $afterSnapshot = q1("SELECT state, acknowledged_by, resolved_by FROM broth_log_incidents WHERE incident_id=?", [$menuIncUnack]);
+    expect_eq($afterSnapshot, $beforeSnapshot, 'no menu: callback ever mutates an incident row (read-only navigation only)');
+
+    // --- 15/16: date-entry context - invalid input, valid input, cancel, never traps the user ---
+    $dateEntryPrompt = broth_log_copilot_menu_callback_response('menu:qdate:log:B1:enter', $menuManagerUser, 'private', $now25);
+    expect_eq($dateEntryPrompt['intent'], 'menu_date_prompt', 'tapping Enter Date prompts for free-text input');
+    $pendingCtx = q1("SELECT context_json FROM broth_log_conversation_context WHERE telegram_user_id=?", [$menuManagerId]);
+    expect_true($pendingCtx !== null && (json_decode((string)$pendingCtx['context_json'], true)['pending'] ?? '') === 'menu_date', 'Enter Date arms the awaiting-date conversation context');
+
+    $invalidDateReply = broth_log_copilot_menu_date_entry_response('not a date at all', $menuManagerUser, $now25);
+    expect_true(str_contains($invalidDateReply['message'], "couldn't recognize"), '15: unparseable free-text date is rejected with a friendly message');
+    expect_true(q1("SELECT * FROM broth_log_conversation_context WHERE telegram_user_id=?", [$menuManagerId]) === null, '16: date-entry context is cleared even on invalid input - never traps the user indefinitely');
+
+    broth_log_copilot_menu_set_date_context($menuManagerId, 'log', 'B1');
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array { return []; };
+    $validDateReply = broth_log_copilot_menu_date_entry_response('2026-08-19', $menuManagerUser, $now25);
+    expect_eq($validDateReply['intent'], 'menu_log_empty', 'a valid entered date resolves straight into the log view for that date');
+    expect_true(q1("SELECT * FROM broth_log_conversation_context WHERE telegram_user_id=?", [$menuManagerId]) === null, 'date-entry context is cleared after a valid entry');
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+
+    broth_log_copilot_menu_set_date_context($menuManagerId, 'log', 'B1');
+    $cancelReply = broth_log_copilot_menu_callback_response('menu:qdate:log:B1:cancel', $menuManagerUser, 'private', $now25);
+    expect_eq($cancelReply['intent'], 'menu_main', 'Cancel returns to the main menu');
+    expect_true(q1("SELECT * FROM broth_log_conversation_context WHERE telegram_user_id=?", [$menuManagerId]) === null, 'Cancel clears the pending date-entry context (never leaves a stale wait that would swallow the next real command)');
+
+    // A message sent while a menu_date context is pending, that does NOT look like a date reply
+    // scenario at all (ordinary command), still correctly resolves once no context is pending -
+    // proving the intercept is scoped exactly to the pending window and never leaks beyond it.
+    expect_true(broth_log_copilot_menu_date_entry_response('B1 today', $menuManagerUser, $now25) === null, 'with no pending date-entry context, an ordinary text command is left untouched by the menu date-entry intercept');
+
+    // --- 17/22: ACK/Resolve compact-token callbacks are completely untouched by the new dispatcher ---
+    expect_true(broth_log_copilot_menu_callback_response('c|a|abc123|xyz|deadbeef01', $menuManagerUser, 'private', $now25) === null, 'a real ACK/Resolve compact callback token is never intercepted by the menu dispatcher - falls through unchanged');
+    $ackProbeId = 'menu-ack-regress-' . bin2hex(random_bytes(3));
+    run("INSERT INTO broth_log_incidents (incident_id,fingerprint,active_key,branch,business_date,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [$ackProbeId, $ackProbeId, $ackProbeId, 'B1', '2026-08-25', 'resp-ack', 'walkInFreezer', 'Walk-In Freezer', 8.0, '<= 0F', 'critical', 'Close door', 'detected', 1, '2026-08-25 10:00:00']);
+    $ackToken = broth_log_copilot_create_callback_token('ack', $ackProbeId, $now25->modify('+15 minutes')->getTimestamp());
+    broth_log_copilot_enqueue_webhook(['update_id' => 9800, 'callback_query' => ['data' => $ackToken, 'from' => ['id' => (int)$menuManagerId], 'message' => ['chat' => ['id' => 'menu-ack-chat', 'type' => 'private']]]]);
+    $ackRegressProcessed = broth_log_copilot_process_inbox(10, $now25);
+    expect_eq(find_processed($ackRegressProcessed, '9800')['status'] ?? '', 'processed', 'existing ACK callback still works end-to-end through process_inbox() after the menu dispatcher was added');
+    expect_eq(find_processed($ackRegressProcessed, '9800')['intent'] ?? '', 'ack', 'existing ACK callback still resolves to intent=ack (unchanged)');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ackProbeId])['state'] ?? '', 'acknowledged', 'existing ACK callback still mutates the incident exactly as before');
+
+    // --- 20: private DM menu works end-to-end through process_inbox() ---
+    broth_log_copilot_enqueue_webhook(['update_id' => 9900, 'message' => ['text' => '/help', 'from' => ['id' => (int)$menuManagerId], 'chat' => ['id' => 'menu-private-chat', 'type' => 'private'], 'message_id' => 9900]]);
+    $helpEndToEnd = broth_log_copilot_process_inbox(10, $now25);
+    expect_eq(find_processed($helpEndToEnd, '9900')['status'] ?? '', 'processed', 'private DM /help is processed end-to-end');
+    expect_eq(find_processed($helpEndToEnd, '9900')['intent'] ?? '', 'help_menu', 'private DM /help resolves to the role-aware help_menu intent end-to-end');
+    $helpSentPayload = end($sentMessages);
+    expect_true(isset($helpSentPayload['payload']['reply_markup']['inline_keyboard']), 'private DM /help actually sends a Telegram inline keyboard, not just plain text');
+
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?,?,?)", [$menuOwnerId, $menuGmId, $menuManagerId, $menuManagerNamedId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?,?,?,?)", [$menuIncUnack, $menuIncAck, $menuIncResolved, $menuIncAckNoName, $ackProbeId]);
+    run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id IN (?,?,?,?)", [$menuOwnerId, $menuGmId, $menuManagerId, $menuManagerNamedId]);
+
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {
     @unlink(TEST_DB_PATH);

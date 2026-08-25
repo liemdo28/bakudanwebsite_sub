@@ -318,18 +318,27 @@ button {
 .bd-primary-filters,
 .bd-advanced-grid {
     display: grid;
-    grid-template-columns: auto minmax(170px, 220px) auto;
     gap: 8px;
     align-items: end;
 }
 
-.bd-date-picker {
+.bd-primary-filters {
+    grid-template-columns: auto minmax(170px, 220px) minmax(150px, 190px) auto;
+}
+
+.bd-advanced-grid {
+    grid-template-columns: auto minmax(170px, 220px) auto;
+}
+
+.bd-date-picker,
+.bd-shift-filter {
     display: grid;
     gap: 4px;
     min-width: 0;
 }
 
-.bd-date-picker span {
+.bd-date-picker span,
+.bd-shift-filter span {
     color: var(--muted);
     font-size: .72rem;
     font-weight: 700;
@@ -1345,7 +1354,7 @@ button {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .bd-primary-filters {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .bd-advanced-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1386,7 +1395,8 @@ button {
     .bd-advanced-grid {
         grid-template-columns: 1fr;
     }
-    .bd-date-picker {
+    .bd-date-picker,
+    .bd-shift-filter {
         width: 100%;
     }
     .bd-title p {

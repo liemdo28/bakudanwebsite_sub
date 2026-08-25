@@ -106,7 +106,7 @@ def test_mobile_current_day_styles_prevent_horizontal_layout_pressure():
 
 def test_asset_version_was_bumped():
     html = text('broth-log.html')
-    assert 'vn-to-cdt' in html
+    assert 'shift-filter-primary' in html
 
 
 def test_dashboard_uses_paper_sop_ranges_and_texas_time():
@@ -146,6 +146,10 @@ def test_current_day_cards_and_table_show_shift():
 
 def test_shift_filter_uses_inferred_am_pm_shifts():
     js = text('js/broth-log-dashboard.js')
+    primary_filters = js[js.index('<div class="bd-primary-filters">'):js.index('<details class="bd-advanced-filters">')]
+    advanced_filters = js[js.index('<details class="bd-advanced-filters">'):js.index('<select data-filter="temp">')]
+    assert 'data-filter="shift"' in primary_filters
+    assert 'data-filter="shift"' not in advanced_filters
     assert "inferShift(row.shift, row.submittedAt) !== state.filters.shift" in js
     assert "option('AM', 'AM shift', state.filters.shift)" in js
     assert "option('PM', 'PM shift', state.filters.shift)" in js

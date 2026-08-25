@@ -1289,6 +1289,11 @@
             <div class="bd-primary-filters">
                 <button class="bd-btn bd-today-btn ${isViewingToday() ? 'active' : ''}" data-action="today" aria-pressed="${isViewingToday()}">Today</button>
                 <label class="bd-date-picker"><span>Business date</span><input data-filter="selectedDate" type="date" max="${esc(businessToday())}" value="${esc(state.filters.selectedDate)}" aria-label="Selected business date"></label>
+                <label class="bd-shift-filter"><span>Shift</span><select data-filter="shift" aria-label="Shift">
+                    ${option('all', 'All shifts', state.filters.shift)}
+                    ${option('AM', 'AM shift', state.filters.shift)}
+                    ${option('PM', 'PM shift', state.filters.shift)}
+                </select></label>
                 <button class="bd-btn bd-issues-only ${state.filters.issue === 'open' || state.filters.issue === 'critical' ? 'active' : ''}" data-action="issuesOnly" aria-pressed="${state.filters.issue === 'open' || state.filters.issue === 'critical'}">Issues only</button>
             </div>
             <details class="bd-advanced-filters">
@@ -1315,11 +1320,6 @@
             <select data-filter="employee">
                 ${option('all', 'All employees', state.filters.employee)}
                 ${employees.map(e => option(e, e, state.filters.employee)).join('')}
-            </select>
-            <select data-filter="shift">
-                ${option('all', 'All shifts', state.filters.shift)}
-                ${option('AM', 'AM shift', state.filters.shift)}
-                ${option('PM', 'PM shift', state.filters.shift)}
             </select>
             <select data-filter="temp">
                 ${option('all', 'All readings', state.filters.temp)}

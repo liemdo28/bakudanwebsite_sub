@@ -25,6 +25,61 @@ const BROTH_LOG_COPILOT_L2_ESCALATE_SECONDS = 300;
 const BROTH_LOG_COPILOT_REMINDER_SECONDS = 300;
 const BROTH_LOG_COPILOT_L3_REMINDER_SECONDS = 900;
 
+// Ops+Manager delivery-parity cutover boundary (America/Chicago business date, YYYY-MM-DD). A
+// ONE-TIME migration marker, not a rolling daily policy - consumed only by
+// broth_log_copilot_freeze_pre_cutover_incidents() below, an explicitly-invoked, idempotent,
+// one-off action (never called automatically by db()/migrate()/due_escalations()/the worker's
+// normal tick loop, and therefore never touched by this test suite's extensive escalation-cadence
+// tests, which use arbitrary fixture dates that have nothing to do with the cutover). A genuinely
+// still-open incident detected on or after this date keeps reminding/escalating with the normal,
+// unmodified, date-agnostic cadence forever afterward, exactly as before this constant existed.
+// Deliberately NOT "incidents older than 1 day" or similar rolling window re-evaluated on every
+// tick: that would silently stop alerting on a genuinely still-unresolved critical issue (e.g. a
+// broken freezer) the moment its business date rolls past midnight, which is a safety regression,
+// not a fix. This constant exists solely to stop pre-existing stale incidents (some already
+// reminding for 80+ hours, reminder_count in the hundreds, confirmed in production before this
+// change) from continuing to page Ops forever; it is not a recurring "start fresh every day"
+// mechanism. Pre-cutover incidents are NOT deleted, resolved, or ACKed by freezing - they remain
+// fully visible/actionable via the dashboard and manual ACK/Resolve, neither of which route through
+// due_escalations() at all.
+const BROTH_LOG_COPILOT_OPS_PARITY_CUTOVER_DATE = '2026-08-25';
+
+// Sentinel used only by broth_log_copilot_freeze_pre_cutover_incidents() below - reuses the
+// existing escalation_lock_expires_at column (already checked by due_escalations()'s own query:
+// "escalation_lock_expires_at IS NULL OR escalation_lock_expires_at < now") rather than adding a
+// new schema column for what is, mechanically, exactly the same kind of exclusion that column
+// already performs elsewhere (short-lived concurrency locking). A value this far in the future can
+// never be "< now" for any realistic $now, so a frozen row is excluded permanently, and the sentinel
+// doubles as the idempotency marker for repeat invocations (see that function).
+const BROTH_LOG_COPILOT_FROZEN_LOCK_SENTINEL = '9999-12-31 23:59:59';
+
+// One-time, explicitly-invoked migration action (a human/deploy-script runs this once, e.g. via a
+// small one-off script the same way schema migrations are applied) that permanently excludes
+// currently-open incidents predating BROTH_LOG_COPILOT_OPS_PARITY_CUTOVER_DATE from
+// broth_log_copilot_due_escalations()'s result set forever, without changing their state, without
+// resolving/ACKing/deleting them, and without adding any new schema column. Idempotent: a row
+// already carrying the sentinel is never re-selected or re-audited by a repeat call. Deliberately
+// NOT wired into db()/migrate()/the worker's normal tick loop - it must stay an explicit, one-off
+// action so it can never fire against this test suite's fixture data or unexpectedly refreeze a
+// production incident a human is actively working through the dashboard.
+function broth_log_copilot_freeze_pre_cutover_incidents(?DateTimeImmutable $now = null): array {
+    $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $rows = q("SELECT incident_id FROM broth_log_incidents
+        WHERE state IN ('detected','notified_level_1','escalated_level_2','escalated_level_3')
+          AND business_date < ?
+          AND (escalation_lock_expires_at IS NULL OR escalation_lock_expires_at != ?)",
+        [BROTH_LOG_COPILOT_OPS_PARITY_CUTOVER_DATE, BROTH_LOG_COPILOT_FROZEN_LOCK_SENTINEL]);
+    $frozen = [];
+    foreach ($rows as $row) {
+        $incidentId = (string)$row['incident_id'];
+        run("UPDATE broth_log_incidents SET escalation_lock_expires_at=?, updated_at=?
+             WHERE incident_id=?", [BROTH_LOG_COPILOT_FROZEN_LOCK_SENTINEL, $now->format('Y-m-d H:i:s'), $incidentId]);
+        broth_log_copilot_audit($incidentId, 'ops_parity_cutover_frozen', null, ['cutover_date' => BROTH_LOG_COPILOT_OPS_PARITY_CUTOVER_DATE]);
+        $frozen[] = $incidentId;
+    }
+    return $frozen;
+}
+
 function broth_log_copilot_enabled(): bool {
     return in_array(strtolower(trim((string)(getenv('TELEGRAM_COPILOT_ENABLED') ?: 'false'))), ['1','true','yes','on'], true);
 }
@@ -561,46 +616,49 @@ function broth_log_copilot_manager_dm_chat_ids(string $branch): array {
     return array_values(array_unique($chatIds));
 }
 
-// 'ops_fallback' (default, no row required) = today's exact behavior: Ops group + any registered
-// managers, merged. 'manager_dm' = cut over: managers are the sole primary destination, with the
-// Ops group used only as an explicit, audited emergency fallback - never silently.
+// 'ops_fallback' (default, no row required) and 'manager_dm' (a branch explicitly cut over by a
+// human inserting a row) now both resolve to the SAME destination set in
+// broth_log_copilot_deliver_proactive_alert() below: Ops group + eligible managers, independently.
+// The distinction that remains is purely an audit/observability one - see that function's comment.
 function broth_log_copilot_branch_alert_mode(string $branch): string {
     $row = q1("SELECT mode FROM broth_log_branch_alert_mode WHERE branch=?", [strtoupper($branch)]);
     return (string)($row['mode'] ?? 'ops_fallback');
 }
 
-// Resolves destinations for one proactive alert (initial/reminder/escalation/L3) per the branch's
-// current cutover mode, sends via the caller-supplied $sendToChat closure, and applies the
-// fail-safe fallback rule for manager_dm mode: zero eligible managers, or every eligible manager's
-// send failing, falls back to the Ops group and records a sanitized reason - but at least one
-// successful manager delivery means no group fallback at all. Returns [chatId => sendResult] for
-// every destination actually attempted, so the caller can tally its own success count unchanged.
+// Resolves destinations for one proactive alert (initial/reminder/escalation/L3): the Ops Alert
+// Group (mandatory operational visibility) and every eligible Manager DM (additional authorized
+// private delivery) for the branch, sent independently via the caller-supplied $sendToChat closure.
+// Ops delivery never depends on manager delivery success or failure, and vice versa - both are
+// destinations for the SAME canonical incident, never separate incidents. (Previously, 'manager_dm'
+// mode used the Ops group only as an emergency fallback when managers were unreachable; that has
+// been replaced by this unconditional parity per the Ops+Manager delivery-alignment requirement -
+// Ops must see everything a manager sees.)
+// Returns [chatId => sendResult] for every destination actually attempted, so the caller can tally
+// its own success count unchanged; failure of one destination never removes another from this list.
 function broth_log_copilot_deliver_proactive_alert(string $incidentId, string $branch, int $level, callable $sendToChat): array {
     $branch = strtoupper($branch);
     $groupChats = broth_log_copilot_route_chat_ids($branch, $level);
     $managerChats = broth_log_copilot_manager_dm_chat_ids($branch);
     $mode = broth_log_copilot_branch_alert_mode($branch);
 
-    if ($mode !== 'manager_dm') {
-        $chats = array_values(array_unique(array_merge($groupChats, $managerChats)));
-        $results = [];
-        foreach ($chats as $chatId) $results[$chatId] = $sendToChat($chatId);
-        return $results;
-    }
-
-    if (empty($managerChats)) {
-        broth_log_copilot_audit($incidentId, 'alert_fallback', null, ['branch' => $branch, 'reason' => 'manager_dm_no_eligible_recipient']);
-        $results = [];
-        foreach ($groupChats as $chatId) $results[$chatId] = $sendToChat($chatId);
-        return $results;
-    }
-
+    $chats = array_values(array_unique(array_merge($groupChats, $managerChats)));
     $results = [];
-    foreach ($managerChats as $chatId) $results[$chatId] = $sendToChat($chatId);
-    $anySucceeded = count(array_filter($results, fn($r) => !empty($r['sent']))) > 0;
-    if (!$anySucceeded) {
-        broth_log_copilot_audit($incidentId, 'alert_fallback', null, ['branch' => $branch, 'reason' => 'manager_dm_all_deliveries_failed']);
-        foreach ($groupChats as $chatId) $results[$chatId] = $sendToChat($chatId);
+    foreach ($chats as $chatId) $results[$chatId] = $sendToChat($chatId);
+
+    // Manager-DM coverage-gap signals: purely informational now that Ops is unconditional (there is
+    // no longer a conditional "fallback action" for these to describe - Ops was already sent above
+    // regardless). Kept, under a name that no longer implies an action, because "this manager_dm
+    // branch currently has nobody watching DMs" remains genuinely useful operational/audit signal.
+    if ($mode === 'manager_dm') {
+        if (empty($managerChats)) {
+            broth_log_copilot_audit($incidentId, 'manager_dm_coverage_gap', null, ['branch' => $branch, 'reason' => 'no_eligible_recipient']);
+        } else {
+            $managerResults = array_intersect_key($results, array_flip($managerChats));
+            $anyManagerSucceeded = count(array_filter($managerResults, fn($r) => !empty($r['sent']))) > 0;
+            if (!$anyManagerSucceeded) {
+                broth_log_copilot_audit($incidentId, 'manager_dm_coverage_gap', null, ['branch' => $branch, 'reason' => 'all_deliveries_failed']);
+            }
+        }
     }
     return $results;
 }
@@ -1076,6 +1134,14 @@ function broth_log_copilot_due_escalations(?DateTimeImmutable $now = null): arra
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
     $due = [];
     $ts = $now->format('Y-m-d H:i:s');
+    // Deliberately NO date/cutover filter here - see broth_log_copilot_freeze_pre_cutover_incidents()
+    // instead, which achieves the Ops-parity cutover by setting escalation_lock_expires_at far in
+    // the future on specific pre-cutover rows (already excluded by the lock check below) as a
+    // one-time, explicitly-invoked migration action. This function's own query stays exactly what
+    // it has always been - unconditional on date - so it keeps behaving identically for every
+    // incident regardless of when it runs, exactly as every existing caller (including this whole
+    // test suite's extensive escalation-cadence tests, which use arbitrary fixture dates that have
+    // nothing to do with the cutover) already depends on.
     foreach (q("SELECT * FROM broth_log_incidents
         WHERE state IN ('detected','notified_level_1','escalated_level_2','escalated_level_3')
           AND (escalation_lock_expires_at IS NULL OR escalation_lock_expires_at < ?)", [$ts]) as $incident) {

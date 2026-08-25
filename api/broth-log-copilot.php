@@ -1884,25 +1884,10 @@ function broth_log_copilot_role_class(array $user): string {
 }
 
 function broth_log_copilot_menu_main_keyboard(string $roleClass): array {
-    if ($roleClass === 'owner') {
-        return ['inline_keyboard' => [
-            [['text' => "\u{1F4CA} Today's Summary", 'callback_data' => 'menu:ceo_summary'], ['text' => "\u{1F6A8} Exceptions", 'callback_data' => 'menu:ceo_exceptions']],
-            [['text' => "\u{1F3EA} Stores", 'callback_data' => 'menu:branchpick:today'], ['text' => "\u{1F4CC} Open Issues", 'callback_data' => 'menu:open']],
-            [['text' => "\u{1F5D3} Historical", 'callback_data' => 'menu:branchpick:logdate'], ['text' => "\u{2753} Commands", 'callback_data' => 'menu:commands']],
-        ]];
-    }
-    if ($roleClass === 'gm') {
-        return ['inline_keyboard' => [
-            [['text' => "\u{1F4C5} Today's Log", 'callback_data' => 'menu:today'], ['text' => "\u{1F3EA} All Stores", 'callback_data' => 'menu:log:ALL:' . broth_log_business_date()]],
-            [['text' => "\u{1F6A8} Today's Issues", 'callback_data' => 'menu:issues_today'], ['text' => "\u{1F4CC} Open Issues", 'callback_data' => 'menu:open']],
-            [['text' => "\u{1F5D3} Log by Date", 'callback_data' => 'menu:branchpick:logdate'], ['text' => "\u{1F50E} Issues by Date", 'callback_data' => 'menu:branchpick:issuedate']],
-            [['text' => "\u{2753} Commands", 'callback_data' => 'menu:commands']],
-        ]];
-    }
     return ['inline_keyboard' => [
-        [['text' => "\u{1F4C5} Today's Log", 'callback_data' => 'menu:today'], ['text' => "\u{1F5D3} Choose Date", 'callback_data' => 'menu:branchpick:logdate']],
-        [['text' => "\u{1F6A8} Today's Issues", 'callback_data' => 'menu:issues_today'], ['text' => "\u{1F50E} Issues by Date", 'callback_data' => 'menu:branchpick:issuedate']],
-        [['text' => "\u{1F4CC} Open Issues", 'callback_data' => 'menu:open'], ['text' => "\u{2753} Commands", 'callback_data' => 'menu:commands']],
+        [['text' => "\u{1F4CB} Today's Log", 'callback_data' => 'menu:today'], ['text' => "\u{1F6A8} Today's Issues", 'callback_data' => 'menu:issues_today']],
+        [['text' => "\u{1F4C5} Select Date", 'callback_data' => 'menu:selectdate'], ['text' => "\u{1F514} Open Issues", 'callback_data' => 'menu:open']],
+        [['text' => "\u{2753} Help", 'callback_data' => 'menu:help']],
     ]];
 }
 
@@ -1911,10 +1896,19 @@ function broth_log_copilot_menu_back_row(): array {
 }
 
 function broth_log_copilot_help_text(): string {
-    return "\u{1F4CB} Broth Log Assistant\n\nI can help you check:\n\n"
-        . "\u{2022} Today's Broth Log\n\u{2022} A previous date\n\u{2022} Today's issues\n"
-        . "\u{2022} Issues from a previous date\n\u{2022} Open/unresolved issues\n\u{2022} SOP and station status\n\n"
-        . "Use the buttons below.";
+    return "\u{1F35C} Broth Log Assistant\n\nWhat would you like to check?";
+}
+
+function broth_log_copilot_help_detail_text(): string {
+    return "\u{2753} Broth Log Help\n\n"
+        . "\u{1F4CB} Today's Log\nCheck whether today's AM/PM logs were submitted.\n\n"
+        . "\u{1F6A8} Today's Issues\nSee problems found today.\n\n"
+        . "\u{1F4C5} Select Date\nReview a previous Broth Log or its issues.\n\n"
+        . "\u{1F514} Open Issues\nSee problems that still need attention.\n\n"
+        . "Alert actions:\n\n"
+        . "ACK = I saw this issue.\n"
+        . "Solve = Re-check a temperature issue after corrective action.\n\n"
+        . "Missing Broth Logs close automatically after the real log is submitted.";
 }
 
 function broth_log_copilot_commands_text(): string {
@@ -1943,6 +1937,29 @@ function broth_log_copilot_menu_branch_pick_keyboard(array $user, string $forVie
     }
     if ($row) $rows[] = $row;
     if ($includeAll) $rows[] = [['text' => 'All Stores', 'callback_data' => 'menu:branchsel:' . $forView . ':ALL']];
+    $rows[] = broth_log_copilot_menu_back_row();
+    return ['inline_keyboard' => $rows];
+}
+
+function broth_log_copilot_menu_date_type_keyboard(): array {
+    return ['inline_keyboard' => [
+        [['text' => "\u{1F4CB} Broth Log", 'callback_data' => 'menu:datekind:log']],
+        [['text' => "\u{1F6A8} Issues", 'callback_data' => 'menu:datekind:issues']],
+        broth_log_copilot_menu_back_row(),
+    ]];
+}
+
+function broth_log_copilot_menu_branch_for_date_keyboard(array $user, string $kind, string $date, bool $includeAll): array {
+    $rows = [];
+    $row = [];
+    foreach ($user['allowed_branch_list'] ?? [] as $b) {
+        $b = strtoupper($b);
+        $row[] = ['text' => $b, 'callback_data' => "menu:branchdate:{$kind}:{$date}:{$b}"];
+        if (count($row) === 3) { $rows[] = $row; $row = []; }
+    }
+    if ($row) $rows[] = $row;
+    if ($includeAll) $rows[] = [['text' => 'All Stores', 'callback_data' => "menu:branchdate:{$kind}:{$date}:ALL"]];
+    $rows[] = [['text' => "\u{1F4C5} Change Date", 'callback_data' => "menu:datekind:{$kind}"]];
     $rows[] = broth_log_copilot_menu_back_row();
     return ['inline_keyboard' => $rows];
 }
@@ -2203,12 +2220,34 @@ function broth_log_copilot_menu_issues_view(array $user, string $branch, string 
 // Cross-date, cross-branch: every currently-open incident across the caller's authorized
 // branches - independent of "Issues by Date"/"Today's Issues", which are always scoped to one
 // specific business date.
-function broth_log_copilot_menu_open_issues_view(array $user, bool $criticalOnly = false): array {
+function broth_log_copilot_menu_open_issues_view(array $user, bool $criticalOnly = false, ?string $onlyBranch = null): array {
     $branches = $user['allowed_branch_list'] ?? [];
     if (!$branches) {
         return ['message' => "You don't have access to this store.", 'reply_markup' => broth_log_copilot_menu_main_keyboard(broth_log_copilot_role_class($user)), 'intent' => 'menu_forbidden'];
     }
-    $lines = ["\u{1F4CC} Open Broth Log Issues", ''];
+    if ($onlyBranch !== null) {
+        $onlyBranch = strtoupper($onlyBranch);
+        if (!broth_log_copilot_user_can_branch($user, $onlyBranch)) {
+            return ['message' => "You don't have access to this store.", 'reply_markup' => broth_log_copilot_menu_main_keyboard(broth_log_copilot_role_class($user)), 'intent' => 'menu_forbidden'];
+        }
+        $branches = [$onlyBranch];
+    }
+    if ($onlyBranch === null && !$criticalOnly && count($branches) > 1) {
+        $lines = ["\u{1F514} Open Issues", ''];
+        $keyboardRows = [];
+        $buttonRow = [];
+        foreach ($branches as $branch) {
+            $branch = strtoupper($branch);
+            $count = (int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch=? AND state NOT IN ('resolved','closed')", [$branch])['c'] ?? 0);
+            $lines[] = "{$branch} \u{2014} {$count}";
+            $buttonRow[] = ['text' => $branch, 'callback_data' => "menu:openbranch:{$branch}"];
+            if (count($buttonRow) === 3) { $keyboardRows[] = $buttonRow; $buttonRow = []; }
+        }
+        if ($buttonRow) $keyboardRows[] = $buttonRow;
+        $keyboardRows[] = broth_log_copilot_menu_back_row();
+        return ['message' => implode("\n", $lines), 'reply_markup' => ['inline_keyboard' => $keyboardRows], 'intent' => 'menu_open_overview'];
+    }
+    $lines = [$onlyBranch ? "\u{1F514} {$onlyBranch} \u{2014} Open Issues" : "\u{1F514} Open Issues", ''];
     $any = false;
     foreach ($branches as $branch) {
         $branch = strtoupper($branch);
@@ -2220,10 +2259,10 @@ function broth_log_copilot_menu_open_issues_view(array $user, bool $criticalOnly
         $sql = "SELECT * FROM broth_log_incidents WHERE branch=? AND state NOT IN ('resolved','closed')" . ($criticalOnly ? " AND severity='critical' AND incident_type='temperature'" : '') . " ORDER BY
             CASE WHEN severity='critical' AND state NOT IN ('acknowledged') THEN 0 WHEN severity='critical' THEN 1 ELSE 2 END, created_at ASC";
         $rows = q($sql, [$branch]);
-        if (!$rows) { $lines[] = "{$branch}\nNo open issues."; $lines[] = ''; continue; }
+        if (!$rows) { $lines[] = $onlyBranch ? "\u{2705} No open issues." : "{$branch}\nNo open issues."; $lines[] = ''; continue; }
         $any = true;
         $marker = ($rows[0]['severity'] === 'critical' && $rows[0]['state'] === 'detected') ? "\u{1F534}" : "\u{1F7E1}";
-        $lines[] = "{$marker} {$branch}";
+        if (!$onlyBranch) $lines[] = "{$marker} {$branch}";
         foreach ($rows as $incident) {
             $handler = broth_log_copilot_incident_handler_summary($incident);
             $ageMinutes = (int)floor((time() - strtotime((string)$incident['created_at'] . ' UTC')) / 60);
@@ -2236,7 +2275,7 @@ function broth_log_copilot_menu_open_issues_view(array $user, bool $criticalOnly
     }
     if (!$any) $lines[] = "\u{2705} No open Broth Log issues.";
     $keyboard = [
-        [['text' => "\u{1F6A8} Critical Only", 'callback_data' => 'menu:open_critical'], ['text' => "\u{1F504} Refresh", 'callback_data' => 'menu:open']],
+        [['text' => "\u{1F504} Refresh", 'callback_data' => $onlyBranch ? "menu:openbranch:{$onlyBranch}" : 'menu:open']],
         broth_log_copilot_menu_back_row(),
     ];
     return ['message' => rtrim(implode("\n", $lines)), 'reply_markup' => ['inline_keyboard' => $keyboard], 'intent' => 'menu_open'];
@@ -2284,8 +2323,12 @@ function broth_log_copilot_menu_date_entry_response(string $text, array $user, ?
         ] + ['_reprompt' => ['kind' => $kind, 'branch' => $branch]];
     }
     $view = $kind === 'issues'
-        ? broth_log_copilot_menu_issues_view($user, $branch, $parsed['date'], $parsed['date'] === broth_log_business_date($now))
-        : broth_log_copilot_menu_log_view($user, $branch, $parsed['date'], $now);
+        ? ($branch === 'ASK'
+            ? ['message' => "\u{1F3EA} Select Store", 'reply_markup' => broth_log_copilot_menu_branch_for_date_keyboard($user, 'issues', $parsed['date'], false), 'intent' => 'menu_branchpick']
+            : broth_log_copilot_menu_issues_view($user, $branch, $parsed['date'], $parsed['date'] === broth_log_business_date($now)))
+        : ($branch === 'ASK'
+            ? ['message' => "\u{1F3EA} Select Store", 'reply_markup' => broth_log_copilot_menu_branch_for_date_keyboard($user, 'log', $parsed['date'], true), 'intent' => 'menu_branchpick']
+            : broth_log_copilot_menu_log_view($user, $branch, $parsed['date'], $now));
     return $view;
 }
 
@@ -2326,6 +2369,9 @@ function broth_log_copilot_menu_callback_response(string $callbackData, array $u
     if ($route === 'main') {
         return ['message' => broth_log_copilot_help_text(), 'reply_markup' => broth_log_copilot_menu_main_keyboard($roleClass), 'intent' => 'menu_main'];
     }
+    if ($route === 'help') {
+        return ['message' => broth_log_copilot_help_detail_text(), 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_help'];
+    }
     if ($route === 'commands') {
         return ['message' => broth_log_copilot_commands_text(), 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_commands'];
     }
@@ -2339,7 +2385,18 @@ function broth_log_copilot_menu_callback_response(string $callbackData, array $u
         if (count($branches) === 1) return broth_log_copilot_menu_issues_view($user, strtoupper($branches[0]), $today, true);
         return ['message' => "\u{1F6A8} Today's Issues", 'reply_markup' => broth_log_copilot_menu_branch_pick_keyboard($user, 'issues_today', false), 'intent' => 'menu_branchpick'];
     }
+    if ($route === 'selectdate') {
+        return ['message' => "\u{1F4C5} Select Date\n\nWhat would you like to review?", 'reply_markup' => broth_log_copilot_menu_date_type_keyboard(), 'intent' => 'menu_date_type'];
+    }
+    if ($route === 'datekind') {
+        $kind = $parts[2] ?? 'log';
+        if (!in_array($kind, ['log', 'issues'], true)) $kind = 'log';
+        $branches = $user['allowed_branch_list'] ?? [];
+        $branch = count($branches) === 1 ? strtoupper($branches[0]) : 'ASK';
+        return ['message' => "\u{1F4C5} Choose Date", 'reply_markup' => broth_log_copilot_menu_quick_date_keyboard($kind, $branch), 'intent' => 'menu_datepick'];
+    }
     if ($route === 'open') return broth_log_copilot_menu_open_issues_view($user, false);
+    if ($route === 'openbranch') return broth_log_copilot_menu_open_issues_view($user, false, strtoupper($parts[2] ?? ''));
     if ($route === 'open_critical') return broth_log_copilot_menu_open_issues_view($user, true);
     if ($route === 'ceo_summary') return broth_log_copilot_menu_ceo_summary_view($user, $now);
     if ($route === 'ceo_exceptions') return broth_log_copilot_menu_open_issues_view($user, true);
@@ -2347,7 +2404,7 @@ function broth_log_copilot_menu_callback_response(string $callbackData, array $u
     if ($route === 'branchpick') {
         // menu:branchpick:<forView>
         $forView = $parts[2] ?? '';
-        $label = $forView === 'logdate' ? "\u{1F5D3} Choose Date" : ($forView === 'issuedate' ? "\u{1F50E} Issues by Date" : "\u{1F4CB} Today's Broth Log");
+        $label = $forView === 'logdate' ? "\u{1F4C5} Choose Date" : ($forView === 'issuedate' ? "\u{1F6A8} Issues by Date" : "\u{1F4CB} Today's Broth Log");
         $includeAll = in_array($forView, ['today'], true);
         return ['message' => $label, 'reply_markup' => broth_log_copilot_menu_branch_pick_keyboard($user, $forView, $includeAll), 'intent' => 'menu_branchpick'];
     }
@@ -2373,6 +2430,15 @@ function broth_log_copilot_menu_callback_response(string $callbackData, array $u
         }
         $date = $key === 'yesterday' ? broth_log_business_now($now)->modify('-1 day')->format('Y-m-d')
             : ($key === '2d' ? broth_log_business_now($now)->modify('-2 days')->format('Y-m-d') : $today);
+        if ($branch === 'ASK') {
+            return ['message' => "\u{1F3EA} Select Store", 'reply_markup' => broth_log_copilot_menu_branch_for_date_keyboard($user, $kind, $date, $kind === 'log'), 'intent' => 'menu_branchpick'];
+        }
+        return $kind === 'issues' ? broth_log_copilot_menu_issues_view($user, $branch, $date, $date === $today) : broth_log_copilot_menu_log_view($user, $branch, $date, $now);
+    }
+    if ($route === 'branchdate') {
+        $kind = $parts[2] ?? 'log';
+        $date = $parts[3] ?? $today;
+        $branch = strtoupper($parts[4] ?? '');
         return $kind === 'issues' ? broth_log_copilot_menu_issues_view($user, $branch, $date, $date === $today) : broth_log_copilot_menu_log_view($user, $branch, $date, $now);
     }
     if ($route === 'log') {

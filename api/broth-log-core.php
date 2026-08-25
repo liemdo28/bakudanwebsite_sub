@@ -216,6 +216,27 @@ const BROTH_LOG_SHIFT_WINDOWS = [
     'PM' => ['start' => '16:00', 'end' => '17:00'],
 ];
 
+// How long past a shift window's close before a missing log becomes alert-eligible. Deliberately
+// separate from the dashboard's own MISSING label (broth_log_shift_daily_status() below reports
+// MISSING immediately at window-close, with no grace, for display purposes) - this constant only
+// gates when a real proactive Telegram alert is allowed to fire. No existing grace configuration
+// was found anywhere in this codebase prior to this constant.
+const BROTH_LOG_SHIFT_ALERT_GRACE_MINUTES = 10;
+
+// Whether a missing-shift Telegram alert is allowed to fire yet for TODAY's business date. Never
+// meaningful for a past business date - callers only ever evaluate today live; a past date's
+// shift compliance is already historically fixed and must never retroactively create an alert.
+function broth_log_shift_alert_deadline_passed(string $shift, ?DateTimeImmutable $now = null): bool {
+    $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $window = BROTH_LOG_SHIFT_WINDOWS[$shift] ?? null;
+    if (!$window) return false;
+    [$endH, $endM] = array_map('intval', explode(':', $window['end']));
+    $deadlineMinutes = $endH * 60 + $endM + BROTH_LOG_SHIFT_ALERT_GRACE_MINUTES;
+    $nowBusiness = broth_log_business_now($now);
+    $nowMinutes = ((int)$nowBusiness->format('H')) * 60 + (int)$nowBusiness->format('i');
+    return $nowMinutes > $deadlineMinutes;
+}
+
 // Which shift a submission belongs to, based on its own business-local time -
 // never inferred from the sheet's free-text "shift" column, which is
 // unvalidated operator input. The boundary is the midpoint between AM's

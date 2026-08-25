@@ -116,6 +116,9 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         closed_at TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        incident_type TEXT NOT NULL DEFAULT 'temperature',
+        shift TEXT,
+        closure_reason TEXT,
         CHECK(state IN ('detected','notified_level_1','acknowledged','escalated_level_2','escalated_level_3','resolved','closed','reopened','unacknowledged_critical'))
     );
     CREATE TABLE IF NOT EXISTS broth_log_incident_events (
@@ -183,6 +186,9 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_token TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN level_entered_at TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN employee_name TEXT",
+        "ALTER TABLE broth_log_incidents ADD COLUMN incident_type TEXT NOT NULL DEFAULT 'temperature'",
+        "ALTER TABLE broth_log_incidents ADD COLUMN shift TEXT",
+        "ALTER TABLE broth_log_incidents ADD COLUMN closure_reason TEXT",
         "ALTER TABLE broth_log_routing_rules ADD COLUMN chat_id TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_status TEXT",
         "ALTER TABLE broth_log_bot_inbox ADD COLUMN outbound_error TEXT",
@@ -775,6 +781,158 @@ function broth_log_copilot_create_incident(array $alert): string {
     return $incidentId;
 }
 
+// ============================================================================
+// MISSING-SHIFT INCIDENTS (incident_type='missing_shift')
+//
+// Deliberately reuses the temperature-incident machinery rather than building a parallel system:
+// broth_log_copilot_ack(), broth_log_copilot_due_escalations(), broth_log_copilot_apply_escalation_action(),
+// broth_log_copilot_apply_escalation_action_with_notification(), and broth_log_copilot_notify_incident()
+// are all called UNCHANGED for missing_shift incidents below - none of them reference
+// temperature_f/sop_target/station_key, only state/current_level/timestamps/branch. The only
+// incident_type-aware surfaces are broth_log_copilot_incident_message() and
+// broth_log_copilot_incident_reply_markup() (ACK-only, no Resolve), plus
+// broth_log_copilot_incident_handler_summary() and the menu issue renderers below.
+//
+// broth_log_copilot_resolve() already safely rejects a missing_shift incident with reason
+// 'unknown_station_config' for free (station_key is '', which never matches a BROTH_LOG_SOP key) -
+// this is defense-in-depth, not the primary guard. The primary guard is simply never rendering a
+// Resolve button for a missing_shift incident in the first place.
+// ============================================================================
+
+function broth_log_copilot_missing_shift_alerts_enabled(): bool {
+    return in_array(strtolower(trim((string)(getenv('BROTH_LOG_SHIFT_ALERTS_ENABLED') ?: 'false'))), ['1','true','yes','on'], true);
+}
+
+function broth_log_copilot_missing_shift_active_key(string $branch, string $businessDate, string $shift): string {
+    return hash('sha256', implode('|', [strtoupper($branch), $businessDate, $shift, 'missing_shift']));
+}
+
+// Station-label equivalent for the menu/issue renderers: a missing-shift incident's station_key/
+// station_label are intentionally left '' (never populated with a fabricated station), so anything
+// that displays "which issue is this" must branch on incident_type rather than trust station_label
+// directly.
+function broth_log_copilot_incident_display_label(array $incident): string {
+    if (($incident['incident_type'] ?? 'temperature') === 'missing_shift') {
+        return (string)($incident['shift'] ?? '') . ' Broth Log';
+    }
+    return (string)($incident['station_label'] ?? '');
+}
+
+// "11:00" -> "11:00 AM", "17:00" -> "5:00 PM". Only used for the manager-facing missing-shift
+// message text - the machine-readable canonical value stays BROTH_LOG_SHIFT_WINDOWS' 24h form.
+function broth_log_copilot_format_window_end_12h(string $shift): string {
+    $window = BROTH_LOG_SHIFT_WINDOWS[$shift] ?? null;
+    if (!$window) return '';
+    [$h, $m] = array_map('intval', explode(':', $window['end']));
+    $period = $h >= 12 ? 'PM' : 'AM';
+    $h12 = $h % 12;
+    if ($h12 === 0) $h12 = 12;
+    return $m === 0 ? "{$h12}:00 {$period}" : sprintf('%d:%02d %s', $h12, $m, $period);
+}
+
+// Creates (or returns the existing) missing_shift incident for this branch/business_date/shift.
+// Dedup reuses the exact same active_key UNIQUE-index mechanism broth_log_copilot_create_incident()
+// uses for temperature incidents - no new dedup infrastructure. temperature_f stays NULL (already
+// nullable); station_key/station_label/sop_target/corrective_action/response_id are legacy NOT NULL
+// text columns with no missing-shift equivalent, so they get '' - never a fabricated realistic-
+// looking value, per the explicit instruction not to invent temperature/SOP/station data here.
+function broth_log_copilot_create_missing_shift_incident(string $branch, string $businessDate, string $shift): string {
+    if (!broth_log_copilot_enabled()) return '';
+    $branch = strtoupper($branch);
+    $activeKey = broth_log_copilot_missing_shift_active_key($branch, $businessDate, $shift);
+    $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=?", [$activeKey]);
+    if ($existing) return (string)$existing['incident_id'];
+    $incidentId = 'bl-missing-' . substr($activeKey, 0, 10) . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(3));
+    $nowTs = gmdate('Y-m-d H:i:s');
+    run("INSERT OR IGNORE INTO broth_log_incidents
+        (incident_id,fingerprint,active_key,branch,business_date,response_id,station_key,station_label,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash,incident_type,shift)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+        $incidentId, $activeKey, $activeKey, $branch, $businessDate,
+        '', '', '', '', 'critical', '',
+        'detected', 1, $nowTs, '', 'missing_shift', $shift,
+    ]);
+    broth_log_copilot_audit($incidentId, 'missing_shift_detected', null, ['branch' => $branch, 'business_date' => $businessDate, 'shift' => $shift]);
+    return $incidentId;
+}
+
+// Auto-close on an actual submission arriving - never manager-driven (there is no Resolve button
+// for missing_shift). $finalStatus is the shift's real timing status now that a submission exists
+// (ON_TIME or LATE, from broth_log_shift_daily_status()) - LATE must never be silently upgraded to
+// ON_TIME here or anywhere else; the daily-status function already computed the true answer.
+function broth_log_copilot_close_missing_shift_incident(string $incidentId, string $finalStatus, ?DateTimeImmutable $now = null): array {
+    if (!broth_log_copilot_enabled()) return ['ok' => false, 'reason' => 'disabled'];
+    $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $ts = $now->format('Y-m-d H:i:s');
+    db()->exec('BEGIN IMMEDIATE');
+    try {
+        $incident = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
+        if (!$incident || ($incident['incident_type'] ?? '') !== 'missing_shift' || in_array($incident['state'], ['resolved', 'closed'], true)) {
+            db()->exec('COMMIT');
+            return ['ok' => false, 'reason' => 'incident_not_open'];
+        }
+        $closureReason = $finalStatus === 'LATE' ? 'late_submission_received' : 'submission_received';
+        run("UPDATE broth_log_incidents SET state='closed', active_key=NULL, closed_at=?, closure_reason=?, updated_at=datetime('now') WHERE incident_id=?", [$ts, $closureReason, $incidentId]);
+        db()->exec('COMMIT');
+    } catch (Throwable $e) {
+        try { db()->exec('ROLLBACK'); } catch (Throwable $ignored) {}
+        return ['ok' => false, 'reason' => broth_log_copilot_classify_db_exception($e)];
+    }
+    broth_log_copilot_audit($incidentId, 'missing_shift_closed', null, ['closure_reason' => $closureReason, 'final_timing_status' => $finalStatus]);
+    return ['ok' => true, 'incident_id' => $incidentId];
+}
+
+// Manager-facing missing-shift message - deliberately the SAME short wording for every kind
+// (notify/reminder/escalation/fallback): the business rule specifies one exact format, and this
+// incident type gets no escalation-tier-specific copy the way temperature incidents do.
+function broth_log_copilot_missing_shift_message(array $incident, string $kind): string {
+    $branch = (string)($incident['branch'] ?? '');
+    $shift = (string)($incident['shift'] ?? '');
+    $deadline = broth_log_copilot_format_window_end_12h($shift);
+    if ($kind === 'ack_confirm') {
+        return "\u{2705} Acknowledged\n\n{$branch} \u{2014} {$shift} Broth Log\nWaiting for the log.";
+    }
+    return "\u{26A0}\u{FE0F} {$branch} \u{2014} {$shift} Broth Log Missing\n\nNo log recorded by {$deadline}.";
+}
+
+// The core detection/close sweep - called once per worker tick. Poison-isolated per branch: one
+// branch's Google Sheet fetch failing must never block detection/closure for the other two, the
+// same isolation principle broth_log_copilot_process_inbox() already applies per inbox row.
+// Only ever evaluates TODAY's business date - a past date's compliance is already historically
+// fixed and this function must never retroactively create or close an incident for it.
+function broth_log_copilot_process_missing_shifts(?DateTimeImmutable $now = null): array {
+    if (!broth_log_copilot_enabled() || !broth_log_copilot_missing_shift_alerts_enabled()) return [];
+    $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $businessDate = broth_log_business_date($now);
+    $results = [];
+    foreach (['B1', 'B2', 'B3'] as $branch) {
+        try {
+            $records = broth_log_filter_records(broth_log_copilot_branch_records($branch), ['branch' => $branch, 'businessDate' => $businessDate]);
+        } catch (Throwable $e) {
+            $results[] = ['branch' => $branch, 'error' => 'fetch_failed'];
+            continue;
+        }
+        foreach (['AM', 'PM'] as $shift) {
+            $status = broth_log_shift_daily_status($shift, $records, $businessDate, $now);
+            $activeKey = broth_log_copilot_missing_shift_active_key($branch, $businessDate, $shift);
+            $existing = q1("SELECT incident_id, state FROM broth_log_incidents WHERE active_key=? AND incident_type='missing_shift'", [$activeKey]);
+
+            if ($status['status'] === 'MISSING') {
+                if (!$existing && broth_log_shift_alert_deadline_passed($shift, $now)) {
+                    $incidentId = broth_log_copilot_create_missing_shift_incident($branch, $businessDate, $shift);
+                    if ($incidentId !== '') {
+                        $notify = broth_log_copilot_notify_incident($incidentId, $now);
+                        $results[] = ['branch' => $branch, 'shift' => $shift, 'action' => 'created', 'incident_id' => $incidentId, 'notified' => !empty($notify['sent'])];
+                    }
+                }
+            } elseif (in_array($status['status'], ['ON_TIME', 'LATE'], true) && $existing && !in_array($existing['state'], ['resolved', 'closed'], true)) {
+                broth_log_copilot_close_missing_shift_incident((string)$existing['incident_id'], $status['status'], $now);
+                $results[] = ['branch' => $branch, 'shift' => $shift, 'action' => 'auto_closed', 'incident_id' => $existing['incident_id'], 'final_status' => $status['status']];
+            }
+        }
+    }
+    return $results;
+}
+
 function broth_log_copilot_audit(string $incidentId, string $eventType, ?string $actor, array $event): void {
     run("INSERT INTO broth_log_incident_events (incident_id,event_type,actor_telegram_user_id,event_json) VALUES (?,?,?,?)", [
         $incidentId,
@@ -1181,15 +1339,28 @@ function broth_log_copilot_concise_incident_message(array $incident, string $kin
 }
 
 function broth_log_copilot_incident_message(array $incident, string $kind, string $lang = 'en'): string {
+    if (($incident['incident_type'] ?? 'temperature') === 'missing_shift') {
+        return broth_log_copilot_missing_shift_message($incident, $kind);
+    }
     if (in_array($kind, ['notify', 'reminder', 'escalation'], true)) {
         return broth_log_copilot_concise_incident_message($incident, $kind, $lang);
     }
     return broth_log_copilot_verbose_incident_message($incident, $kind, $lang);
 }
 
+// Looks up the incident itself to decide whether to show Resolve - missing_shift incidents are
+// ACK-only (the manager cannot manually make a missing submission exist by pressing a button; the
+// incident only closes when a real submission arrives, via broth_log_copilot_process_missing_shifts()).
+// Deliberately keeps the existing (string $incidentId, ?DateTimeImmutable $now) signature so every
+// existing call site (notify_incident(), apply_escalation_action_with_notification()) works
+// unchanged - this function fetches incident_type itself rather than requiring callers to pass it.
 function broth_log_copilot_incident_reply_markup(string $incidentId, ?DateTimeImmutable $now = null): array {
     $expiresAt = ($now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+15 minutes')->getTimestamp();
     $ack = broth_log_copilot_create_callback_token('ack', $incidentId, $expiresAt);
+    $incident = q1("SELECT incident_type FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
+    if (($incident['incident_type'] ?? 'temperature') === 'missing_shift') {
+        return ['inline_keyboard' => [[['text' => 'ACK', 'callback_data' => $ack]]]];
+    }
     $resolve = broth_log_copilot_create_callback_token('resolve', $incidentId, $expiresAt);
     return ['inline_keyboard' => [[
         ['text' => 'ACK', 'callback_data' => $ack],
@@ -1645,6 +1816,24 @@ function broth_log_copilot_menu_log_status_line(array $summary): string {
     return "Status: \u{1F7E2} Clear";
 }
 
+function broth_log_copilot_menu_shift_status_emoji(string $status): string {
+    return ['ON_TIME' => "\u{2705}", 'EARLY' => "\u{26A0}\u{FE0F}", 'LATE' => "\u{26A0}\u{FE0F}", 'MISSING' => "\u{274C}", 'NOT_YET_DUE' => "\u{23F3}"][$status] ?? '';
+}
+function broth_log_copilot_menu_shift_status_word(string $status): string {
+    return ['ON_TIME' => 'On Time', 'EARLY' => 'Early', 'LATE' => 'Late', 'MISSING' => 'Missing', 'NOT_YET_DUE' => 'Not Yet Due'][$status] ?? $status;
+}
+// Reuses the SAME broth_log_shift_daily_status() the dashboard (PR #39) and the missing-shift
+// detector (broth_log_copilot_process_missing_shifts()) both call - one deterministic
+// classification, never a second copy for the menu.
+function broth_log_copilot_menu_shift_line(string $label, array $status): string {
+    $line = "{$label} " . broth_log_copilot_menu_shift_status_emoji($status['status']) . ' ' . broth_log_copilot_menu_shift_status_word($status['status']);
+    if (!empty($status['submitted_at'])) {
+        $parsed = broth_log_parse_submission_datetime((string)$status['submitted_at']);
+        if ($parsed) $line .= "\n" . $parsed->format('g:i A');
+    }
+    return $line;
+}
+
 function broth_log_copilot_menu_log_view(array $user, string $branch, string $date, ?DateTimeImmutable $now = null): array {
     $roleClass = broth_log_copilot_role_class($user);
     $lang = $user['preferred_language'] ?? 'en';
@@ -1658,12 +1847,27 @@ function broth_log_copilot_menu_log_view(array $user, string $branch, string $da
     } catch (Throwable $e) {
         return ['message' => "I couldn't load the Broth Log right now.\nPlease try again shortly.", 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_error'];
     }
+    $am = broth_log_shift_daily_status('AM', $records, $date, $now);
+    $pm = broth_log_shift_daily_status('PM', $records, $date, $now);
+    $missingShiftCount = q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch=? AND business_date=? AND incident_type='missing_shift' AND state NOT IN ('resolved','closed')", [$branch, $date])['c'] ?? 0;
+
     if (!$records) {
-        return ['message' => "No Broth Log submission found for this date.", 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_log_empty'];
+        $lines = ["\u{1F4CB} {$branch} \u{2014} Broth Log " . ($date === broth_log_business_date($now) ? 'Today' : $date), '',
+            broth_log_copilot_menu_shift_line('AM', $am), broth_log_copilot_menu_shift_line('PM', $pm), '',
+            "No Broth Log submission found for this date."];
+        return ['message' => implode("\n", $lines), 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_log_empty'];
     }
     $summary = broth_log_summary($records);
-    $lines = ["\u{1F4CB} {$branch} \u{2014} Broth Log " . ($date === broth_log_business_date($now) ? 'Today' : $date), '', broth_log_copilot_menu_log_status_line($summary), '',
+    $lines = ["\u{1F4CB} {$branch} \u{2014} Broth Log " . ($date === broth_log_business_date($now) ? 'Today' : $date), '',
+        broth_log_copilot_menu_shift_line('AM', $am), broth_log_copilot_menu_shift_line('PM', $pm), '',
+        broth_log_copilot_menu_log_status_line($summary), '',
         "Completed logs: {$summary['logs']}", "Missing/incomplete: {$summary['missingReadings']}", "Critical readings: {$summary['criticalIssues']}"];
+    if ($missingShiftCount > 0 || $summary['criticalIssues'] > 0) {
+        $lines[] = '';
+        $lines[] = 'Issues:';
+        if ($missingShiftCount > 0) $lines[] = "{$missingShiftCount} missing shift" . ($missingShiftCount === 1 ? '' : 's');
+        if ($summary['criticalIssues'] > 0) $lines[] = "{$summary['criticalIssues']} temperature issue" . ($summary['criticalIssues'] === 1 ? '' : 's');
+    }
     $currentIssue = null;
     foreach ($records as $record) {
         foreach ($record['issues'] as $issue) {
@@ -1677,7 +1881,7 @@ function broth_log_copilot_menu_log_view(array $user, string $branch, string $da
         $lines[] = 'Required: ' . $currentIssue['target'];
     }
     $keyboard = [];
-    if ($summary['criticalIssues'] > 0 || $summary['openIssues'] > 0) {
+    if ($summary['criticalIssues'] > 0 || $summary['openIssues'] > 0 || $missingShiftCount > 0) {
         $keyboard[] = [['text' => "\u{1F6A8} View Issues", 'callback_data' => "menu:issues:{$branch}:{$date}"]];
     }
     $keyboard[] = [['text' => "\u{1F4C4} View Full Log", 'callback_data' => "menu:fulllog:{$branch}:{$date}"], ['text' => "\u{1F504} Refresh", 'callback_data' => "menu:log:{$branch}:{$date}"]];
@@ -1759,17 +1963,27 @@ function broth_log_copilot_menu_incidents_for(string $branch, string $date): arr
 // recipients, store-manager assignment, or the last Telegram sender. Never surfaces a raw
 // Telegram/internal id: an authorized actor with no display_name on file falls back to a generic
 // label rather than leaking their numeric identity.
+function broth_log_copilot_handler_from_actor(string $actorId, string $status): array {
+    if ($actorId === '') return ['status' => $status, 'display' => 'No one yet', 'display_name_known' => true];
+    $actor = broth_log_copilot_authorized_user($actorId);
+    $name = ($actor && trim((string)$actor['display_name']) !== '') ? trim((string)$actor['display_name']) : 'Authorized Manager';
+    return ['status' => $status, 'display' => $name, 'display_name_known' => (bool)($actor && trim((string)$actor['display_name']) !== '')];
+}
+
+// state='closed' is exclusively the missing_shift auto-close terminal state (temperature incidents
+// only ever reach 'resolved', never 'closed' - see broth_log_copilot_resolve()); accountability for
+// a closed missing_shift incident is whoever ACKed it, if anyone, since the closure itself is
+// system-driven (the log actually arriving), not a manager action.
 function broth_log_copilot_incident_handler_summary(array $incident): array {
     $state = (string)($incident['state'] ?? '');
-    if (in_array($state, ['resolved', 'closed'], true) && !empty($incident['resolved_by'])) {
-        $actor = broth_log_copilot_authorized_user((string)$incident['resolved_by']);
-        $name = ($actor && trim((string)$actor['display_name']) !== '') ? trim((string)$actor['display_name']) : 'Authorized Manager';
-        return ['status' => 'resolved', 'display' => $name, 'display_name_known' => (bool)($actor && trim((string)$actor['display_name']) !== '')];
+    if ($state === 'closed') {
+        return broth_log_copilot_handler_from_actor((string)($incident['acknowledged_by'] ?? ''), 'closed');
+    }
+    if ($state === 'resolved' && !empty($incident['resolved_by'])) {
+        return broth_log_copilot_handler_from_actor((string)$incident['resolved_by'], 'resolved');
     }
     if (!empty($incident['acknowledged_by'])) {
-        $actor = broth_log_copilot_authorized_user((string)$incident['acknowledged_by']);
-        $name = ($actor && trim((string)$actor['display_name']) !== '') ? trim((string)$actor['display_name']) : 'Authorized Manager';
-        return ['status' => 'acknowledged', 'display' => $name, 'display_name_known' => (bool)($actor && trim((string)$actor['display_name']) !== '')];
+        return broth_log_copilot_handler_from_actor((string)$incident['acknowledged_by'], 'acknowledged');
     }
     return ['status' => 'unacknowledged', 'display' => 'No one yet', 'display_name_known' => true];
 }
@@ -1781,17 +1995,27 @@ function broth_log_copilot_menu_issue_direction_word(array $incident): string {
 
 function broth_log_copilot_menu_issue_block(array $incident, int $index, bool $historical): string {
     $lang = 'en';
-    $temp = broth_log_copilot_temp_text($incident['temperature_f'] !== null ? (float)$incident['temperature_f'] : null, $lang);
-    $lines = ["{$index}. {$incident['station_label']}", "{$temp} \u{2014} " . broth_log_copilot_menu_issue_direction_word($incident), 'Required: ' . (string)$incident['sop_target'], ''];
+    $isMissingShift = ($incident['incident_type'] ?? 'temperature') === 'missing_shift';
+    if ($isMissingShift) {
+        $deadline = broth_log_copilot_format_window_end_12h((string)($incident['shift'] ?? ''));
+        $lines = ["{$index}. " . broth_log_copilot_incident_display_label($incident) . ' Missing', "No log recorded by {$deadline}.", ''];
+    } else {
+        $temp = broth_log_copilot_temp_text($incident['temperature_f'] !== null ? (float)$incident['temperature_f'] : null, $lang);
+        $lines = ["{$index}. {$incident['station_label']}", "{$temp} \u{2014} " . broth_log_copilot_menu_issue_direction_word($incident), 'Required: ' . (string)$incident['sop_target'], ''];
+    }
     $handler = broth_log_copilot_incident_handler_summary($incident);
     if ($handler['status'] === 'resolved') {
         $lines[] = 'Final state: Resolved';
         $lines[] = 'Handled by: ' . $handler['display'];
         if (!empty($incident['resolved_at'])) $lines[] = 'Resolved: ' . $incident['resolved_at'];
+    } elseif ($handler['status'] === 'closed') {
+        $lines[] = $isMissingShift && ($incident['closure_reason'] ?? '') === 'late_submission_received' ? 'Final state: Late' : 'Final state: Log received';
+        if ($handler['display'] !== 'No one yet') $lines[] = 'Handled by: ' . $handler['display'];
+        if (!empty($incident['closed_at'])) $lines[] = 'Closed: ' . $incident['closed_at'];
     } elseif ($handler['status'] === 'acknowledged') {
         $lines[] = "\u{1F7E1} ACKNOWLEDGED \u{2014} BEING HANDLED";
         $lines[] = 'Handling: ' . $handler['display'];
-        $lines[] = 'Issue is still open.';
+        $lines[] = $isMissingShift ? 'Waiting for the log.' : 'Issue is still open.';
     } else {
         $lines[] = 'Status: WAITING FOR RESPONSE';
         $lines[] = 'Handling: No one yet';
@@ -1846,7 +2070,7 @@ function broth_log_copilot_menu_open_issues_view(array $user, bool $criticalOnly
             $handler = broth_log_copilot_incident_handler_summary($incident);
             $ageMinutes = (int)floor((time() - strtotime((string)$incident['created_at'] . ' UTC')) / 60);
             $statusWord = $handler['status'] === 'acknowledged' ? 'Acknowledged' : 'Unacknowledged';
-            $lines[] = "{$incident['station_label']} \u{2014} {$statusWord}";
+            $lines[] = broth_log_copilot_incident_display_label($incident) . " \u{2014} {$statusWord}";
             $lines[] = $handler['status'] === 'unacknowledged' ? "Open {$ageMinutes} min" : 'Still unresolved';
             $lines[] = 'Handling: ' . $handler['display'];
         }

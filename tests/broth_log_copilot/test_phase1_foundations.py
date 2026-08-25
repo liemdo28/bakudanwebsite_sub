@@ -54,7 +54,14 @@ def test_migrations_cover_auth_inbox_incident_context_and_routing():
 
 def test_deterministic_parser_supports_en_es_vi_without_llm():
     copilot = text('api/broth-log-copilot.php')
-    assert 'LLM' not in copilot
+    # The file legitimately documents its own determinism in a couple of full-line comments
+    # ("no LLM", "free-text/LLM ranking") - a bare 'LLM' not in copilot check false-positives on
+    # those. PHP comment grammar guarantees a line whose first non-whitespace characters are '//'
+    # is ENTIRELY a comment, so excluding exactly those lines before scanning can only ever make
+    # this check MORE permissive of documentation, never blind to a real LLM reference living in
+    # actual code (which can never start a line with '//').
+    code_only = '\n'.join(line for line in copilot.splitlines() if not line.strip().startswith('//'))
+    assert 'LLM' not in code_only, 'broth-log-copilot.php must remain a deterministic parser - found an "LLM" reference outside of a documentation comment'
     for phrase in ['critical', 'critico', 'nghiem trong', 'recibido', 'da nhan', 'resolved', 'resuelto', 'da xu ly']:
         assert phrase in copilot
     for station in ['walkInFreezer', 'prepAreaCooler', 'pastaBoilerRight']:

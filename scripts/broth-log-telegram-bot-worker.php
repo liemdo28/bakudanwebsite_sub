@@ -87,8 +87,14 @@ try {
     $inbox = [];
     $due = broth_log_copilot_due_escalations($now);
     $results = [];
+    $missingShiftResults = [];
     if (!$dryRun) {
         $inbox = broth_log_copilot_process_inbox(25, $now);
+        // Detect/close missing-shift incidents (and send the initial alert for any newly created
+        // one) BEFORE the escalation sweep below, so a brand-new incident's own reminder/escalation
+        // timing starts counting from this same tick rather than waiting a full cycle. Gated by its
+        // own BROTH_LOG_SHIFT_ALERTS_ENABLED flag internally - a no-op, zero-cost call while dark.
+        $missingShiftResults = broth_log_copilot_process_missing_shifts($now);
         foreach ($due as $action) $results[] = broth_log_copilot_apply_escalation_action_with_notification($action, $now);
         run("DELETE FROM broth_log_bot_inbox WHERE received_at < datetime('now', '-" . BROTH_LOG_COPILOT_RETENTION_RAW_DAYS . " days')");
         run("DELETE FROM broth_log_conversation_context WHERE expires_at < datetime('now')");
@@ -98,6 +104,9 @@ try {
         'dry_run' => $dryRun,
         'inbox_processed' => count($inbox),
         'due' => count($due),
+        'missing_shift_alerts_enabled' => broth_log_copilot_missing_shift_alerts_enabled(),
+        'missing_shift_enabled_branches' => broth_log_copilot_missing_shift_enabled_branches(),
+        'missing_shift_actions' => $missingShiftResults,
         'results' => $dryRun ? array_map(fn($a) => ['action' => $a['action'], 'incident_id' => $a['incident']['incident_id']], $due) : $results,
     ], JSON_PRETTY_PRINT) . PHP_EOL;
 } catch (Throwable $e) {

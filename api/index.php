@@ -1222,6 +1222,7 @@ if ($path === '/broth-log/settings' && $METHOD === 'GET') {
     ok([
         'ranges' => $ranges,
         'shift_windows' => BROTH_LOG_SHIFT_WINDOWS,
+        'shift_alert_grace_minutes' => BROTH_LOG_SHIFT_ALERT_GRACE_MINUTES,
         'timezone' => BROTH_LOG_BUSINESS_TIMEZONE,
     ]);
 }

@@ -1768,6 +1768,487 @@ try {
     run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?,?,?,?)", [$menuIncUnack, $menuIncAck, $menuIncResolved, $menuIncAckNoName, $ackProbeId]);
     run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id IN (?,?,?,?)", [$menuOwnerId, $menuGmId, $menuManagerId, $menuManagerNamedId]);
 
+    // ========================================================================================
+    // MISSING-SHIFT ALERTS (feature/broth-log-missing-shift-alerts) - dark by default
+    // ========================================================================================
+
+    // --- Feature-flag dark-by-default proof: must run BEFORE the flag is ever enabled below ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    expect_eq(broth_log_copilot_missing_shift_alerts_enabled(), false, 'missing-shift alerts default OFF when the env var is unset');
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array { return []; };
+    $darkNow = new DateTimeImmutable('2026-08-25 23:30:00 UTC'); // well past both AM and PM deadline+grace in Chicago
+    $darkResult = broth_log_copilot_process_missing_shifts($darkNow);
+    expect_eq($darkResult, [], 'process_missing_shifts() is a true no-op while the feature flag is off, even though every branch/shift would otherwise be MISSING');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift'")['c'], 0, 'zero missing_shift incidents exist anywhere after a dark-flag sweep');
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+
+    // --- Enable the flag for the remainder of this section. This section's tests exercise
+    // grace-period/dedup/AM-PM/routing behavior across all three branches, not the per-branch
+    // activation gate itself (that gets its own dedicated tests further below) - so all three
+    // branches are explicitly allowlisted here to preserve this section's original intent. ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=B1,B2,B3');
+    expect_eq(broth_log_copilot_missing_shift_alerts_enabled(), true, 'flag correctly reads true once set');
+
+    // --- Fixtures used throughout this section: a GM authorized for B1+B2+B3, used for read-only
+    // menu views (historical query, Today's Log/Issues integration) - deleted at the end. ---
+    $msGmId = '861'; $msGmChat = '910861001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$msGmId, 'MS Test GM', 'manager', json_encode(['B1', 'B2', 'B3'])]);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$msGmId, $msGmChat]);
+    $msGmUser = broth_log_copilot_authorized_user($msGmId);
+    expect_true($msGmUser !== null, 'MS GM fixture is authorized');
+
+    // --- Grace period: before vs after deadline+grace, in one real sweep across B1/B2/B3 ---
+    // 16:05 Chicago = AM deadline+grace (11:10) already passed, PM deadline+grace (17:10) not yet.
+    // Fixed calendar date (not wall-clock "today") so the test is deterministic regardless of when
+    // it runs, and PHP's own tz database (not a hand-picked UTC offset) resolves DST correctly.
+    $graceNow = (new DateTimeImmutable('2026-08-25 16:05:00', new DateTimeZone('America/Chicago')))->setTimezone(new DateTimeZone('UTC'));
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array { return []; };
+    $sweep1 = broth_log_copilot_process_missing_shifts($graceNow);
+    $created1 = array_values(array_filter($sweep1, fn($r) => ($r['action'] ?? '') === 'created'));
+    expect_eq(count($created1), 3, 'B: after AM deadline+grace, exactly one missing incident is created per branch (3 total for B1+B2+B3) - PM is not yet due');
+    foreach ($created1 as $c) expect_eq($c['shift'], 'AM', 'B: every incident created in this sweep is for the AM shift, never PM (not yet due)');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift' AND shift='PM'")['c'], 0, 'L: PM is not evaluated early - zero PM missing_shift incidents exist before its own deadline+grace');
+
+    // --- Dedup / idempotent repeated tick: same tick conditions -> same incidents, no duplicates ---
+    $sweep2 = broth_log_copilot_process_missing_shifts($graceNow);
+    $created2 = array_values(array_filter($sweep2, fn($r) => ($r['action'] ?? '') === 'created'));
+    expect_eq(count($created2), 0, 'C/K: a repeated worker tick under the same conditions creates zero additional incidents - the existing ones are reused, not duplicated');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift' AND shift='AM'")['c'], 3, 'C/K: exactly one AM missing_shift incident per branch still exists after the repeated tick - dedup key (branch, business_date, shift, incident_type) holds');
+
+    // --- AM/PM are separate incidents: advance past PM's own deadline+grace too ---
+    $graceNowPm = $graceNow->modify('+2 hours'); // 18:05 Chicago, past PM's 17:10 deadline+grace
+    $sweep3 = broth_log_copilot_process_missing_shifts($graceNowPm);
+    $created3 = array_values(array_filter($sweep3, fn($r) => ($r['action'] ?? '') === 'created'));
+    expect_eq(count($created3), 3, 'M: after PM deadline+grace too, exactly one additional (PM) incident is created per branch');
+    foreach ($created3 as $c) expect_eq($c['shift'], 'PM', 'M: this second batch is entirely PM incidents, distinct from the earlier AM batch');
+    $msBusinessDateForGrace = broth_log_business_date($graceNow);
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=?", [$msBusinessDateForGrace])['c'], 6, 'exactly 6 missing_shift incidents exist for this business date (3 branches x AM+PM), matching the dedup key exactly');
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+
+    // Clean up the grace/dedup sweep's incidents before the more targeted tests below, so they
+    // start from a clean slate and their own counts are unambiguous.
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN (SELECT incident_id FROM broth_log_incidents WHERE incident_type='missing_shift')");
+    run("DELETE FROM broth_log_incidents WHERE incident_type='missing_shift'");
+
+    // --- Different business dates are separate incidents (dedup key includes business_date) ---
+    $keyDay1 = broth_log_copilot_missing_shift_active_key('B1', '2026-08-20', 'AM');
+    $keyDay2 = broth_log_copilot_missing_shift_active_key('B1', '2026-08-21', 'AM');
+    expect_true($keyDay1 !== $keyDay2, 'different business dates produce different dedup keys for the same branch/shift');
+    $incDay1 = broth_log_copilot_create_missing_shift_incident('B1', '2026-08-20', 'AM');
+    $incDay2 = broth_log_copilot_create_missing_shift_incident('B1', '2026-08-21', 'AM');
+    expect_true($incDay1 !== '' && $incDay2 !== '' && $incDay1 !== $incDay2, 'two different business dates create two genuinely separate incidents');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN (?,?)", [$incDay1, $incDay2]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?)", [$incDay1, $incDay2]);
+
+    // --- Incident model: no fake temperature/SOP/station data on a missing_shift row ---
+    $msModelId = broth_log_copilot_create_missing_shift_incident('B2', '2026-08-22', 'PM');
+    $msModelRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$msModelId]);
+    expect_eq($msModelRow['incident_type'], 'missing_shift', 'incident model: incident_type is missing_shift');
+    expect_eq($msModelRow['shift'], 'PM', 'incident model: shift is stored exactly');
+    expect_eq($msModelRow['branch'], 'B2', 'incident model: branch is stored exactly');
+    expect_eq($msModelRow['business_date'], '2026-08-22', 'incident model: business_date is stored exactly');
+    expect_eq($msModelRow['temperature_f'], null, 'incident model: temperature_f is NULL, never a fabricated value');
+    expect_eq($msModelRow['sop_target'], '', 'incident model: sop_target is empty, never a fabricated value');
+    expect_eq($msModelRow['station_key'], '', 'incident model: station_key is empty, never a fabricated station');
+    expect_eq($msModelRow['state'], 'detected', 'incident model: initial state is detected, same state machine as temperature incidents');
+    expect_eq($msModelRow['closure_reason'], null, 'incident model: closure_reason is NULL until closed');
+
+    // --- ACK: authorized succeeds, wrong branch denied, ACK does NOT close ---
+    $msAckManagerId = '862'; $msAckManagerChat = '910862001';
+    $msWrongBranchManagerId = '863';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$msAckManagerId, 'MS Ack Manager', 'manager', json_encode(['B2'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$msWrongBranchManagerId, 'MS Wrong Branch', 'manager', json_encode(['B3'])]);
+    $msAckManagerUser = broth_log_copilot_authorized_user($msAckManagerId);
+    $msWrongBranchUser = broth_log_copilot_authorized_user($msWrongBranchManagerId);
+    $ackDeniedResult = broth_log_copilot_ack($msModelId, $msWrongBranchUser);
+    expect_eq($ackDeniedResult['reason'] ?? '', 'forbidden', 'D: ACK from a manager without this branch is denied');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$msModelId])['state'], 'detected', 'D: a denied ACK never changes incident state');
+    $ackOkResult = broth_log_copilot_ack($msModelId, $msAckManagerUser);
+    expect_true($ackOkResult['ok'] ?? false, 'D: ACK from the correct branch manager succeeds');
+    $msAfterAck = q1("SELECT state, acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$msModelId]);
+    expect_eq($msAfterAck['state'], 'acknowledged', 'D/V: ACK moves the incident to acknowledged, never directly to closed - ACK does not close a missing_shift incident');
+    expect_eq($msAfterAck['acknowledged_by'], $msAckManagerId, 'D: acknowledged_by is recorded correctly');
+
+    // --- Handler accountability + reply markup (ACK-only, no Resolve) around this same incident ---
+    $msHandlerBefore = broth_log_copilot_incident_handler_summary($msModelRow);
+    expect_eq($msHandlerBefore['display'], 'No one yet', 'I: before ACK, handler display is "No one yet"');
+    $msFreshAfterAck = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$msModelId]);
+    $msHandlerAfterAck = broth_log_copilot_incident_handler_summary($msFreshAfterAck);
+    expect_eq($msHandlerAfterAck['display'], 'MS Ack Manager', 'I: after ACK, handler display is the real approved display name');
+    expect_eq($msHandlerAfterAck['status'], 'acknowledged', 'I: handler status is acknowledged, never fabricated as resolved/closed');
+    $msMarkup = broth_log_copilot_incident_reply_markup($msModelId);
+    expect_eq(count($msMarkup['inline_keyboard'][0]), 1, 'K: missing_shift reply markup has exactly one button');
+    expect_eq($msMarkup['inline_keyboard'][0][0]['text'], 'ACK', 'K: the one button is ACK');
+    expect_true(!isset($msMarkup['inline_keyboard'][0][1]), 'K: there is no Resolve button for a missing_shift incident');
+
+    // --- Explicit Resolve guard (Item 2, A-F): a deterministic, incident-type check, not a
+    // coincidental side effect of an empty station_key. ---
+    // B: direct resolve() call is rejected with the explicit reason, not the old incidental
+    // unknown_station_config path (proves the new guard actually fires, not the old one).
+    $msResolveAttempt = broth_log_copilot_resolve($msModelId, $msAckManagerUser, 38.0, 'attempted resolve on a missing-shift incident');
+    expect_eq($msResolveAttempt['reason'] ?? '', 'resolve_not_supported_for_missing_shift', 'B: direct resolve() call on a missing_shift incident is rejected with the explicit, deterministic reason');
+    // E: no incident mutation from the rejected attempt.
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$msModelId])['state'], 'acknowledged', 'E: the rejected Resolve attempt never changed incident state');
+    expect_true(q1("SELECT resolved_by FROM broth_log_incidents WHERE incident_id=?", [$msModelId])['resolved_by'] === null, 'E: resolved_by stays NULL after a rejected Resolve attempt');
+
+    // C: the text `/resolve #<id> ...` path is rejected with the short, accurate manager-facing
+    // message - not the generic "include a recheck temperature" wrapper, which would be actively
+    // wrong advice for a missing-shift issue.
+    broth_log_copilot_enqueue_webhook(['update_id' => 9200, 'message' => ['text' => '/resolve #' . $msModelId . ' 38F fixed', 'from' => ['id' => (int)$msAckManagerId], 'chat' => ['id' => $msAckManagerChat], 'message_id' => 9200]]);
+    $msTextResolveProcessed = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-22 00:00:00 UTC')), '9200');
+    expect_eq($msTextResolveProcessed['intent'] ?? '', 'resolve_rejected', 'C: the text /resolve command on a missing_shift incident is rejected');
+    $msTextResolveSent = end($sentMessages);
+    expect_eq($msTextResolveSent['payload']['text'] ?? '', 'TEST - This issue closes automatically when the Broth Log is submitted.', 'C: the manager sees the short, accurate, incident-type-specific message - no internal reason code, no mention of recheck temperature');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$msModelId])['state'], 'acknowledged', 'E: the text /resolve attempt never changed incident state');
+
+    // D: a forged/replayed signed Resolve callback token is also rejected - the real UI never
+    // generates one for a missing_shift incident (no Resolve button, see K above), but the safety
+    // property must not depend on that alone.
+    $msForgedResolveToken = broth_log_copilot_create_callback_token('resolve', $msModelId, (new DateTimeImmutable('2026-08-22 00:00:00 UTC'))->modify('+15 minutes')->getTimestamp());
+    $msForgedResolveResponse = broth_log_copilot_callback_response($msForgedResolveToken, $msAckManagerUser, $msAckManagerChat, new DateTimeImmutable('2026-08-22 00:00:00 UTC'));
+    expect_eq($msForgedResolveResponse['intent'] ?? '', 'resolve_prompt', 'D: the callback layer itself only ever prompts for resolve details via text (existing behavior for every incident type) - the actual rejection happens at the broth_log_copilot_resolve() call once the manager replies, proven by C above');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$msModelId])['state'], 'acknowledged', 'E: even the forged-callback path never changed incident state before the text reply is rejected');
+
+    // F: temperature Resolve is completely unaffected by the new guard.
+    // Branch B2, matching $msAckManagerUser's own authorization (set to ['B2'] above at fixture
+    // setup) - the actor must actually be allowed on the incident's branch for Resolve to reach
+    // the temperature-specific checks at all.
+    $msTempRegressionAlert = ['branch' => 'B2', 'responseId' => 'ms-regress-temp', 'stationKey' => 'prepAreaCooler', 'station' => 'Prep Area Cooler', 'severity' => 'critical', 'businessDate' => '2026-08-22', 'businessTime' => '09:00', 'temperature' => '55F', 'target' => '<= 40F', 'correctiveAction' => 'Investigate'];
+    $msTempRegressionId = broth_log_copilot_create_incident($msTempRegressionAlert);
+    $msTempRegressionResolve = broth_log_copilot_resolve($msTempRegressionId, $msAckManagerUser, 38.0, 'closed door and moved product');
+    expect_true($msTempRegressionResolve['ok'] ?? false, 'F: Resolve on a real temperature incident still succeeds exactly as before - the new missing_shift guard does not affect it');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$msTempRegressionId])['state'], 'resolved', 'F: the temperature incident reaches state=resolved normally');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$msTempRegressionId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$msTempRegressionId]);
+
+    // --- Reminder suppression after ACK: the existing generic escalation query already excludes 'acknowledged' ---
+    run("UPDATE broth_log_incidents SET created_at='2026-08-22 00:00:00', level_entered_at='2026-08-22 00:00:00', last_reminder_at=NULL WHERE incident_id=?", [$msModelId]);
+    $msDueWhileAcked = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-22 01:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $msModelId));
+    expect_true(empty($msDueWhileAcked), 'H: an acknowledged missing_shift incident is never due for a reminder - the existing generic escalation query already excludes state=acknowledged, reused unchanged');
+
+    // --- Message wording: manager-facing text is short, no internal details ---
+    $msNotifyMessage = broth_log_copilot_incident_message($msModelRow, 'notify');
+    expect_true(str_contains($msNotifyMessage, 'B2') && str_contains($msNotifyMessage, 'PM'), 'message shows store and shift');
+    expect_true(str_contains($msNotifyMessage, 'Missing'), 'message says Missing');
+    expect_true(!str_contains($msNotifyMessage, $msModelId), 'message never includes the internal incident id');
+    expect_true(!str_contains($msNotifyMessage, 'Level') && !str_contains($msNotifyMessage, 'level'), 'message never mentions escalation level');
+    $msAckConfirmMessage = broth_log_copilot_incident_message($msFreshAfterAck, 'ack_confirm');
+    expect_true(str_contains($msAckConfirmMessage, 'Acknowledged'), 'ACK confirmation message says Acknowledged');
+    expect_true(str_contains($msAckConfirmMessage, 'Waiting for the log'), 'ACK confirmation tells the manager the log is still needed, not that the issue is resolved');
+
+    // --- Late submission: auto-close, timing stays LATE, audit history preserved ---
+    $msLateIncidentId = broth_log_copilot_create_missing_shift_incident('B3', '2026-08-24', 'AM');
+    run("UPDATE broth_log_incidents SET created_at='2026-08-24 15:10:00' WHERE incident_id=?", [$msLateIncidentId]); // ~10:10 AM Chicago detection time
+    // $incDay1 was already deleted from the DB above - proves close() safely no-ops on an id that
+    // no longer resolves to an open missing_shift row, rather than erroring or affecting anything.
+    $closeAttemptWrongType = broth_log_copilot_close_missing_shift_incident($incDay1, 'LATE');
+    expect_eq($closeAttemptWrongType['reason'] ?? '', 'incident_not_open', 'close_missing_shift_incident() safely rejects an incident id that is not an open missing_shift row');
+    $msCloseResult = broth_log_copilot_close_missing_shift_incident($msLateIncidentId, 'LATE', new DateTimeImmutable('2026-08-24 16:24:00 UTC'));
+    expect_true($msCloseResult['ok'] ?? false, 'W: a late submission auto-closes the missing_shift incident');
+    $msLateRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$msLateIncidentId]);
+    expect_eq($msLateRow['state'], 'closed', 'W: the incident state is closed, not resolved (resolved stays exclusive to temperature incidents)');
+    expect_eq($msLateRow['closure_reason'], 'late_submission_received', 'X/Y: closure_reason correctly records this was a late submission, not an on-time one');
+    expect_true(!empty($msLateRow['closed_at']), 'Y: closed_at is recorded');
+    expect_true(!empty($msLateRow['created_at']), 'Y: the original detection time (created_at) is preserved, never overwritten by the close');
+    $msAuditEvents = q("SELECT event_type FROM broth_log_incident_events WHERE incident_id=? ORDER BY id ASC", [$msLateIncidentId]);
+    $msAuditTypes = array_map(fn($e) => $e['event_type'], $msAuditEvents);
+    expect_true(in_array('missing_shift_detected', $msAuditTypes, true) && in_array('missing_shift_closed', $msAuditTypes, true), 'Y: full audit history preserved - both detection and closure events exist');
+    expect_true(array_search('missing_shift_detected', $msAuditTypes) < array_search('missing_shift_closed', $msAuditTypes), 'Y: audit events are in correct chronological order');
+    // Never silently upgraded to ON_TIME:
+    expect_true($msLateRow['closure_reason'] !== 'submission_received', 'G: a LATE close is never mislabeled as a plain on-time submission');
+    // Next worker tick sends nothing further for this now-closed incident:
+    $msNextTickDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-24 17:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $msLateIncidentId));
+    expect_true(empty($msNextTickDue), 'Z: the next worker tick has nothing due for a closed missing_shift incident - no further reminder is possible');
+
+    // --- Auto-close via the real detection sweep (not the direct unit call) confirms end-to-end wiring ---
+    $msSweepCloseIncidentId = broth_log_copilot_create_missing_shift_incident('B1', broth_log_business_date($graceNow), 'AM');
+    // submittedAt must be the raw sheet (Vietnam-time) string broth_log_parse_submission_datetime() expects.
+    $lateChicago = (new DateTimeImmutable(broth_log_business_date($graceNow) . ' 11:24:00', new DateTimeZone('America/Chicago')));
+    $lateRawSheetString = $lateChicago->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh'))->format('n/j/Y G:i:s');
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($lateRawSheetString, $graceNow) {
+        if ($branch !== 'B1') return [];
+        return [['id' => 'ms-late-arrival', 'branch' => 'B1', 'businessDate' => broth_log_business_date($graceNow), 'submittedAt' => $lateRawSheetString, 'employeeName' => 'Late Employee', 'readings' => [], 'issues' => []]];
+    };
+    $sweepClose = broth_log_copilot_process_missing_shifts($graceNow->modify('+30 minutes'));
+    $autoClosed = array_values(array_filter($sweepClose, fn($r) => ($r['action'] ?? '') === 'auto_closed' && ($r['incident_id'] ?? '') === $msSweepCloseIncidentId));
+    expect_true(!empty($autoClosed), 'F: the real detection sweep auto-closes an open missing incident once a qualifying (even if late) submission appears in the Sheet data');
+    expect_eq($autoClosed[0]['final_status'] ?? '', 'LATE', 'F: the sweep correctly classifies an 11:24 AM submission as LATE, not ON_TIME');
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    // The sweep call above unconditionally evaluates all of B1/B2/B3, not just B1 - with empty
+    // records for B2/B3 (default provider fallthrough) and the same past-deadline+grace $now, it
+    // also incidentally creates fresh B2/B3 AM incidents for this same business date. Clean up by
+    // date, not just the one incident id this sub-test was tracking.
+    $msSweepCloseDate = broth_log_business_date($graceNow);
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN (SELECT incident_id FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=?)", [$msSweepCloseDate]);
+    run("DELETE FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=?", [$msSweepCloseDate]);
+
+    // --- Routing: B1 manager_dm success -> DM only, zero group attempts, zero onboarding attempts ---
+    $msRouteGmId = '864'; $msRouteGmChat = '910864001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$msRouteGmId, 'MS Route GM', 'manager', json_encode(['B1'])]);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$msRouteGmId, $msRouteGmChat]);
+    run("INSERT INTO broth_log_branch_alert_mode (branch, mode) VALUES ('B1','manager_dm')");
+    $msRouteIncidentId = broth_log_copilot_create_missing_shift_incident('B1', '2026-08-23', 'PM');
+    $preRouteSentCount = count($sentMessages);
+    $msNotifyResult = broth_log_copilot_notify_incident($msRouteIncidentId, new DateTimeImmutable('2026-08-23 22:20:00 UTC'));
+    expect_true($msNotifyResult['sent'] ?? false, 'E: notify_incident() (reused unchanged) successfully delivers a missing_shift alert');
+    $msRouteSentTo = array_slice($sentMessages, $preRouteSentCount);
+    $msRouteChatIds = array_map(fn($m) => $m['payload']['chat_id'] ?? '', $msRouteSentTo);
+    expect_true(in_array($msRouteGmChat, $msRouteChatIds, true), 'E: the eligible manager DM chat receives the missing-shift alert');
+    // Not asserting an exact recipient COUNT here: this shared test-suite database can carry other
+    // B1-eligible managers registered by earlier, unrelated sections of this same file. The actual
+    // property under test - manager_dm mode never additionally fans out to the Alert/Fallback group
+    // once at least one manager succeeds - is what the group/onboarding-exclusion checks below prove.
+    expect_true(count($msRouteChatIds) >= 1, 'E: at least one delivery attempt was made');
+    $onboardingChatIdForMs = getenv('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID');
+    expect_true(!in_array($onboardingChatIdForMs, $msRouteChatIds, true), 'F: the Manager Onboarding Group never receives a missing-shift alert');
+    foreach ($msRouteSentTo as $m) {
+        expect_true(str_contains((string)($m['payload']['text'] ?? ''), 'B1') && str_contains((string)($m['payload']['text'] ?? ''), 'PM'), 'E: the delivered message is the concise missing-shift alert, correctly labeled B1/PM');
+    }
+    run("DELETE FROM broth_log_branch_alert_mode WHERE branch='B1'");
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$msRouteIncidentId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$msRouteIncidentId]);
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$msRouteGmId]);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$msRouteGmId]);
+
+    // --- Routing: zero eligible manager -> Alert/Fallback group (reuses the SAME generic fallback path as temperature incidents) ---
+    $msZeroBranch = 'ZMSZERO';
+    run("INSERT INTO broth_log_branch_alert_mode (branch, mode) VALUES (?, 'manager_dm')", [$msZeroBranch]);
+    run("INSERT INTO broth_log_routing_rules (branch, stage, level, telegram_user_ids, active, chat_id) VALUES (?,?,?,?,?,?)", [$msZeroBranch, 'staging', 1, '["0"]', 1, 'ms-zero-fallback-group-chat']);
+    $msZeroIncidentId = broth_log_copilot_create_missing_shift_incident($msZeroBranch, '2026-08-23', 'AM');
+    $preZeroSentCount = count($sentMessages);
+    broth_log_copilot_notify_incident($msZeroIncidentId, new DateTimeImmutable('2026-08-23 16:20:00 UTC'));
+    $msZeroSentTo = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $preZeroSentCount));
+    expect_eq($msZeroSentTo, ['ms-zero-fallback-group-chat'], 'F: zero eligible managers -> the Alert/Fallback group receives the missing-shift alert, exactly once');
+    $msZeroAudit = q1("SELECT event_json FROM broth_log_incident_events WHERE incident_id=? AND event_type='alert_fallback'", [$msZeroIncidentId]);
+    expect_true($msZeroAudit !== null && (json_decode((string)$msZeroAudit['event_json'], true)['reason'] ?? '') === 'manager_dm_no_eligible_recipient', 'F: the fallback is correctly audited with the same reason code used for temperature incidents');
+    run("DELETE FROM broth_log_branch_alert_mode WHERE branch=?", [$msZeroBranch]);
+    run("DELETE FROM broth_log_routing_rules WHERE branch=?", [$msZeroBranch]);
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$msZeroIncidentId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$msZeroIncidentId]);
+
+    // --- Poison isolation: one branch's Sheet fetch failure never blocks the other branches ---
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) {
+        if ($branch === 'B2') throw new RuntimeException('simulated Sheet fetch failure for B2');
+        return [];
+    };
+    $poisonNow = new DateTimeImmutable('2026-08-19 23:30:00 UTC');
+    $poisonSweep = broth_log_copilot_process_missing_shifts($poisonNow);
+    $poisonB2 = array_values(array_filter($poisonSweep, fn($r) => ($r['branch'] ?? '') === 'B2'));
+    $poisonB1 = array_values(array_filter($poisonSweep, fn($r) => ($r['branch'] ?? '') === 'B1' && ($r['action'] ?? '') === 'created'));
+    $poisonB3 = array_values(array_filter($poisonSweep, fn($r) => ($r['branch'] ?? '') === 'B3' && ($r['action'] ?? '') === 'created'));
+    expect_eq($poisonB2[0]['error'] ?? '', 'fetch_failed', 'N: B2 Sheet fetch failure is recorded as a clean, sanitized error - not an uncaught exception');
+    expect_true(!empty($poisonB1), 'N: B1 detection still completes normally despite B2 failing in the same sweep');
+    expect_true(!empty($poisonB3), 'N: B3 detection still completes normally despite B2 failing in the same sweep');
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    $poisonDate = broth_log_business_date($poisonNow);
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN (SELECT incident_id FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=?)", [$poisonDate]);
+    run("DELETE FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=?", [$poisonDate]);
+
+    // --- Historical queries never create incidents (menu:issues for a past date is read-only) ---
+    $msHistBefore = q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift'")['c'];
+    broth_log_copilot_menu_issues_view($msGmUser, 'B1', '2020-01-01', false);
+    broth_log_copilot_menu_log_view($msGmUser, 'B1', '2020-01-01');
+    $msHistAfter = q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift'")['c'];
+    expect_eq($msHistAfter, $msHistBefore, 'AA: viewing a historical date via the menu never creates a missing_shift incident - only the worker sweep does that, and only for today');
+
+    // --- /help Today's Log shows AM/PM shift status and issue counts (menu integration, no second logic layer) ---
+    $msTodayLogGmId = '865';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$msTodayLogGmId, 'MS Today Log', 'manager', json_encode(['B1'])]);
+    $msTodayLogUser = broth_log_copilot_authorized_user($msTodayLogGmId);
+    $msTodayDate = '2026-08-23';
+    $msTodayIncidentId = broth_log_copilot_create_missing_shift_incident('B1', $msTodayDate, 'PM');
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($msTodayDate) {
+        if ($branch !== 'B1') return [];
+        return [[
+            'id' => 'ms-today-rec', 'branch' => 'B1', 'businessDate' => $msTodayDate, 'businessTime' => '10:20', 'employeeName' => 'Yenci',
+            'readings' => [['key' => 'walkInFreezer', 'label' => 'Walk-In Freezer', 'category' => 'freezer', 'temperature' => 38.0, 'unit' => 'F', 'severity' => 'safe', 'target' => '<= 40F', 'correctiveAction' => '']],
+            'issues' => [],
+        ]];
+    };
+    $msTodayLogResult = broth_log_copilot_menu_log_view($msTodayLogUser, 'B1', $msTodayDate, new DateTimeImmutable('2026-08-23 20:00:00 UTC'));
+    expect_true(str_contains($msTodayLogResult['message'], 'PM') && str_contains($msTodayLogResult['message'], 'Missing'), "J: Today's Log shows the PM shift as Missing");
+    expect_true(str_contains($msTodayLogResult['message'], '1 missing shift'), "J: Today's Log issue count includes the open missing-shift incident");
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+
+    // --- Today's Issues shows the missing-shift issue with safe handler wording, no raw IDs ---
+    $msIssuesResult = broth_log_copilot_menu_issues_view($msTodayLogUser, 'B1', $msTodayDate, false);
+    expect_true(str_contains($msIssuesResult['message'], 'PM Broth Log Missing'), 'J: Today\'s Issues shows the missing-shift issue with clear wording');
+    expect_true(str_contains($msIssuesResult['message'], 'Handling: No one yet'), 'I/J: an unacknowledged missing-shift issue shows "Handling: No one yet"');
+    expect_true(!str_contains($msIssuesResult['message'], $msTodayIncidentId), 'AE: Today\'s Issues never exposes the internal incident id');
+    expect_true(!str_contains($msIssuesResult['message'], $msTodayLogGmId), 'AE: Today\'s Issues never exposes a raw Telegram user id');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$msTodayIncidentId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$msTodayIncidentId]);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$msTodayLogGmId]);
+
+    // --- Final cleanup of this section's fixtures ---
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN (?,?)", [$msModelId, $msLateIncidentId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?)", [$msModelId, $msLateIncidentId]);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?,?)", [$msGmId, $msAckManagerId, $msWrongBranchManagerId]);
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$msGmId]);
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=');
+    expect_eq(broth_log_copilot_missing_shift_alerts_enabled(), false, 'flag correctly reads false again after being unset (test isolation)');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift'")['c'], 0, 'zero missing_shift incidents remain after this section\'s cleanup');
+
+    // ========================================================================================
+    // PR #41 HARDENING: severity/incident_type cross-cutting, per-branch activation, race safety
+    // ========================================================================================
+
+    // --- Severity audit: "Critical Only" is a temperature-severity concept, must never include
+    // a missing_shift row even though both share severity='critical' ---
+    $sevBranch = 'B2';
+    $sevTempAlert = ['branch' => $sevBranch, 'responseId' => 'sev-temp-1', 'stationKey' => 'prepAreaCooler', 'station' => 'Prep Area Cooler', 'severity' => 'critical', 'businessDate' => '2026-08-18', 'businessTime' => '09:00', 'temperature' => '55F', 'target' => '<= 40F', 'correctiveAction' => 'Investigate'];
+    $sevTempId = broth_log_copilot_create_incident($sevTempAlert);
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $sevMissingId = broth_log_copilot_create_missing_shift_incident($sevBranch, '2026-08-18', 'AM');
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    $sevOwnerUser = ['telegram_user_id' => '999001', 'allowed_branch_list' => [$sevBranch], 'preferred_language' => 'en'];
+    $sevCriticalOnly = broth_log_copilot_menu_open_issues_view($sevOwnerUser, true);
+    expect_true(str_contains($sevCriticalOnly['message'], 'Prep Area Cooler'), 'Severity audit: Critical Only still includes the real critical temperature issue');
+    expect_true(!str_contains($sevCriticalOnly['message'], 'AM Broth Log'), 'Severity audit: Critical Only excludes the missing_shift issue, even though it also has severity=critical - a "1 missing PM log" must never surface as a "critical temperature reading"');
+    $sevAllIssues = broth_log_copilot_menu_open_issues_view($sevOwnerUser, false);
+    expect_true(str_contains($sevAllIssues['message'], 'Prep Area Cooler') && str_contains($sevAllIssues['message'], 'AM Broth Log'), 'Severity audit: the general (non-critical-only) Open Issues view still shows both types together - missing_shift is not hidden, only excluded from the temperature-specific filter');
+    // Scoped to this test's own two fixture ids, not a branch-wide COUNT - this shared test-suite
+    // database can carry other B2 critical incidents left open by earlier, unrelated sections of
+    // this same file (same defensive pattern used elsewhere in this file for shared-DB counts).
+    $sevScopedCritical = q("SELECT incident_id FROM broth_log_incidents WHERE incident_id IN (?,?) AND severity='critical' AND incident_type='temperature' AND state NOT IN ('resolved','closed')", [$sevTempId, $sevMissingId]);
+    expect_eq(count($sevScopedCritical), 1, 'Severity audit: of this test\'s two fixtures, the incident_type-scoped critical query returns exactly the temperature one');
+    expect_eq($sevScopedCritical[0]['incident_id'] ?? '', $sevTempId, 'Severity audit: the one row returned is specifically the temperature incident, never the missing_shift one');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN (?,?)", [$sevTempId, $sevMissingId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?)", [$sevTempId, $sevMissingId]);
+
+    // --- Per-branch activation gate (Item 4/5) ---
+    putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=');
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    expect_eq(broth_log_copilot_missing_shift_enabled_branches(), [], 'per-branch: with no allowlist set, the enabled-branches list is empty');
+    expect_eq(broth_log_copilot_missing_shift_enabled_for_branch('B1'), false, 'per-branch: global OFF -> B1 not enabled regardless of allowlist');
+
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    expect_eq(broth_log_copilot_missing_shift_enabled_for_branch('B1'), false, 'per-branch: global ON but no branch on the allowlist -> fails closed, B1 still not enabled');
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array { return []; };
+    $gateNoBranches = broth_log_copilot_process_missing_shifts($darkNow);
+    expect_eq($gateNoBranches, [], 'per-branch: global ON with an empty allowlist creates zero incidents anywhere - fail closed, not fail open');
+
+    putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=B1');
+    expect_eq(broth_log_copilot_missing_shift_enabled_branches(), ['B1'], 'per-branch: allowlist correctly parses a single branch');
+    expect_eq(broth_log_copilot_missing_shift_enabled_for_branch('B1'), true, 'per-branch: B1 is enabled once listed');
+    expect_eq(broth_log_copilot_missing_shift_enabled_for_branch('B2'), false, 'per-branch: B2 remains disabled while only B1 is listed');
+    expect_eq(broth_log_copilot_missing_shift_enabled_for_branch('B3'), false, 'per-branch: B3 remains disabled while only B1 is listed');
+    $gateB1Only = broth_log_copilot_process_missing_shifts($darkNow);
+    $gateB1OnlyBranches = array_unique(array_map(fn($r) => $r['branch'] ?? '', $gateB1Only));
+    expect_eq($gateB1OnlyBranches, ['B1'], 'per-branch: with only B1 on the allowlist, every action in this sweep is for B1 - B2/B3 create zero incidents');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift' AND branch IN ('B2','B3')")['c'], 0, 'per-branch: B2/B3 have zero missing_shift incidents while disabled');
+    $gateB1Date = broth_log_business_date($darkNow);
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN (SELECT incident_id FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=?)", [$gateB1Date]);
+    run("DELETE FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=?", [$gateB1Date]);
+
+    putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=B1,B2');
+    expect_eq(broth_log_copilot_missing_shift_enabled_branches(), ['B1', 'B2'], 'per-branch: allowlist correctly parses two branches');
+    $gateB1B2 = broth_log_copilot_process_missing_shifts($darkNow);
+    $gateB1B2Branches = array_unique(array_map(fn($r) => $r['branch'] ?? '', $gateB1B2));
+    sort($gateB1B2Branches);
+    expect_eq($gateB1B2Branches, ['B1', 'B2'], 'per-branch: with B1 and B2 listed, both are active and B3 is not touched at all');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift' AND branch='B3'")['c'], 0, 'per-branch: B3 still has zero missing_shift incidents while disabled, even with two other branches active');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN (SELECT incident_id FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=?)", [$gateB1Date]);
+    run("DELETE FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=?", [$gateB1Date]);
+
+    // Invalid/unexpected allowlist values never silently mean "all branches"
+    foreach (['*', 'ALL', 'all', 'B1,B9,B2', ' , ,'] as $invalidValue) {
+        putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=' . $invalidValue);
+        $parsed = broth_log_copilot_missing_shift_enabled_branches();
+        expect_true(!in_array('B3', $parsed, true) || $invalidValue === 'B1,B9,B2', "per-branch: allowlist value \"{$invalidValue}\" never silently grants B3 unless explicitly listed");
+        expect_true(count(array_diff($parsed, ['B1', 'B2', 'B3'])) === 0, "per-branch: allowlist value \"{$invalidValue}\" never produces an unrecognized branch code");
+    }
+    putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=*');
+    expect_eq(broth_log_copilot_missing_shift_enabled_branches(), [], 'per-branch: a bare wildcard "*" is not expanded to every branch - it is silently dropped (fails closed)');
+    putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=ALL');
+    expect_eq(broth_log_copilot_missing_shift_enabled_branches(), [], 'per-branch: the literal word "ALL" is not expanded to every branch either - only real branch codes are ever recognized');
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=');
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+
+    // --- Auto-close transaction safety / race conditions (Item 10) ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $raceIncidentId = broth_log_copilot_create_missing_shift_incident('B3', '2026-08-17', 'AM');
+    // Two sequential calls simulate worker A then worker B racing for the same incident - SQLite's
+    // BEGIN IMMEDIATE inside close_missing_shift_incident() means whichever call's transaction
+    // commits first wins; the second always sees the fresh (already-closed) state, never a stale
+    // snapshot, and never writes a second audit event.
+    $raceCloseA = broth_log_copilot_close_missing_shift_incident($raceIncidentId, 'ON_TIME');
+    $raceCloseB = broth_log_copilot_close_missing_shift_incident($raceIncidentId, 'ON_TIME');
+    expect_true(($raceCloseA['ok'] ?? false) && !($raceCloseB['ok'] ?? true), 'race: exactly one of the two close attempts succeeds (the first)');
+    expect_eq($raceCloseB['reason'] ?? '', 'incident_not_open', 'race: the second (losing) close attempt gets a clean incident_not_open rejection, not an error or a silent duplicate success');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='missing_shift_closed'", [$raceIncidentId])['c'], 1, 'race: exactly one closure audit event exists, never duplicated');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$raceIncidentId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$raceIncidentId]);
+
+    // ACK-then-close: ACK is an intermediate state, never a blocker to the incident later closing
+    // once the real submission arrives - accountability (acknowledged_by) is preserved through the close.
+    $raceAckThenCloseId = broth_log_copilot_create_missing_shift_incident('B3', '2026-08-16', 'PM');
+    run("INSERT OR REPLACE INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES ('862','MS Ack Manager','manager',?,1)", [json_encode(['B2', 'B3'])]);
+    $raceAckActor = broth_log_copilot_authorized_user('862');
+    $raceAckResult = broth_log_copilot_ack($raceAckThenCloseId, $raceAckActor);
+    expect_true($raceAckResult['ok'] ?? false, 'race: ACK succeeds on the still-open incident');
+    $raceAckThenClose = broth_log_copilot_close_missing_shift_incident($raceAckThenCloseId, 'ON_TIME');
+    expect_true($raceAckThenClose['ok'] ?? false, 'race: close still succeeds after ACK - acknowledged is an intermediate state, never a blocker');
+    $raceAckThenCloseRow = q1("SELECT state, acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$raceAckThenCloseId]);
+    expect_eq($raceAckThenCloseRow['state'], 'closed', 'race: final state is closed');
+    expect_eq($raceAckThenCloseRow['acknowledged_by'], '862', 'race: acknowledged_by is preserved through the close - accountability is never lost');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$raceAckThenCloseId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$raceAckThenCloseId]);
+
+    // Close-then-ACK: once closed, a later ACK attempt is correctly and cleanly rejected.
+    $raceCloseThenAckId = broth_log_copilot_create_missing_shift_incident('B3', '2026-08-15', 'AM');
+    $raceCloseFirst = broth_log_copilot_close_missing_shift_incident($raceCloseThenAckId, 'ON_TIME');
+    expect_true($raceCloseFirst['ok'] ?? false, 'race: close succeeds first');
+    $raceAckAfterClose = broth_log_copilot_ack($raceCloseThenAckId, $raceAckActor);
+    expect_true(!($raceAckAfterClose['ok'] ?? true), 'race: ACK after close is rejected, not silently accepted');
+    expect_eq($raceAckAfterClose['reason'] ?? '', 'incident_not_open', 'race: ACK-after-close gets the same clean rejection as any other already-closed incident');
+    expect_eq(q1("SELECT state, acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$raceCloseThenAckId])['acknowledged_by'], null, 'race: a rejected post-close ACK never sets acknowledged_by');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$raceCloseThenAckId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$raceCloseThenAckId]);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id='862'");
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+
+    // --- Dedup/recurrence (Item 11): once closed because a submission arrived, the detector must
+    // never recreate an incident for that same (branch, business_date, shift) on a later tick,
+    // since the shift's status is no longer MISSING at all. ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=B1');
+    $recurBranch = 'B1';
+    $recurDate = broth_log_business_date($graceNowPm);
+    $onTimeArrivalRaw = (new DateTimeImmutable($recurDate . ' 10:20:00', new DateTimeZone('America/Chicago')))->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh'))->format('n/j/Y G:i:s');
+    // Tick 1: no submission yet for either shift - AM (and PM) missing incidents get created as usual.
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch): array { return []; };
+    $recurSweep1 = broth_log_copilot_process_missing_shifts($graceNowPm->modify('+5 minutes'));
+    $recurCreated1 = array_values(array_filter($recurSweep1, fn($r) => ($r['branch'] ?? '') === $recurBranch && ($r['shift'] ?? '') === 'AM' && ($r['action'] ?? '') === 'created'));
+    expect_true(!empty($recurCreated1), 'dedup/recurrence: tick 1 (no submission) creates the AM missing incident as expected, establishing the baseline for this test');
+    $recurIncidentId = $recurCreated1[0]['incident_id'] ?? '';
+    // Tick 2: a qualifying AM submission now appears - the sweep must auto-close that same incident.
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($recurBranch, $recurDate, $onTimeArrivalRaw): array {
+        if ($branch !== $recurBranch) return [];
+        return [['id' => 'recur-rec', 'branch' => $recurBranch, 'businessDate' => $recurDate, 'submittedAt' => $onTimeArrivalRaw, 'employeeName' => 'Recur Test', 'readings' => [], 'issues' => []]];
+    };
+    $recurSweep2 = broth_log_copilot_process_missing_shifts($graceNowPm->modify('+10 minutes'));
+    $recurClosed = array_values(array_filter($recurSweep2, fn($r) => ($r['incident_id'] ?? '') === $recurIncidentId && ($r['action'] ?? '') === 'auto_closed'));
+    expect_true(!empty($recurClosed), 'dedup/recurrence: tick 2 (submission now present) auto-closes the same AM incident');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$recurIncidentId])['state'], 'closed', 'dedup/recurrence: the AM incident is now closed');
+    // Tick 3: the qualifying submission is still present (nothing changed) - the detector must NOT
+    // create a brand-new incident for the same branch/date/AM shift just because it swept again.
+    $recurSweep3 = broth_log_copilot_process_missing_shifts($graceNowPm->modify('+15 minutes'));
+    $recurRecreated = array_values(array_filter($recurSweep3, fn($r) => ($r['branch'] ?? '') === $recurBranch && ($r['shift'] ?? '') === 'AM' && ($r['action'] ?? '') === 'created'));
+    expect_true(empty($recurRecreated), 'dedup/recurrence: a later sweep with the submission still present does NOT recreate a new AM incident for the same shift/date');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift' AND branch=? AND business_date=? AND shift='AM'", [$recurBranch, $recurDate])['c'], 1, 'dedup/recurrence: exactly one AM missing_shift row exists for this branch/date - the original (now closed) one, never a second');
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    putenv('BROTH_LOG_SHIFT_ALERT_BRANCHES=');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN (SELECT incident_id FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=? AND branch=?)", [$recurDate, $recurBranch]);
+    run("DELETE FROM broth_log_incidents WHERE incident_type='missing_shift' AND business_date=? AND branch=?", [$recurDate, $recurBranch]);
+
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift'")['c'], 0, 'PR #41 hardening: zero missing_shift incidents remain anywhere after this section\'s cleanup');
+    expect_eq(broth_log_copilot_missing_shift_alerts_enabled(), false, 'PR #41 hardening: flag correctly reads false again after final cleanup');
+
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {
     @unlink(TEST_DB_PATH);

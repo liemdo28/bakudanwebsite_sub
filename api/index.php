@@ -1199,6 +1199,33 @@ if ($path === '/auth/change-password' && $METHOD === 'POST') {
     ok(['success' => true]);
 }
 
+// ── BROTH LOG SETTINGS (read-only, canonical source for the dashboard's
+// Settings screen) ───────────────────────────────────────────────────
+// Deliberately reads BROTH_LOG_SOP directly - the same constant that
+// broth_log_severity_for()/broth_log_is_safe_recheck() use for real alert
+// detection and Resolve validation - rather than the separate
+// broth_log_temperature_ranges settings row, which only ever fed the
+// legacy Ranges editor's *display* and has no effect on actual detection.
+// Surfacing that row here would make "Settings" lie about what's
+// authoritative. Also exposes the canonical shift-compliance window
+// config so the dashboard never hardcodes its own copy of these times.
+if ($path === '/broth-log/settings' && $METHOD === 'GET') {
+    $ranges = [];
+    foreach (BROTH_LOG_SOP as $key => $sop) {
+        $ranges[$key] = [
+            'category' => $sop['category'] ?? '',
+            'item' => $sop['item'] ?? '',
+            'min' => $sop['min'] ?? null,
+            'max' => $sop['max'] ?? null,
+        ];
+    }
+    ok([
+        'ranges' => $ranges,
+        'shift_windows' => BROTH_LOG_SHIFT_WINDOWS,
+        'timezone' => BROTH_LOG_BUSINESS_TIMEZONE,
+    ]);
+}
+
 // ── BROTH LOG RANGES ─────────────────────────────────────────────────
 if ($path === '/broth-log/ranges' && $METHOD === 'GET') {
     $config = broth_log_ranges_from_settings();

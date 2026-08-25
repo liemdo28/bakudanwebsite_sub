@@ -988,6 +988,75 @@ button {
     border-radius: var(--radius);
 }
 
+.bd-settings-block {
+    margin-bottom: 16px;
+}
+
+.bd-settings-block h3 {
+    margin: 0 0 4px;
+    font-size: .92rem;
+}
+
+.bd-settings-grid {
+    display: grid;
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-bottom: 8px;
+}
+
+.bd-settings-row {
+    display: grid;
+    grid-template-columns: minmax(190px, 1.2fr) minmax(120px, .8fr);
+    gap: 10px;
+    align-items: center;
+    padding: 9px 10px;
+    background: color-mix(in srgb, var(--panel), var(--panel-2) 42%);
+}
+
+.bd-settings-row strong {
+    font-size: .92rem;
+}
+
+.bd-settings-row span {
+    color: var(--muted);
+    font-size: .84rem;
+}
+
+.bd-shift-compliance {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.bd-shift-card {
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--panel), var(--panel-2) 42%);
+}
+
+.bd-shift-card .bd-shift-label {
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.bd-shift-card .bd-shift-status {
+    font-size: .98rem;
+    font-weight: 700;
+    margin: 2px 0;
+}
+
+.bd-shift-card .bd-shift-detail {
+    font-size: .82rem;
+    color: var(--muted);
+}
+
 .bd-range-row {
     display: grid;
     grid-template-columns: minmax(190px, 1.2fr) minmax(120px, .8fr) minmax(88px, .45fr) minmax(88px, .45fr);

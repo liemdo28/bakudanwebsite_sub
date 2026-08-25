@@ -381,8 +381,31 @@
       ]
     },
     "campaign-2026-08-31-dessert-after-ramen-mochi": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-08-25T14:45:12.250667+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-08-25T14:45:15.662106+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260825-144512-dessert-after-ramen-mochi-ice-cream"
+        },
+        {
+          "event": "published",
+          "at": "2026-08-25T14:45:16.294931+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-09-02-which-broth-is-right-for-you": {
       "status": "approved",

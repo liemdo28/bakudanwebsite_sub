@@ -127,4 +127,9 @@
 <changefreq>monthly</changefreq>
 <priority>0.6</priority>
 </url>
+<url>
+<loc>https://www.bakudanramen.com/dessert-after-ramen-mochi-ice-cream.html</loc>
+<changefreq>monthly</changefreq>
+<priority>0.6</priority>
+</url>
 </urlset>

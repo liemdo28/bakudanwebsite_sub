@@ -25,6 +25,8 @@
         requestTimeoutMs: 18000
     };
     const BUSINESS_TIMEZONE = 'America/Chicago';
+    const BUSINESS_TIMEZONE_LABEL = 'San Antonio time';
+    const LEGACY_STORE_TIMESTAMP_ROLLOVER_HOUR = 18;
     const VALID_RANGES = new Set(['today', 'week', 'month', 'all']);
     const RANGE_STORAGE_KEY = 'brothTemperatureRangesV1';
     const RANGE_API = '/api/broth-log/ranges';
@@ -650,6 +652,13 @@
         return dateFromBusinessTimeParts(Number(m[1]), Number(m[2]) - 1, Number(m[3]), parts.hour, parts.minute, parts.second);
     }
 
+    function normalizeLegacyStoreTimestamp(date, branch, explicitBusinessDate, explicitBusinessTime, explicitShift) {
+        if (!date || branch !== 'B1' || explicitBusinessDate || explicitBusinessTime || explicitShift) return date;
+        const parts = businessTimeParts(date);
+        if (!parts || parts.hour < LEGACY_STORE_TIMESTAMP_ROLLOVER_HOUR) return date;
+        return dateFromBusinessTimeParts(parts.year, parts.month - 1, parts.day + 1, parts.hour - 12, parts.minute, parts.second);
+    }
+
     function inferShift(value, date) {
         const explicit = String(value || '').trim().toUpperCase();
         if (/\bAM\b/.test(explicit)) return 'AM';
@@ -766,11 +775,15 @@
         const cell = field => idx[field] >= 0 ? row.c[idx[field]] : null;
         const text = field => String(valueOf(cell(field)) || '').trim();
         const rawSubmittedDate = parseDateCell(cell('submittedAt'));
+        const explicitBusinessDate = text('businessDate');
+        const explicitBusinessTime = text('businessTime');
+        const explicitShift = text('shift');
         const branch = text('branch') || sheetBranch;
-        const businessDate = text('businessDate') || (rawSubmittedDate ? businessDateKey(rawSubmittedDate) : '');
-        const submittedDate = alignDateToBusinessDate(rawSubmittedDate, businessDate);
-        const businessTime = text('businessTime') || fmtTime(submittedDate);
-        const shift = text('shift') || inferShift(businessTime, submittedDate);
+        const normalizedSubmittedDate = normalizeLegacyStoreTimestamp(rawSubmittedDate, branch, explicitBusinessDate, explicitBusinessTime, explicitShift);
+        const businessDate = explicitBusinessDate || (normalizedSubmittedDate ? businessDateKey(normalizedSubmittedDate) : '');
+        const submittedDate = alignDateToBusinessDate(normalizedSubmittedDate, businessDate);
+        const businessTime = explicitBusinessTime || fmtTime(submittedDate);
+        const shift = explicitShift || inferShift(businessTime, submittedDate);
         const readings = READING_FIELDS.map(([key, label, category]) => {
             const temp = toNumber(valueOf(cell(key)));
             const sop = TEMPERATURE_SOP[key] || null;
@@ -1351,7 +1364,7 @@
         return `<section class="bd-today-ops ${statusClass}" aria-label="Daily operations status">
             <div class="bd-today-hero">
                 <div>
-                    <span class="bd-eyebrow">${isViewingToday() ? 'Today' : 'Selected date'} · ${esc(BUSINESS_TIMEZONE)}</span>
+                    <span class="bd-eyebrow">${isViewingToday() ? 'Today' : 'Selected date'} · ${esc(BUSINESS_TIMEZONE_LABEL)}</span>
                     <h2>${esc(statusText)}</h2>
                     <p>${esc(branchText)} · ${esc(businessDateLabel(selectedDate))} (${esc(selectedDate)})${latest ? ` · Latest log ${esc(latest)}` : ''}</p>
                 </div>

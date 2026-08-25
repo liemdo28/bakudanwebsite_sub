@@ -76,6 +76,13 @@ expect_eq(broth_log_derive_business_date_from_submission('2/29/2028 10:00:00'), 
 expect_eq(broth_log_derive_business_date_from_submission('2/29/2026 10:00:00'), '', 'Feb 29 in a non-leap year (2026) is rejected, not silently normalized to March 1');
 expect_eq(broth_log_derive_business_date_from_submission('8/7/2026 10:00:00 extra trailing text'), '', 'unexpected trailing content after a valid-looking timestamp is rejected, not silently ignored');
 
+// 3c. B1's older public form rows have no explicit business date/time columns and are emitted by
+// the sheet with a 10 PM timestamp for the store's 10 AM check. B1 dashboard/alerts must normalize
+// those legacy rows to the next San Antonio business day instead of letting a Stockton viewer's
+// local clock or the sheet display value decide the day.
+expect_eq(broth_log_derive_business_date_from_submission('8/23/2026 22:42:18', 'B1'), '2026-08-24', 'B1 legacy 10 PM sheet timestamp maps to the next San Antonio business date');
+expect_eq(broth_log_derive_business_date_from_submission('8/23/2026 22:42:18', 'B3'), '2026-08-23', 'non-B1 rows keep their existing timestamp-derived date');
+
 // 4. Timezone boundary: a submission at 23:59:59 Chicago time must not roll into the next day.
 expect_eq(broth_log_derive_business_date_from_submission('12/31/2026 23:59:59'), '2026-12-31', 'a submission one second before midnight Chicago time still derives the same calendar day');
 expect_eq(broth_log_derive_business_date_from_submission('1/1/2027 0:00:01'), '2027-01-01', 'a submission one second after midnight Chicago time correctly derives the new calendar day');

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 const BROTH_LOG_BUSINESS_TIMEZONE = 'America/Chicago';
+const BROTH_LOG_LEGACY_TIMESTAMP_ROLLOVER_HOUR = 18;
 const BROTH_LOG_BRANCHES = [
     'B1' => ['id' => '1-T9WLdHI1MWp0kX7U2SNPOnc7nDBnrrc0njFxBUKnqo', 'tab' => 'Form Responses 1', 'name' => 'B1 The Rim'],
     'B2' => ['id' => '1qk78Spg8GmyP4RCjQYwU8Nm0bXdoyl240iUDcSkK3MQ', 'tab' => 'Form Responses 1', 'name' => 'B2 Stone Oak'],
@@ -182,19 +183,33 @@ function broth_log_gviz_table(string $branch): array {
     return $json['table'] ?? ['cols' => [], 'rows' => []];
 }
 
-function broth_log_derive_business_date_from_submission(string $submittedAt): string {
+function broth_log_parse_submission_datetime(string $submittedAt): ?DateTimeImmutable {
     $format = 'n/j/Y G:i:s';
     $submittedAt = trim($submittedAt);
     $parsed = DateTimeImmutable::createFromFormat($format, $submittedAt, new DateTimeZone(BROTH_LOG_BUSINESS_TIMEZONE));
-    if (!$parsed) return '';
+    if (!$parsed) return null;
     // createFromFormat() silently overflows an impossible calendar value into a different, valid
     // one (e.g. "2/30/2026" becomes March 2) while still returning a truthy object - it does not
     // fail. getLastErrors() flags that overflow, and re-formatting the parsed result back to the
     // same pattern is an independent check that catches the same class of drift (and anything
     // getLastErrors might miss): a genuinely valid timestamp always round-trips back to itself.
     $errors = DateTimeImmutable::getLastErrors();
-    if ($errors !== false && ((($errors['warning_count'] ?? 0) > 0) || (($errors['error_count'] ?? 0) > 0))) return '';
-    if ($parsed->format($format) !== $submittedAt) return '';
+    if ($errors !== false && ((($errors['warning_count'] ?? 0) > 0) || (($errors['error_count'] ?? 0) > 0))) return null;
+    if ($parsed->format($format) !== $submittedAt) return null;
+    return $parsed;
+}
+
+function broth_log_normalize_legacy_submission_datetime(DateTimeImmutable $parsed, string $branch, string $businessTime = '', string $shift = ''): DateTimeImmutable {
+    if (strtoupper($branch) !== 'B1' || trim($businessTime) !== '' || trim($shift) !== '') return $parsed;
+    $hour = (int)$parsed->format('G');
+    if ($hour < BROTH_LOG_LEGACY_TIMESTAMP_ROLLOVER_HOUR) return $parsed;
+    return $parsed->modify('+12 hours');
+}
+
+function broth_log_derive_business_date_from_submission(string $submittedAt, string $branch = '', string $businessTime = '', string $shift = ''): string {
+    $parsed = broth_log_parse_submission_datetime($submittedAt);
+    if (!$parsed) return '';
+    $parsed = broth_log_normalize_legacy_submission_datetime($parsed, $branch, $businessTime, $shift);
     return broth_log_business_date($parsed);
 }
 
@@ -208,8 +223,10 @@ function broth_log_normalize_row(array $row, array $cols, string $sheetBranch): 
     // reliable) using the same business-date/timezone rule used everywhere else in this system -
     // never an arbitrary guess, and never overriding a value the form actually recorded.
     $businessDate = $get('businessDate');
+    $businessTime = $get('businessTime');
+    $shift = $get('shift');
     if ($businessDate === '') {
-        $businessDate = broth_log_derive_business_date_from_submission($get('submittedAt'));
+        $businessDate = broth_log_derive_business_date_from_submission($get('submittedAt'), $branch, $businessTime, $shift);
     }
     $responseId = $get('responseId');
     if ($responseId === '') {
@@ -249,8 +266,8 @@ function broth_log_normalize_row(array $row, array $cols, string $sheetBranch): 
         'correctiveAction' => $get('correctiveAction'),
         'managerComment' => $get('managerComment'),
         'businessDate' => $businessDate,
-        'businessTime' => $get('businessTime'),
-        'shift' => $get('shift'),
+        'businessTime' => $businessTime,
+        'shift' => $shift,
         'responseId' => $responseId,
         'readings' => $readings,
         'issues' => $issues,

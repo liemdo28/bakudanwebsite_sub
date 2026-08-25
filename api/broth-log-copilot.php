@@ -2393,11 +2393,14 @@ function broth_log_copilot_menu_callback_response(string $callbackData, array $u
     return ['message' => "I didn't understand that action.", 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_unknown'];
 }
 
-function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $now = null): array {
+function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $now = null, ?string $onlyUpdateId = null): array {
     if (!broth_log_copilot_enabled()) return [];
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
     $processed = [];
-    foreach (q("SELECT * FROM broth_log_bot_inbox WHERE status='queued' ORDER BY received_at ASC LIMIT ?", [$limit]) as $row) {
+    $rows = $onlyUpdateId !== null
+        ? q("SELECT * FROM broth_log_bot_inbox WHERE status='queued' AND update_id=? LIMIT 1", [$onlyUpdateId])
+        : q("SELECT * FROM broth_log_bot_inbox WHERE status='queued' ORDER BY received_at ASC LIMIT ?", [$limit]);
+    foreach ($rows as $row) {
         // Each row gets its own exception boundary. A single malformed/unexpected row (a parser
         // bug, a programming error, anything) must never abort the rest of this batch, and - just
         // as critically - must never prevent the caller (the worker script) from reaching the

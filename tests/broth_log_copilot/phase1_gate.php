@@ -1794,6 +1794,13 @@ try {
     $callbackPayloadJson = json_decode((string)$callbackPayload['payload_json'], true) ?: [];
     expect_eq($callbackPayload['message_text'] ?? '', 'menu:ceo_summary', 'callback enqueue stores callback_data as message_text');
     expect_eq($callbackPayloadJson['callback_query_id'] ?? '', 'cb-menu-9702', 'callback enqueue keeps callback_query_id for audit');
+    broth_log_copilot_enqueue_webhook(['update_id' => 9703, 'message' => ['text' => 'B1 today', 'from' => ['id' => (int)$menuOwnerId], 'chat' => ['id' => 'menu-owner-private', 'type' => 'private'], 'message_id' => 9703]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 9704, 'callback_query' => ['id' => 'cb-menu-9704', 'data' => 'menu:commands', 'from' => ['id' => (int)$menuOwnerId], 'message' => ['chat' => ['id' => 'menu-owner-private', 'type' => 'private'], 'message_id' => 9704]]]);
+    $immediateCallbackProcessed = broth_log_copilot_process_inbox(1, $now25, '9704');
+    expect_eq(find_processed($immediateCallbackProcessed, '9704')['intent'] ?? '', 'menu_commands', 'webhook-style immediate callback processing handles exactly the callback update');
+    expect_eq(q1("SELECT status FROM broth_log_bot_inbox WHERE update_id='9704'")['status'] ?? '', 'processed', 'immediate callback processing persists processed status');
+    expect_eq(q1("SELECT status FROM broth_log_bot_inbox WHERE update_id='9703'")['status'] ?? '', 'queued', 'immediate callback processing does not consume older queued message rows');
+    run("UPDATE broth_log_bot_inbox SET status='denied', processed_at=datetime('now') WHERE update_id='9703'");
 
     // --- 5/6: branch authorization + forged callback denial ---
     // Echoes back records for whichever business date is actually requested (both 2026-08-25 and

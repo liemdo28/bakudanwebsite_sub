@@ -26,7 +26,8 @@
     };
     const BUSINESS_TIMEZONE = 'America/Chicago';
     const BUSINESS_TIMEZONE_LABEL = 'San Antonio time';
-    const LEGACY_STORE_TIMESTAMP_ROLLOVER_HOUR = 18;
+    const SHEET_TIMESTAMP_TIMEZONE = 'Asia/Ho_Chi_Minh';
+    const BUSINESS_DAY_START_HOUR = 4;
     const VALID_RANGES = new Set(['today', 'week', 'month', 'all']);
     const RANGE_STORAGE_KEY = 'brothTemperatureRangesV1';
     const RANGE_API = '/api/broth-log/ranges';
@@ -438,10 +439,9 @@
         const formatted = cell && cell.f ? String(cell.f) : '';
         const match = raw.match(/Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)/);
         if (match) {
-            return dateFromBusinessTimeParts(Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6]));
+            return dateFromZonedTimeParts(SHEET_TIMESTAMP_TIMEZONE, Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6]));
         }
-        const parsed = new Date(formatted || raw);
-        return Number.isNaN(parsed.getTime()) ? null : parsed;
+        return parseSheetTimestampString(formatted || raw);
     }
 
     function toNumber(value) {
@@ -578,9 +578,9 @@
         return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
     }
 
-    function chicagoDateParts(date = new Date()) {
+    function zonedDateParts(date = new Date(), timeZone = BUSINESS_TIMEZONE) {
         const parts = new Intl.DateTimeFormat('en-CA', {
-            timeZone: BUSINESS_TIMEZONE,
+            timeZone,
             year: 'numeric',
             month: '2-digit',
             day: '2-digit'
@@ -597,17 +597,22 @@
     }
 
     function businessToday() {
-        return chicagoDateParts().iso;
+        const now = new Date();
+        const parts = businessTimeParts(now);
+        if (parts && parts.hour < BUSINESS_DAY_START_HOUR) {
+            return utcDateKey(addUtcDays(dateKeyToUtc(zonedDateParts(now).iso), -1));
+        }
+        return zonedDateParts(now).iso;
     }
 
     function businessDateKey(date) {
-        return date ? chicagoDateParts(date).iso : '';
+        return date ? zonedDateParts(date).iso : '';
     }
 
-    function businessTimeParts(date) {
+    function businessTimeParts(date, timeZone = BUSINESS_TIMEZONE) {
         if (!date) return null;
         const parts = new Intl.DateTimeFormat('en-US', {
-            timeZone: BUSINESS_TIMEZONE,
+            timeZone,
             year: 'numeric',
             month: '2-digit',
             day: '2-digit',
@@ -629,19 +634,30 @@
         };
     }
 
-    function businessTimeOffsetMs(date) {
-        const parts = businessTimeParts(date);
+    function zonedTimeOffsetMs(date, timeZone) {
+        const parts = businessTimeParts(date, timeZone);
         if (!parts) return 0;
         return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - date.getTime();
     }
 
-    function dateFromBusinessTimeParts(year, monthIndex, day, hour, minute, second) {
+    function dateFromZonedTimeParts(timeZone, year, monthIndex, day, hour, minute, second) {
         const wallTimeUtc = Date.UTC(year, monthIndex, day, hour, minute, second || 0);
         let date = new Date(wallTimeUtc);
         for (let i = 0; i < 3; i += 1) {
-            date = new Date(wallTimeUtc - businessTimeOffsetMs(date));
+            date = new Date(wallTimeUtc - zonedTimeOffsetMs(date, timeZone));
         }
         return date;
+    }
+
+    function dateFromBusinessTimeParts(year, monthIndex, day, hour, minute, second) {
+        return dateFromZonedTimeParts(BUSINESS_TIMEZONE, year, monthIndex, day, hour, minute, second);
+    }
+
+    function parseSheetTimestampString(value) {
+        const match = String(value || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+        if (!match) return null;
+        const [, month, day, year, hour, minute, second] = match;
+        return dateFromZonedTimeParts(SHEET_TIMESTAMP_TIMEZONE, Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second || 0));
     }
 
     function alignDateToBusinessDate(date, dateKey) {
@@ -650,13 +666,6 @@
         const m = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
         if (!parts || !m) return date;
         return dateFromBusinessTimeParts(Number(m[1]), Number(m[2]) - 1, Number(m[3]), parts.hour, parts.minute, parts.second);
-    }
-
-    function normalizeLegacyStoreTimestamp(date, branch, explicitBusinessDate, explicitBusinessTime, explicitShift) {
-        if (!date || branch !== 'B1' || explicitBusinessDate || explicitBusinessTime || explicitShift) return date;
-        const parts = businessTimeParts(date);
-        if (!parts || parts.hour < LEGACY_STORE_TIMESTAMP_ROLLOVER_HOUR) return date;
-        return dateFromBusinessTimeParts(parts.year, parts.month - 1, parts.day + 1, parts.hour - 12, parts.minute, parts.second);
     }
 
     function inferShift(value, date) {
@@ -779,9 +788,8 @@
         const explicitBusinessTime = text('businessTime');
         const explicitShift = text('shift');
         const branch = text('branch') || sheetBranch;
-        const normalizedSubmittedDate = normalizeLegacyStoreTimestamp(rawSubmittedDate, branch, explicitBusinessDate, explicitBusinessTime, explicitShift);
-        const businessDate = explicitBusinessDate || (normalizedSubmittedDate ? businessDateKey(normalizedSubmittedDate) : '');
-        const submittedDate = alignDateToBusinessDate(normalizedSubmittedDate, businessDate);
+        const businessDate = explicitBusinessDate || (rawSubmittedDate ? businessDateKey(rawSubmittedDate) : '');
+        const submittedDate = alignDateToBusinessDate(rawSubmittedDate, businessDate);
         const businessTime = explicitBusinessTime || fmtTime(submittedDate);
         const shift = explicitShift || inferShift(businessTime, submittedDate);
         const readings = READING_FIELDS.map(([key, label, category]) => {

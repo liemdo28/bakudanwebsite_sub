@@ -106,7 +106,7 @@ def test_mobile_current_day_styles_prevent_horizontal_layout_pressure():
 
 def test_asset_version_was_bumped():
     html = text('broth-log.html')
-    assert 'san-antonio-time' in html
+    assert 'vn-to-cdt' in html
 
 
 def test_dashboard_uses_paper_sop_ranges_and_texas_time():
@@ -120,9 +120,10 @@ def test_dashboard_uses_paper_sop_ranges_and_texas_time():
         'max: 360',
         'function dateFromBusinessTimeParts',
         'function alignDateToBusinessDate',
-        'function normalizeLegacyStoreTimestamp',
         "BUSINESS_TIMEZONE_LABEL = 'San Antonio time'",
-        'LEGACY_STORE_TIMESTAMP_ROLLOVER_HOUR',
+        "SHEET_TIMESTAMP_TIMEZONE = 'Asia/Ho_Chi_Minh'",
+        'BUSINESS_DAY_START_HOUR',
+        'function parseSheetTimestampString',
         "timeZone: BUSINESS_TIMEZONE",
         "hour12: true",
         "timeZoneName: 'short'",

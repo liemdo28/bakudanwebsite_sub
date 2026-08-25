@@ -55,7 +55,7 @@ expect_eq($normalized['businessDate'], '2026-07-19', 'a valid explicit sheet bus
 // 2. Blank businessDate + valid submittedAt derives the expected date.
 [$cols, $row] = make_row(['branch' => 'B2', 'businessDate' => '', 'submittedAt' => '8/7/2026 0:28:23']);
 $normalized = broth_log_normalize_row($row, $cols, 'B2');
-expect_eq($normalized['businessDate'], '2026-08-07', 'a blank business date with a valid submittedAt derives the expected calendar date');
+expect_eq($normalized['businessDate'], '2026-08-06', 'a blank business date with a valid Vietnam-time submittedAt derives the expected San Antonio business date');
 
 // 3. Malformed/absent submittedAt does not invent a date - fails safe to blank, not a guess.
 [$cols, $row] = make_row(['branch' => 'B3', 'businessDate' => '', 'submittedAt' => 'not a real timestamp']);
@@ -72,20 +72,19 @@ expect_eq(broth_log_derive_business_date_from_submission('2/30/2026 10:00:00'), 
 expect_eq(broth_log_derive_business_date_from_submission('8/7/2026 25:00:00'), '', 'an impossible hour (25) is rejected, not silently rolled into the next day');
 expect_eq(broth_log_derive_business_date_from_submission('8/7/2026 10:65:00'), '', 'an impossible minute (65) is rejected, not silently rolled forward');
 expect_eq(broth_log_derive_business_date_from_submission('8/7/2026 10:00:65'), '', 'an impossible second (65) is rejected, not silently rolled forward');
-expect_eq(broth_log_derive_business_date_from_submission('2/29/2028 10:00:00'), '2028-02-29', 'a genuinely valid leap day (2028 is a leap year) is accepted');
+expect_eq(broth_log_derive_business_date_from_submission('2/29/2028 10:00:00'), '2028-02-28', 'a genuinely valid leap day (2028 is a leap year) is accepted and converted from Vietnam time to San Antonio time');
 expect_eq(broth_log_derive_business_date_from_submission('2/29/2026 10:00:00'), '', 'Feb 29 in a non-leap year (2026) is rejected, not silently normalized to March 1');
 expect_eq(broth_log_derive_business_date_from_submission('8/7/2026 10:00:00 extra trailing text'), '', 'unexpected trailing content after a valid-looking timestamp is rejected, not silently ignored');
 
-// 3c. B1's older public form rows have no explicit business date/time columns and are emitted by
-// the sheet with a 10 PM timestamp for the store's 10 AM check. B1 dashboard/alerts must normalize
-// those legacy rows to the next San Antonio business day instead of letting a Stockton viewer's
-// local clock or the sheet display value decide the day.
-expect_eq(broth_log_derive_business_date_from_submission('8/23/2026 22:42:18', 'B1'), '2026-08-24', 'B1 legacy 10 PM sheet timestamp maps to the next San Antonio business date');
-expect_eq(broth_log_derive_business_date_from_submission('8/23/2026 22:42:18', 'B3'), '2026-08-23', 'non-B1 rows keep their existing timestamp-derived date');
+// 3c. Google Sheets is storing/displaying the form timestamp in Vietnam time. Dashboard/alerts must
+// convert that timestamp back to San Antonio time before deriving the business date.
+expect_eq(broth_log_derive_business_date_from_submission('8/23/2026 22:42:18', 'B1'), '2026-08-23', 'B1 10:42 PM Vietnam-time sheet timestamp maps to 10:42 AM San Antonio on the same date');
+expect_eq(broth_log_derive_business_date_from_submission('8/25/2026 3:59:13', 'B3'), '2026-08-24', 'B3 3:59 AM Vietnam-time sheet timestamp maps to the prior San Antonio business date');
 
-// 4. Timezone boundary: a submission at 23:59:59 Chicago time must not roll into the next day.
-expect_eq(broth_log_derive_business_date_from_submission('12/31/2026 23:59:59'), '2026-12-31', 'a submission one second before midnight Chicago time still derives the same calendar day');
-expect_eq(broth_log_derive_business_date_from_submission('1/1/2027 0:00:01'), '2027-01-01', 'a submission one second after midnight Chicago time correctly derives the new calendar day');
+// 4. Timezone boundary: a just-after-midnight Vietnam timestamp can still belong to the previous
+// San Antonio business date.
+expect_eq(broth_log_derive_business_date_from_submission('12/31/2026 23:59:59'), '2026-12-31', 'a late-night Vietnam timestamp converts to the same San Antonio calendar day');
+expect_eq(broth_log_derive_business_date_from_submission('1/1/2027 0:00:01'), '2026-12-31', 'a just-after-midnight Vietnam timestamp converts to the previous San Antonio calendar day');
 
 // 5. Existing B1 behavior with a normal, complete row is unaffected by this change.
 [$cols, $row] = make_row(['branch' => 'B1', 'businessDate' => '2026-08-20', 'submittedAt' => '8/20/2026 9:00:00', 'walkInFreezer' => '-2']);
@@ -97,7 +96,7 @@ expect_eq($normalized['businessDate'], '2026-08-20', 'B1 rows with a normal expl
 // mechanism broth_log_critical_alerts_for_branch() uses internally (filter by businessDate).
 [$cols, $row] = make_row(['branch' => 'B2', 'businessDate' => '', 'submittedAt' => '8/7/2026 6:00:00', 'walkInFreezer' => '10']);
 $normalizedB2 = broth_log_normalize_row($row, $cols, 'B2');
-$filteredB2 = broth_log_filter_records([$normalizedB2], ['businessDate' => '2026-08-07', 'branch' => 'B2']);
+$filteredB2 = broth_log_filter_records([$normalizedB2], ['businessDate' => '2026-08-06', 'branch' => 'B2']);
 expect_true(count($filteredB2) === 1, 'a B2 record with a derived business date is addressable by date-filtered lookup');
 $freezerReading = array_values(array_filter($filteredB2[0]['readings'], fn($r) => $r['key'] === 'walkInFreezer'))[0] ?? null;
 expect_true($freezerReading !== null && $freezerReading['severity'] === 'critical', 'an out-of-range reading on a derived-date B2 record is correctly detected as critical, not silently missed');

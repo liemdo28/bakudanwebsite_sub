@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 const BROTH_LOG_BUSINESS_TIMEZONE = 'America/Chicago';
-const BROTH_LOG_LEGACY_TIMESTAMP_ROLLOVER_HOUR = 18;
+const BROTH_LOG_SHEET_TIMESTAMP_TIMEZONE = 'Asia/Ho_Chi_Minh';
 const BROTH_LOG_BRANCHES = [
     'B1' => ['id' => '1-T9WLdHI1MWp0kX7U2SNPOnc7nDBnrrc0njFxBUKnqo', 'tab' => 'Form Responses 1', 'name' => 'B1 The Rim'],
     'B2' => ['id' => '1qk78Spg8GmyP4RCjQYwU8Nm0bXdoyl240iUDcSkK3MQ', 'tab' => 'Form Responses 1', 'name' => 'B2 Stone Oak'],
@@ -186,7 +186,7 @@ function broth_log_gviz_table(string $branch): array {
 function broth_log_parse_submission_datetime(string $submittedAt): ?DateTimeImmutable {
     $format = 'n/j/Y G:i:s';
     $submittedAt = trim($submittedAt);
-    $parsed = DateTimeImmutable::createFromFormat($format, $submittedAt, new DateTimeZone(BROTH_LOG_BUSINESS_TIMEZONE));
+    $parsed = DateTimeImmutable::createFromFormat($format, $submittedAt, new DateTimeZone(BROTH_LOG_SHEET_TIMESTAMP_TIMEZONE));
     if (!$parsed) return null;
     // createFromFormat() silently overflows an impossible calendar value into a different, valid
     // one (e.g. "2/30/2026" becomes March 2) while still returning a truthy object - it does not
@@ -196,20 +196,12 @@ function broth_log_parse_submission_datetime(string $submittedAt): ?DateTimeImmu
     $errors = DateTimeImmutable::getLastErrors();
     if ($errors !== false && ((($errors['warning_count'] ?? 0) > 0) || (($errors['error_count'] ?? 0) > 0))) return null;
     if ($parsed->format($format) !== $submittedAt) return null;
-    return $parsed;
-}
-
-function broth_log_normalize_legacy_submission_datetime(DateTimeImmutable $parsed, string $branch, string $businessTime = '', string $shift = ''): DateTimeImmutable {
-    if (strtoupper($branch) !== 'B1' || trim($businessTime) !== '' || trim($shift) !== '') return $parsed;
-    $hour = (int)$parsed->format('G');
-    if ($hour < BROTH_LOG_LEGACY_TIMESTAMP_ROLLOVER_HOUR) return $parsed;
-    return $parsed->modify('+12 hours');
+    return $parsed->setTimezone(new DateTimeZone(BROTH_LOG_BUSINESS_TIMEZONE));
 }
 
 function broth_log_derive_business_date_from_submission(string $submittedAt, string $branch = '', string $businessTime = '', string $shift = ''): string {
     $parsed = broth_log_parse_submission_datetime($submittedAt);
     if (!$parsed) return '';
-    $parsed = broth_log_normalize_legacy_submission_datetime($parsed, $branch, $businessTime, $shift);
     return broth_log_business_date($parsed);
 }
 

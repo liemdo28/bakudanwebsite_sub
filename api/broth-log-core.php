@@ -205,6 +205,92 @@ function broth_log_derive_business_date_from_submission(string $submittedAt, str
     return broth_log_business_date($parsed);
 }
 
+// ============================================================================
+// SHIFT COMPLIANCE (San Antonio operating rule) - the single canonical source
+// for required Broth Log record windows. Dashboard, Telegram, and any future
+// consumer must all read from here rather than hardcoding their own copy of
+// these times - the exact anti-pattern this constant exists to prevent.
+// ============================================================================
+const BROTH_LOG_SHIFT_WINDOWS = [
+    'AM' => ['start' => '10:00', 'end' => '11:00'],
+    'PM' => ['start' => '16:00', 'end' => '17:00'],
+];
+
+// Which shift a submission belongs to, based on its own business-local time -
+// never inferred from the sheet's free-text "shift" column, which is
+// unvalidated operator input. The boundary is the midpoint between AM's
+// window close (11:00) and PM's window open (16:00), i.e. 13:30: this is a
+// documented default, not a value stated explicitly in the business rule -
+// no submission in the approved test matrix falls near this boundary, so it
+// has not been validated against real data. Revisit if the historical audit
+// (real B1/B2/B3 data) shows submissions clustering near 13:30.
+function broth_log_shift_assignment(DateTimeImmutable $submittedAtBusiness): string {
+    $minutes = ((int)$submittedAtBusiness->format('H')) * 60 + (int)$submittedAtBusiness->format('i');
+    return $minutes < (13 * 60 + 30) ? 'AM' : 'PM';
+}
+
+// Inclusive boundaries: exactly window-start or window-end counts as ON_TIME
+// (10:00 and 11:00 are both valid for AM; 16:00 and 17:00 for PM).
+function broth_log_shift_timing_status(string $shift, DateTimeImmutable $submittedAtBusiness): string {
+    $window = BROTH_LOG_SHIFT_WINDOWS[$shift] ?? null;
+    if (!$window) return 'unknown';
+    $minutes = ((int)$submittedAtBusiness->format('H')) * 60 + (int)$submittedAtBusiness->format('i');
+    [$startH, $startM] = array_map('intval', explode(':', $window['start']));
+    [$endH, $endM] = array_map('intval', explode(':', $window['end']));
+    $startMinutes = $startH * 60 + $startM;
+    $endMinutes = $endH * 60 + $endM;
+    if ($minutes < $startMinutes) return 'EARLY';
+    if ($minutes > $endMinutes) return 'LATE';
+    return 'ON_TIME';
+}
+
+// Daily compliance status for one shift on one business date, given the
+// already-fetched records for that branch (the caller filters by branch;
+// this function filters by date and shift-assignment itself, so it can be
+// called once per shift without re-fetching). Distinguishes MISSING (window
+// closed, still no qualifying submission) from NOT_YET_DUE (window has not
+// closed yet) - a historical (past) business date is always judged as fully
+// closed, regardless of what time "now" happens to be, so a completed old
+// date is never mislabeled NOT_YET_DUE.
+//
+// Duplicate-submission rule: the EARLIEST qualifying submission for the
+// shift determines its daily status. This is a provisional default, not a
+// verified rule - the business explicitly asked for a real-data audit of
+// duplicate same-shift submissions before this is treated as final (see
+// broth_log_duplicate_shift_submissions()).
+function broth_log_shift_daily_status(string $shift, array $recordsForDate, string $businessDate, ?DateTimeImmutable $now = null): array {
+    $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $candidates = [];
+    foreach ($recordsForDate as $record) {
+        $parsed = broth_log_parse_submission_datetime((string)($record['submittedAt'] ?? ''));
+        if (!$parsed) continue;
+        if (broth_log_shift_assignment($parsed) !== $shift) continue;
+        $candidates[] = ['record' => $record, 'parsed' => $parsed];
+    }
+    usort($candidates, fn($a, $b) => $a['parsed'] <=> $b['parsed']);
+    if ($candidates) {
+        $first = $candidates[0];
+        return [
+            'status' => broth_log_shift_timing_status($shift, $first['parsed']),
+            'submitted_at' => (string)($first['record']['submittedAt'] ?? ''),
+            'employee' => (string)($first['record']['employeeName'] ?? ''),
+        ];
+    }
+    $window = BROTH_LOG_SHIFT_WINDOWS[$shift] ?? null;
+    if (!$window) return ['status' => 'unknown', 'submitted_at' => null, 'employee' => null];
+    $todayBusiness = broth_log_business_date($now);
+    if ($businessDate < $todayBusiness) {
+        return ['status' => 'MISSING', 'submitted_at' => null, 'employee' => null];
+    }
+    [$endH, $endM] = array_map('intval', explode(':', $window['end']));
+    $nowBusiness = broth_log_business_now($now);
+    $nowMinutes = ((int)$nowBusiness->format('H')) * 60 + (int)$nowBusiness->format('i');
+    if ($businessDate === $todayBusiness && $nowMinutes > ($endH * 60 + $endM)) {
+        return ['status' => 'MISSING', 'submitted_at' => null, 'employee' => null];
+    }
+    return ['status' => 'NOT_YET_DUE', 'submitted_at' => null, 'employee' => null];
+}
+
 function broth_log_normalize_row(array $row, array $cols, string $sheetBranch): array {
     $index = broth_log_build_index($cols);
     $cells = $row['c'] ?? [];

@@ -31,6 +31,11 @@
     const VALID_RANGES = new Set(['today', 'week', 'month', 'all']);
     const RANGE_STORAGE_KEY = 'brothTemperatureRangesV1';
     const RANGE_API = '/api/broth-log/ranges';
+    const SETTINGS_API = '/api/broth-log/settings';
+    // Fallback only, used before the canonical /broth-log/settings fetch completes (or if it
+    // fails) - must match BROTH_LOG_SHIFT_WINDOWS in api/broth-log-core.php exactly. Once
+    // state.canonicalSettings.shift_windows loads, that value is used instead.
+    const DEFAULT_SHIFT_WINDOWS = { AM: { start: '10:00', end: '11:00' }, PM: { start: '16:00', end: '17:00' } };
 
     const READING_FIELDS = [
         ['walkInCoolerProduce', 'Walk-In Cooler (Produce)', 'cold'],
@@ -286,7 +291,8 @@
         showStoreSelector: false,
         routeUnsupported: routeBranch.unsupported,
         rangeEditorOpen: false,
-        rangeEditorMessage: ''
+        rangeEditorMessage: '',
+        canonicalSettings: null
     };
 
     const root = document.getElementById('broth-dashboard');
@@ -418,6 +424,90 @@
         } catch (error) {
             state.rangeEditorMessage = 'Using saved browser ranges; shared range API was unavailable.';
             return false;
+        }
+    }
+
+    async function loadCanonicalSettings() {
+        try {
+            const response = await fetch(SETTINGS_API, { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const payload = await response.json();
+            if (!payload || typeof payload !== 'object') return false;
+            state.canonicalSettings = payload;
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function activeShiftWindows() {
+        return (state.canonicalSettings && state.canonicalSettings.shift_windows) || DEFAULT_SHIFT_WINDOWS;
+    }
+
+    function minutesOfDay(hour, minute) {
+        return hour * 60 + minute;
+    }
+
+    function parseWindowTime(hhmm) {
+        const [h, m] = String(hhmm).split(':').map(Number);
+        return minutesOfDay(h, m);
+    }
+
+    // Mirrors broth_log_shift_assignment() in api/broth-log-core.php exactly: the midpoint
+    // between AM's window close and PM's window open decides which shift a timestamp belongs
+    // to. Kept as a literal JS port (not derived from activeShiftWindows()) because the PHP
+    // side hardcodes the same midpoint independently of the window config - see that function's
+    // comment for why 13:30 specifically.
+    function shiftAssignment(businessDateParts) {
+        const minutes = minutesOfDay(businessDateParts.hour, businessDateParts.minute);
+        return minutes < minutesOfDay(13, 30) ? 'AM' : 'PM';
+    }
+
+    // Inclusive boundaries, matching broth_log_shift_timing_status() in broth-log-core.php.
+    function shiftTimingStatus(shift, businessDateParts) {
+        const window = activeShiftWindows()[shift];
+        if (!window) return 'unknown';
+        const minutes = minutesOfDay(businessDateParts.hour, businessDateParts.minute);
+        const startMinutes = parseWindowTime(window.start);
+        const endMinutes = parseWindowTime(window.end);
+        if (minutes < startMinutes) return 'EARLY';
+        if (minutes > endMinutes) return 'LATE';
+        return 'ON_TIME';
+    }
+
+    // Mirrors broth_log_shift_daily_status() in api/broth-log-core.php: MISSING vs NOT_YET_DUE
+    // for a shift with no qualifying submission, and the earliest qualifying submission (by
+    // business-local time) wins when duplicates exist for the same shift - see that function's
+    // comment for why (provisional default, pending the real-data duplicate audit).
+    function shiftDailyStatus(shift, recordsForDate, businessDate) {
+        const candidates = recordsForDate
+            .map(record => ({ record, parts: businessTimeParts(record.submittedAt) }))
+            .filter(entry => entry.parts && shiftAssignment(entry.parts) === shift)
+            .sort((a, b) => (a.parts.hour * 60 + a.parts.minute) - (b.parts.hour * 60 + b.parts.minute));
+        if (candidates.length) {
+            const first = candidates[0];
+            return { status: shiftTimingStatus(shift, first.parts), submittedAt: first.record.submittedAt, employee: first.record.employeeName || '' };
+        }
+        const window = activeShiftWindows()[shift];
+        if (!window) return { status: 'unknown', submittedAt: null, employee: null };
+        const today = businessToday();
+        if (businessDate < today) return { status: 'MISSING', submittedAt: null, employee: null };
+        const nowParts = businessTimeParts(new Date());
+        const endMinutes = parseWindowTime(window.end);
+        if (businessDate === today && nowParts && minutesOfDay(nowParts.hour, nowParts.minute) > endMinutes) {
+            return { status: 'MISSING', submittedAt: null, employee: null };
+        }
+        return { status: 'NOT_YET_DUE', submittedAt: null, employee: null };
+    }
+
+    function shiftStatusLabel(status) {
+        switch (status) {
+            case 'ON_TIME': return '✅ On Time';
+            case 'EARLY': return '⚠️ Early';
+            case 'LATE': return '⚠️ Late';
+            case 'MISSING': return '❌ Missing';
+            case 'NOT_YET_DUE': return '⏳ Not Yet Due';
+            default: return status;
         }
     }
 
@@ -1250,12 +1340,42 @@
         return items.map(([id, label]) => `<button class="${state.activeView === id ? 'active' : ''}" data-view="${id}">${label}</button>`).join('');
     }
 
+    function settingsSummary() {
+        const canonical = state.canonicalSettings;
+        const ranges = (canonical && canonical.ranges) || {};
+        const windows = activeShiftWindows();
+        const timezone = (canonical && canonical.timezone) || BUSINESS_TIMEZONE_LABEL;
+        const rangeRows = READING_FIELDS.map(([key, label]) => {
+            const sop = ranges[key];
+            if (!sop) return '';
+            return `<div class="bd-settings-row"><strong>${esc(label)}</strong><span>${esc(sopLabel({ min: sop.min, max: sop.max }))}</span></div>`;
+        }).join('');
+        const fmtWindow = w => w ? `${esc(w.start)} – ${esc(w.end)}` : 'Not configured';
+        return `<section class="bd-card bd-section bd-settings-summary" aria-label="Broth Log settings">
+            <div class="bd-section-head"><h2>Broth Log Settings</h2></div>
+            <div class="bd-settings-block">
+                <h3>A. Temperature Ranges</h3>
+                <p class="bd-muted">Authoritative source - the same ranges used for alert detection and Resolve validation.</p>
+                <div class="bd-settings-grid">${rangeRows || '<div class="bd-settings-row"><span>Loading canonical ranges...</span></div>'}</div>
+            </div>
+            <div class="bd-settings-block">
+                <h3>B. Shift Record Times</h3>
+                <div class="bd-settings-grid">
+                    <div class="bd-settings-row"><strong>AM Shift</strong><span>${fmtWindow(windows.AM)}</span></div>
+                    <div class="bd-settings-row"><strong>PM Shift</strong><span>${fmtWindow(windows.PM)}</span></div>
+                    <div class="bd-settings-row"><strong>Timezone</strong><span>${esc(timezone)}</span></div>
+                </div>
+            </div>
+        </section>`;
+    }
+
     function rangeEditor() {
-        return `<section class="bd-card bd-section bd-range-tool" aria-label="Temperature range settings">
+        return `${settingsSummary()}<section class="bd-card bd-section bd-range-tool" aria-label="Custom display range editor">
             <div class="bd-section-head">
-                <h2>Range settings</h2>
+                <h2>Advanced: Custom Display Ranges</h2>
                 <span>${hasCustomRanges() ? 'Custom ranges active' : 'Using default paper ranges'}</span>
             </div>
+            <p class="bd-muted">Editing here changes only what this dashboard displays. It does not change the ranges used for real alert detection or Resolve validation - see Settings above for the authoritative values.</p>
             ${state.rangeEditorMessage ? `<div class="bd-range-message">${esc(state.rangeEditorMessage)}</div>` : ''}
             <form id="rangeEditorForm">
                 <div class="bd-range-grid" role="table" aria-label="Editable temperature target ranges">
@@ -1349,6 +1469,32 @@
         `;
     }
 
+    // Independent from temperature compliance (never combined into one status): "was the log
+    // recorded in the required window" vs "were the readings safe" are separate questions, per
+    // the San Antonio shift-compliance rule. Only rendered for a single specific branch - "all
+    // branches" keeps the existing temperature-only summary rather than a combined multi-store
+    // shift grid, which is out of scope here.
+    function shiftComplianceBlock(selectedDate) {
+        if (state.filters.branch === 'all') return '';
+        // Deliberately NOT the `records` parameter, which has already been narrowed by whatever
+        // issue/shift/query filters are active (e.g. "Issues Only" would hide a clean, perfectly
+        // on-time submission, wrongly reporting it MISSING). Shift compliance always reflects
+        // every real submission for the branch/date, independent of the current display filters.
+        const branch = state.filters.branch === 'current' ? state.activeBranch : state.filters.branch;
+        const recordsForDate = (state.recordsByBranch[branch] || []).filter(row => row.businessDate === selectedDate);
+        const am = shiftDailyStatus('AM', recordsForDate, selectedDate);
+        const pm = shiftDailyStatus('PM', recordsForDate, selectedDate);
+        const card = (label, result) => `<div class="bd-shift-card">
+            <div class="bd-shift-label">${esc(label)}</div>
+            <div class="bd-shift-status">${shiftStatusLabel(result.status)}</div>
+            ${result.submittedAt ? `<div class="bd-shift-detail">${esc(fmtTime(result.submittedAt))}${result.employee ? ` — ${esc(result.employee)}` : ''}</div>` : ''}
+        </div>`;
+        return `<section class="bd-shift-compliance" aria-label="Shift compliance status">
+            ${card('AM Shift', am)}
+            ${card('PM Shift', pm)}
+        </section>`;
+    }
+
     function todayOperations(records, summary) {
         if (state.filters.dateRange !== 'today') return '';
         const selectedDate = state.filters.selectedDate;
@@ -1377,6 +1523,7 @@
                     <p>${esc(branchText)} · ${esc(businessDateLabel(selectedDate))} (${esc(selectedDate)})${latest ? ` · Latest log ${esc(latest)}` : ''}</p>
                 </div>
             </div>
+            ${shiftComplianceBlock(selectedDate)}
             ${records.length ? `<p class="bd-reviewed-count">${allReadings.length} readings recorded · ${warnings.length} warning/open · ${missing.length} missing/incomplete</p>` : ''}
             ${problemReadings.length ? `<div class="bd-today-issue-grid">${topProblemReadingCards(problemReadings).join('')}</div>` : todayEmptyMessage(records)}
         </section>`;
@@ -1774,7 +1921,7 @@
                             <p>${esc(SHEETS[state.activeBranch].name)} · Daily manager review</p>
                         </div>
                         <div class="bd-actions">
-                            <button class="bd-btn ${state.rangeEditorOpen ? 'primary' : ''}" data-action="toggleRanges" aria-pressed="${state.rangeEditorOpen}">Ranges</button>
+                            <button class="bd-btn ${state.rangeEditorOpen ? 'primary' : ''}" data-action="toggleRanges" aria-pressed="${state.rangeEditorOpen}">Settings</button>
                             <details class="bd-action-menu">
                                 <summary>Export</summary>
                                 <div>
@@ -2163,8 +2310,8 @@
     async function initDashboard() {
         render();
         window.addEventListener('popstate', applyUrlState);
-        const loadedSharedRanges = await loadSharedRanges();
-        if (loadedSharedRanges) render();
+        const [loadedSharedRanges, loadedCanonicalSettings] = await Promise.all([loadSharedRanges(), loadCanonicalSettings()]);
+        if (loadedSharedRanges || loadedCanonicalSettings) render();
         syncSheets();
         scheduleSync();
     }

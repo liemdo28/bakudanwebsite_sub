@@ -94,7 +94,12 @@ expect_eq($normalized['businessDate'], '2026-08-20', 'B1 rows with a normal expl
 // 6/7. B2/B3 records with blank business dates become date-addressable, and a genuinely
 // out-of-range reading on one of them is now findable by the derived date - proving the exact
 // mechanism broth_log_critical_alerts_for_branch() uses internally (filter by businessDate).
-[$cols, $row] = make_row(['branch' => 'B2', 'businessDate' => '', 'submittedAt' => '8/7/2026 6:00:00', 'walkInFreezer' => '10']);
+// Stale fixture: walkInFreezer (BROTH_LOG_SOP min=-20/max=5) at 10F has variance=5, which
+// broth_log_severity_for() has classified 'high' (its own inclusive tier, variance<=5) since
+// this codebase's first commit (c081a8b) - not 'critical' (variance>5). broth_log_critical_alerts_for_branch()
+// only surfaces 'critical' readings, so this fixture never actually exercised the mechanism the
+// test claims to prove. 15F (variance=10) is unambiguously in the critical tier.
+[$cols, $row] = make_row(['branch' => 'B2', 'businessDate' => '', 'submittedAt' => '8/7/2026 6:00:00', 'walkInFreezer' => '15']);
 $normalizedB2 = broth_log_normalize_row($row, $cols, 'B2');
 $filteredB2 = broth_log_filter_records([$normalizedB2], ['businessDate' => '2026-08-06', 'branch' => 'B2']);
 expect_true(count($filteredB2) === 1, 'a B2 record with a derived business date is addressable by date-filtered lookup');

@@ -1537,6 +1537,480 @@ function broth_log_copilot_apply_escalation_action_with_notification(array $acti
     return $result + ['outbound_sent' => $sent];
 }
 
+// ============================================================================
+// ROLE-AWARE /help MENU (Broth Log assistant UX)
+//
+// Deliberately additive and deterministic - no LLM. Every renderer below reuses the SAME
+// data-access functions the existing text commands use (broth_log_copilot_branch_records(),
+// broth_log_filter_records(), broth_log_summary(), broth_log_incidents) so buttons and typed
+// commands can never disagree. format_response()/broth_log_copilot_parse() are left completely
+// untouched - existing text commands ("B1 today", etc.) keep their exact current behavior and
+// plain-text (no-keyboard) replies. The menu is a separate, additive presentation layer wired
+// into process_inbox() at exactly two points: the intent==='help' branch, and callback_query
+// handling for callback_data starting with "menu:".
+// ============================================================================
+
+// Store Manager (single branch) vs GM (role=manager, >1 branch) vs Owner/CEO (role=owner).
+// Deliberately reuses the existing role model - no new 'gm' role/column. A manager's branch
+// COUNT (already the source of truth for what they can access) is also the source of truth for
+// which menu they see; nothing here can widen access beyond broth_log_copilot_user_can_branch().
+function broth_log_copilot_role_class(array $user): string {
+    if (($user['role'] ?? '') === 'owner') return 'owner';
+    return count($user['allowed_branch_list'] ?? []) > 1 ? 'gm' : 'store_manager';
+}
+
+function broth_log_copilot_menu_main_keyboard(string $roleClass): array {
+    if ($roleClass === 'owner') {
+        return ['inline_keyboard' => [
+            [['text' => "\u{1F4CA} Today's Summary", 'callback_data' => 'menu:ceo_summary'], ['text' => "\u{1F6A8} Exceptions", 'callback_data' => 'menu:ceo_exceptions']],
+            [['text' => "\u{1F3EA} Stores", 'callback_data' => 'menu:branchpick:today'], ['text' => "\u{1F4CC} Open Issues", 'callback_data' => 'menu:open']],
+            [['text' => "\u{1F5D3} Historical", 'callback_data' => 'menu:branchpick:logdate'], ['text' => "\u{2753} Commands", 'callback_data' => 'menu:commands']],
+        ]];
+    }
+    if ($roleClass === 'gm') {
+        return ['inline_keyboard' => [
+            [['text' => "\u{1F4C5} Today's Log", 'callback_data' => 'menu:today'], ['text' => "\u{1F3EA} All Stores", 'callback_data' => 'menu:log:ALL:' . broth_log_business_date()]],
+            [['text' => "\u{1F6A8} Today's Issues", 'callback_data' => 'menu:issues_today'], ['text' => "\u{1F4CC} Open Issues", 'callback_data' => 'menu:open']],
+            [['text' => "\u{1F5D3} Log by Date", 'callback_data' => 'menu:branchpick:logdate'], ['text' => "\u{1F50E} Issues by Date", 'callback_data' => 'menu:branchpick:issuedate']],
+            [['text' => "\u{2753} Commands", 'callback_data' => 'menu:commands']],
+        ]];
+    }
+    return ['inline_keyboard' => [
+        [['text' => "\u{1F4C5} Today's Log", 'callback_data' => 'menu:today'], ['text' => "\u{1F5D3} Choose Date", 'callback_data' => 'menu:branchpick:logdate']],
+        [['text' => "\u{1F6A8} Today's Issues", 'callback_data' => 'menu:issues_today'], ['text' => "\u{1F50E} Issues by Date", 'callback_data' => 'menu:branchpick:issuedate']],
+        [['text' => "\u{1F4CC} Open Issues", 'callback_data' => 'menu:open'], ['text' => "\u{2753} Commands", 'callback_data' => 'menu:commands']],
+    ]];
+}
+
+function broth_log_copilot_menu_back_row(): array {
+    return [['text' => "\u{2B05}\u{FE0F} Main Menu", 'callback_data' => 'menu:main']];
+}
+
+function broth_log_copilot_help_text(): string {
+    return "\u{1F4CB} Broth Log Assistant\n\nI can help you check:\n\n"
+        . "\u{2022} Today's Broth Log\n\u{2022} A previous date\n\u{2022} Today's issues\n"
+        . "\u{2022} Issues from a previous date\n\u{2022} Open/unresolved issues\n\u{2022} SOP and station status\n\n"
+        . "Use the buttons below.";
+}
+
+function broth_log_copilot_commands_text(): string {
+    return "Broth Log Commands\n\n/help\nOpen this menu.\n\n"
+        . "B1 today\nToday's B1 status.\n\n"
+        . "B1 July 19\nB1 status for a previous date.\n\n"
+        . "B1 today critical issues\nCritical issues today.\n\n"
+        . "You can also use the buttons instead of typing commands.";
+}
+
+// Every button click re-authorizes from scratch against $user (already loaded by process_inbox()
+// from the callback's OWN telegram_user_id, never trusted from callback_data), exactly like the
+// existing ACK/Resolve callback path. A branch code inside callback_data is only ever a request,
+// never a grant - broth_log_copilot_user_can_branch() below is the actual gate every time.
+function broth_log_copilot_menu_can_access_branch(array $user, string $branch): bool {
+    return $branch === 'ALL' ? !empty($user['allowed_branch_list']) : broth_log_copilot_user_can_branch($user, $branch);
+}
+
+function broth_log_copilot_menu_branch_pick_keyboard(array $user, string $forView, bool $includeAll): array {
+    $rows = [];
+    $row = [];
+    foreach ($user['allowed_branch_list'] ?? [] as $b) {
+        $b = strtoupper($b);
+        $row[] = ['text' => $b, 'callback_data' => 'menu:branchsel:' . $forView . ':' . $b];
+        if (count($row) === 3) { $rows[] = $row; $row = []; }
+    }
+    if ($row) $rows[] = $row;
+    if ($includeAll) $rows[] = [['text' => 'All Stores', 'callback_data' => 'menu:branchsel:' . $forView . ':ALL']];
+    $rows[] = broth_log_copilot_menu_back_row();
+    return ['inline_keyboard' => $rows];
+}
+
+function broth_log_copilot_menu_quick_date_keyboard(string $kind, string $branch): array {
+    return ['inline_keyboard' => [
+        [['text' => 'Today', 'callback_data' => "menu:qdate:{$kind}:{$branch}:today"]],
+        [['text' => 'Yesterday', 'callback_data' => "menu:qdate:{$kind}:{$branch}:yesterday"]],
+        [['text' => '2 Days Ago', 'callback_data' => "menu:qdate:{$kind}:{$branch}:2d"]],
+        [['text' => 'Enter Date', 'callback_data' => "menu:qdate:{$kind}:{$branch}:enter"]],
+        broth_log_copilot_menu_back_row(),
+    ]];
+}
+
+function broth_log_copilot_menu_date_cancel_keyboard(): array {
+    return ['inline_keyboard' => [[['text' => 'Cancel', 'callback_data' => 'menu:main']]]];
+}
+
+// ---- LOG DATA views (canonical Google Sheet readings via the existing branch_records path) ----
+
+function broth_log_copilot_menu_log_status_line(array $summary): string {
+    if ($summary['criticalIssues'] > 0) return "Status: \u{26A0}\u{FE0F} Needs Attention";
+    if ($summary['openIssues'] > 0 || $summary['missingReadings'] > 0) return "Status: \u{1F7E1} Review Needed";
+    return "Status: \u{1F7E2} Clear";
+}
+
+function broth_log_copilot_menu_log_view(array $user, string $branch, string $date, ?DateTimeImmutable $now = null): array {
+    $roleClass = broth_log_copilot_role_class($user);
+    $lang = $user['preferred_language'] ?? 'en';
+    if (!broth_log_copilot_menu_can_access_branch($user, $branch)) {
+        return ['message' => "You don't have access to this store.", 'reply_markup' => broth_log_copilot_menu_main_keyboard($roleClass), 'intent' => 'menu_forbidden'];
+    }
+    if ($branch === 'ALL') return broth_log_copilot_menu_all_stores_log_view($user, $date, $now);
+
+    try {
+        $records = broth_log_filter_records(broth_log_copilot_branch_records($branch), ['branch' => $branch, 'businessDate' => $date]);
+    } catch (Throwable $e) {
+        return ['message' => "I couldn't load the Broth Log right now.\nPlease try again shortly.", 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_error'];
+    }
+    if (!$records) {
+        return ['message' => "No Broth Log submission found for this date.", 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_log_empty'];
+    }
+    $summary = broth_log_summary($records);
+    $lines = ["\u{1F4CB} {$branch} \u{2014} Broth Log " . ($date === broth_log_business_date($now) ? 'Today' : $date), '', broth_log_copilot_menu_log_status_line($summary), '',
+        "Completed logs: {$summary['logs']}", "Missing/incomplete: {$summary['missingReadings']}", "Critical readings: {$summary['criticalIssues']}"];
+    $currentIssue = null;
+    foreach ($records as $record) {
+        foreach ($record['issues'] as $issue) {
+            if ($issue['severity'] === 'critical') { $currentIssue = $issue; break 2; }
+        }
+    }
+    if ($currentIssue) {
+        $lines[] = '';
+        $lines[] = 'Current issue:';
+        $lines[] = $currentIssue['label'] . ': ' . broth_log_copilot_temp_text($currentIssue['temperature'], $lang);
+        $lines[] = 'Required: ' . $currentIssue['target'];
+    }
+    $keyboard = [];
+    if ($summary['criticalIssues'] > 0 || $summary['openIssues'] > 0) {
+        $keyboard[] = [['text' => "\u{1F6A8} View Issues", 'callback_data' => "menu:issues:{$branch}:{$date}"]];
+    }
+    $keyboard[] = [['text' => "\u{1F4C4} View Full Log", 'callback_data' => "menu:fulllog:{$branch}:{$date}"], ['text' => "\u{1F504} Refresh", 'callback_data' => "menu:log:{$branch}:{$date}"]];
+    $keyboard[] = broth_log_copilot_menu_back_row();
+    return ['message' => implode("\n", $lines), 'reply_markup' => ['inline_keyboard' => $keyboard], 'intent' => 'menu_log'];
+}
+
+function broth_log_copilot_menu_all_stores_log_view(array $user, string $date, ?DateTimeImmutable $now = null): array {
+    $lines = ["\u{1F4CB} Broth Log \u{2014} " . ($date === broth_log_business_date($now) ? 'Today' : $date), ''];
+    $priorityBranch = null;
+    $priorityIssue = null;
+    foreach ($user['allowed_branch_list'] ?? [] as $branch) {
+        $branch = strtoupper($branch);
+        try {
+            $records = broth_log_filter_records(broth_log_copilot_branch_records($branch), ['branch' => $branch, 'businessDate' => $date]);
+        } catch (Throwable $e) {
+            $lines[] = "{$branch} \u{2753} Unavailable";
+            continue;
+        }
+        if (!$records) { $lines[] = "{$branch} \u{2753} No submission"; continue; }
+        $summary = broth_log_summary($records);
+        if ($summary['criticalIssues'] > 0) {
+            $lines[] = "{$branch} \u{1F534} Needs Attention";
+            if (!$priorityBranch) {
+                foreach ($records as $record) {
+                    foreach ($record['issues'] as $issue) {
+                        if ($issue['severity'] === 'critical') { $priorityBranch = $branch; $priorityIssue = $issue['label']; break 2; }
+                    }
+                }
+            }
+        } elseif ($summary['openIssues'] > 0 || $summary['missingReadings'] > 0) {
+            $lines[] = "{$branch} \u{1F7E1} Review Needed";
+        } else {
+            $lines[] = "{$branch} \u{1F7E2} Clear";
+        }
+    }
+    if ($priorityBranch) { $lines[] = ''; $lines[] = 'Priority:'; $lines[] = "{$priorityBranch} \u{2014} {$priorityIssue} requires attention."; }
+    $keyboard = [[['text' => "\u{1F504} Refresh", 'callback_data' => 'menu:log:ALL:' . $date]], broth_log_copilot_menu_back_row()];
+    return ['message' => implode("\n", $lines), 'reply_markup' => ['inline_keyboard' => $keyboard], 'intent' => 'menu_log_all'];
+}
+
+function broth_log_copilot_menu_full_log_view(array $user, string $branch, string $date): array {
+    $lang = $user['preferred_language'] ?? 'en';
+    if (!broth_log_copilot_menu_can_access_branch($user, $branch) || $branch === 'ALL') {
+        return ['message' => "You don't have access to this store.", 'reply_markup' => broth_log_copilot_menu_main_keyboard(broth_log_copilot_role_class($user)), 'intent' => 'menu_forbidden'];
+    }
+    try {
+        $records = broth_log_filter_records(broth_log_copilot_branch_records($branch), ['branch' => $branch, 'businessDate' => $date]);
+    } catch (Throwable $e) {
+        return ['message' => "I couldn't load the Broth Log right now.\nPlease try again shortly.", 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_error'];
+    }
+    if (!$records) {
+        return ['message' => "No Broth Log submission found for this date.", 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_log_empty'];
+    }
+    $lines = ["\u{1F4C4} {$branch} \u{2014} Full Log", $date, ''];
+    foreach ($records[0]['readings'] as $reading) {
+        $mark = $reading['severity'] === 'safe' ? "\u{2705}" : ($reading['severity'] === 'missing' ? "\u{2753}" : "\u{1F534}");
+        $lines[] = $reading['label'] . ': ' . broth_log_copilot_temp_text($reading['temperature'], $lang) . ' ' . $mark;
+    }
+    $keyboard = [[['text' => "\u{1F504} Refresh", 'callback_data' => "menu:fulllog:{$branch}:{$date}"]], [['text' => "\u{2B05}\u{FE0F} Back", 'callback_data' => "menu:log:{$branch}:{$date}"]]];
+    return ['message' => implode("\n", $lines), 'reply_markup' => ['inline_keyboard' => $keyboard], 'intent' => 'menu_full_log'];
+}
+
+// ---- ISSUE DATA views (broth_log_incidents - the ACK/Resolve accountability trail) ----
+
+// Deterministic priority ordering, per spec: (1) critical+unacknowledged, (2) critical+acknowledged
+// but unresolved, (3) other open, (4) resolved/closed last. Never left to free-text/LLM ranking.
+function broth_log_copilot_menu_incidents_for(string $branch, string $date): array {
+    return q("SELECT * FROM broth_log_incidents WHERE branch=? AND business_date=? ORDER BY
+        CASE
+            WHEN severity='critical' AND state NOT IN ('acknowledged','resolved','closed') THEN 0
+            WHEN severity='critical' AND state='acknowledged' THEN 1
+            WHEN state NOT IN ('resolved','closed') THEN 2
+            ELSE 3
+        END, created_at ASC", [strtoupper($branch), $date]);
+}
+
+// "Handling" means ACK/Resolve ownership only - never inferred from who received an alert, DM
+// recipients, store-manager assignment, or the last Telegram sender. Never surfaces a raw
+// Telegram/internal id: an authorized actor with no display_name on file falls back to a generic
+// label rather than leaking their numeric identity.
+function broth_log_copilot_incident_handler_summary(array $incident): array {
+    $state = (string)($incident['state'] ?? '');
+    if (in_array($state, ['resolved', 'closed'], true) && !empty($incident['resolved_by'])) {
+        $actor = broth_log_copilot_authorized_user((string)$incident['resolved_by']);
+        $name = ($actor && trim((string)$actor['display_name']) !== '') ? trim((string)$actor['display_name']) : 'Authorized Manager';
+        return ['status' => 'resolved', 'display' => $name, 'display_name_known' => (bool)($actor && trim((string)$actor['display_name']) !== '')];
+    }
+    if (!empty($incident['acknowledged_by'])) {
+        $actor = broth_log_copilot_authorized_user((string)$incident['acknowledged_by']);
+        $name = ($actor && trim((string)$actor['display_name']) !== '') ? trim((string)$actor['display_name']) : 'Authorized Manager';
+        return ['status' => 'acknowledged', 'display' => $name, 'display_name_known' => (bool)($actor && trim((string)$actor['display_name']) !== '')];
+    }
+    return ['status' => 'unacknowledged', 'display' => 'No one yet', 'display_name_known' => true];
+}
+
+function broth_log_copilot_menu_issue_direction_word(array $incident): string {
+    $direction = broth_log_copilot_incident_direction($incident);
+    return $direction === 'max' ? 'too high' : ($direction === 'min' ? 'too low' : 'out of range');
+}
+
+function broth_log_copilot_menu_issue_block(array $incident, int $index, bool $historical): string {
+    $lang = 'en';
+    $temp = broth_log_copilot_temp_text($incident['temperature_f'] !== null ? (float)$incident['temperature_f'] : null, $lang);
+    $lines = ["{$index}. {$incident['station_label']}", "{$temp} \u{2014} " . broth_log_copilot_menu_issue_direction_word($incident), 'Required: ' . (string)$incident['sop_target'], ''];
+    $handler = broth_log_copilot_incident_handler_summary($incident);
+    if ($handler['status'] === 'resolved') {
+        $lines[] = 'Final state: Resolved';
+        $lines[] = 'Handled by: ' . $handler['display'];
+        if (!empty($incident['resolved_at'])) $lines[] = 'Resolved: ' . $incident['resolved_at'];
+    } elseif ($handler['status'] === 'acknowledged') {
+        $lines[] = "\u{1F7E1} ACKNOWLEDGED \u{2014} BEING HANDLED";
+        $lines[] = 'Handling: ' . $handler['display'];
+        $lines[] = 'Issue is still open.';
+    } else {
+        $lines[] = 'Status: WAITING FOR RESPONSE';
+        $lines[] = 'Handling: No one yet';
+    }
+    return implode("\n", $lines);
+}
+
+function broth_log_copilot_menu_issues_view(array $user, string $branch, string $date, bool $isToday): array {
+    if (!broth_log_copilot_menu_can_access_branch($user, $branch) || $branch === 'ALL') {
+        return ['message' => "You don't have access to this store.", 'reply_markup' => broth_log_copilot_menu_main_keyboard(broth_log_copilot_role_class($user)), 'intent' => 'menu_forbidden'];
+    }
+    $incidents = broth_log_copilot_menu_incidents_for($branch, $date);
+    $header = "\u{1F6A8} {$branch} \u{2014} " . ($isToday ? "Today's Issues" : 'Issues') . ($isToday ? '' : "\n{$date}");
+    if (!$incidents) {
+        $keyboard = [[['text' => "\u{1F504} Refresh", 'callback_data' => "menu:issues:{$branch}:{$date}"]], broth_log_copilot_menu_back_row()];
+        return ['message' => $header . "\n\n\u{2705} No Broth Log issues found.", 'reply_markup' => ['inline_keyboard' => $keyboard], 'intent' => 'menu_issues_empty'];
+    }
+    $blocks = [$header, ''];
+    $i = 1;
+    foreach (array_slice($incidents, 0, 10) as $incident) {
+        $blocks[] = broth_log_copilot_menu_issue_block($incident, $i, !$isToday);
+        $blocks[] = '';
+        $i++;
+    }
+    $keyboard = [
+        [['text' => "\u{1F504} Refresh", 'callback_data' => "menu:issues:{$branch}:{$date}"], ['text' => "\u{1F4CB} " . ($isToday ? "Today's Log" : 'View Log'), 'callback_data' => "menu:log:{$branch}:{$date}"]],
+        broth_log_copilot_menu_back_row(),
+    ];
+    return ['message' => rtrim(implode("\n", $blocks)), 'reply_markup' => ['inline_keyboard' => $keyboard], 'intent' => 'menu_issues'];
+}
+
+// Cross-date, cross-branch: every currently-open incident across the caller's authorized
+// branches - independent of "Issues by Date"/"Today's Issues", which are always scoped to one
+// specific business date.
+function broth_log_copilot_menu_open_issues_view(array $user, bool $criticalOnly = false): array {
+    $branches = $user['allowed_branch_list'] ?? [];
+    if (!$branches) {
+        return ['message' => "You don't have access to this store.", 'reply_markup' => broth_log_copilot_menu_main_keyboard(broth_log_copilot_role_class($user)), 'intent' => 'menu_forbidden'];
+    }
+    $lines = ["\u{1F4CC} Open Broth Log Issues", ''];
+    $any = false;
+    foreach ($branches as $branch) {
+        $branch = strtoupper($branch);
+        $sql = "SELECT * FROM broth_log_incidents WHERE branch=? AND state NOT IN ('resolved','closed')" . ($criticalOnly ? " AND severity='critical'" : '') . " ORDER BY
+            CASE WHEN severity='critical' AND state NOT IN ('acknowledged') THEN 0 WHEN severity='critical' THEN 1 ELSE 2 END, created_at ASC";
+        $rows = q($sql, [$branch]);
+        if (!$rows) { $lines[] = "{$branch}\nNo open issues."; $lines[] = ''; continue; }
+        $any = true;
+        $marker = ($rows[0]['severity'] === 'critical' && $rows[0]['state'] === 'detected') ? "\u{1F534}" : "\u{1F7E1}";
+        $lines[] = "{$marker} {$branch}";
+        foreach ($rows as $incident) {
+            $handler = broth_log_copilot_incident_handler_summary($incident);
+            $ageMinutes = (int)floor((time() - strtotime((string)$incident['created_at'] . ' UTC')) / 60);
+            $statusWord = $handler['status'] === 'acknowledged' ? 'Acknowledged' : 'Unacknowledged';
+            $lines[] = "{$incident['station_label']} \u{2014} {$statusWord}";
+            $lines[] = $handler['status'] === 'unacknowledged' ? "Open {$ageMinutes} min" : 'Still unresolved';
+            $lines[] = 'Handling: ' . $handler['display'];
+        }
+        $lines[] = '';
+    }
+    if (!$any) $lines[] = "\u{2705} No open Broth Log issues.";
+    $keyboard = [
+        [['text' => "\u{1F6A8} Critical Only", 'callback_data' => 'menu:open_critical'], ['text' => "\u{1F504} Refresh", 'callback_data' => 'menu:open']],
+        broth_log_copilot_menu_back_row(),
+    ];
+    return ['message' => rtrim(implode("\n", $lines)), 'reply_markup' => ['inline_keyboard' => $keyboard], 'intent' => 'menu_open'];
+}
+
+function broth_log_copilot_menu_ceo_summary_view(array $user, ?DateTimeImmutable $now = null): array {
+    if (($user['role'] ?? '') !== 'owner') {
+        return ['message' => "You don't have access to this store.", 'reply_markup' => broth_log_copilot_menu_main_keyboard(broth_log_copilot_role_class($user)), 'intent' => 'menu_forbidden'];
+    }
+    $date = broth_log_business_date($now);
+    $view = broth_log_copilot_menu_all_stores_log_view($user, $date, $now);
+    $view['message'] = str_replace("\u{1F4CB} Broth Log \u{2014} Today", "\u{1F4CA} Broth Log \u{2014} Today\n\nStores monitored: " . count($user['allowed_branch_list'] ?? []), $view['message']);
+    $view['intent'] = 'menu_ceo_summary';
+    return $view;
+}
+
+// ---- Date-entry conversation context ("awaiting_log_date" / "awaiting_issue_date") ----
+
+function broth_log_copilot_menu_set_date_context(string $telegramUserId, string $kind, string $branch): void {
+    run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at)
+         VALUES (?,?,datetime('now', '+24 hours'),datetime('now'))", [
+        $telegramUserId,
+        json_encode(['pending' => 'menu_date', 'kind' => $kind, 'branch' => $branch]),
+    ]);
+}
+
+// Returns null when there is no pending menu date-entry context for this sender, so the normal
+// text-command parser handles the message exactly as it does today - this never intercepts
+// ordinary text commands, only a message that immediately follows an "Enter Date" tap.
+function broth_log_copilot_menu_date_entry_response(string $text, array $user, ?DateTimeImmutable $now = null): ?array {
+    $context = q1("SELECT context_json FROM broth_log_conversation_context WHERE telegram_user_id=? AND expires_at > datetime('now')", [$user['telegram_user_id']]);
+    if (!$context) return null;
+    $ctx = json_decode((string)$context['context_json'], true) ?: [];
+    if (($ctx['pending'] ?? '') !== 'menu_date') return null;
+    run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id=?", [$user['telegram_user_id']]);
+    $kind = (string)($ctx['kind'] ?? 'log');
+    $branch = (string)($ctx['branch'] ?? '');
+    $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $parsed = broth_log_copilot_extract_explicit_date(broth_log_norm($text), $now);
+    if (!$parsed['matched'] || $parsed['error']) {
+        return [
+            'message' => "I couldn't recognize that date.\n\nPlease send:\nMM/DD/YYYY\n\nor tap Cancel.",
+            'reply_markup' => broth_log_copilot_menu_date_cancel_keyboard(),
+            'intent' => 'menu_date_invalid',
+        ] + ['_reprompt' => ['kind' => $kind, 'branch' => $branch]];
+    }
+    $view = $kind === 'issues'
+        ? broth_log_copilot_menu_issues_view($user, $branch, $parsed['date'], $parsed['date'] === broth_log_business_date($now))
+        : broth_log_copilot_menu_log_view($user, $branch, $parsed['date'], $now);
+    return $view;
+}
+
+// ---- /help entry point and central "menu:" callback dispatcher ----
+
+// Chat scoping: the assistant menu is a private-DM feature. A group chat (Manager Onboarding or
+// Alert/Fallback) gets a safe, static, non-branching reply - never store/incident data, never a
+// keyboard that could route into protected views.
+function broth_log_copilot_help_response(array $user, string $chatType): array {
+    if ($chatType !== 'private') {
+        return ['message' => 'The Broth Log assistant menu works in private chat. Message the bot directly to use /help.', 'reply_markup' => null, 'intent' => 'help_group_denied'];
+    }
+    return ['message' => broth_log_copilot_help_text(), 'reply_markup' => broth_log_copilot_menu_main_keyboard(broth_log_copilot_role_class($user)), 'intent' => 'help_menu'];
+}
+
+// Returns null for any callback_data that is not a menu: route, so the caller falls through to
+// the existing (unchanged) broth_log_copilot_callback_response() for ACK/Resolve tokens.
+function broth_log_copilot_menu_callback_response(string $callbackData, array $user, string $chatType, ?DateTimeImmutable $now = null): ?array {
+    if (!str_starts_with($callbackData, 'menu:')) return null;
+    if ($chatType !== 'private') {
+        return ['message' => 'The Broth Log assistant menu works in private chat.', 'reply_markup' => null, 'intent' => 'menu_group_denied'];
+    }
+    $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $parts = explode(':', $callbackData);
+    $route = $parts[1] ?? '';
+    $roleClass = broth_log_copilot_role_class($user);
+    $today = broth_log_business_date($now);
+
+    // Every menu: tap abandons any pending "Enter Date" free-text wait, except the one action that
+    // sets it (qdate:...:enter, handled below). Without this, tapping Cancel (which routes to
+    // menu:main) or navigating anywhere else would leave the context armed - the NEXT ordinary
+    // text message the user sends (e.g. a normal "B1 today" command) would then be wrongly
+    // swallowed as a date reply instead of reaching the real command parser.
+    if (!($route === 'qdate' && ($parts[4] ?? '') === 'enter')) {
+        run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id=?", [$user['telegram_user_id']]);
+    }
+
+    if ($route === 'main') {
+        return ['message' => broth_log_copilot_help_text(), 'reply_markup' => broth_log_copilot_menu_main_keyboard($roleClass), 'intent' => 'menu_main'];
+    }
+    if ($route === 'commands') {
+        return ['message' => broth_log_copilot_commands_text(), 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_commands'];
+    }
+    if ($route === 'today') {
+        $branches = $user['allowed_branch_list'] ?? [];
+        if (count($branches) === 1) return broth_log_copilot_menu_log_view($user, strtoupper($branches[0]), $today, $now);
+        return ['message' => "\u{1F4CB} Today's Broth Log", 'reply_markup' => broth_log_copilot_menu_branch_pick_keyboard($user, 'today', true), 'intent' => 'menu_branchpick'];
+    }
+    if ($route === 'issues_today') {
+        $branches = $user['allowed_branch_list'] ?? [];
+        if (count($branches) === 1) return broth_log_copilot_menu_issues_view($user, strtoupper($branches[0]), $today, true);
+        return ['message' => "\u{1F6A8} Today's Issues", 'reply_markup' => broth_log_copilot_menu_branch_pick_keyboard($user, 'issues_today', false), 'intent' => 'menu_branchpick'];
+    }
+    if ($route === 'open') return broth_log_copilot_menu_open_issues_view($user, false);
+    if ($route === 'open_critical') return broth_log_copilot_menu_open_issues_view($user, true);
+    if ($route === 'ceo_summary') return broth_log_copilot_menu_ceo_summary_view($user, $now);
+    if ($route === 'ceo_exceptions') return broth_log_copilot_menu_open_issues_view($user, true);
+
+    if ($route === 'branchpick') {
+        // menu:branchpick:<forView>
+        $forView = $parts[2] ?? '';
+        $label = $forView === 'logdate' ? "\u{1F5D3} Choose Date" : ($forView === 'issuedate' ? "\u{1F50E} Issues by Date" : "\u{1F4CB} Today's Broth Log");
+        $includeAll = in_array($forView, ['today'], true);
+        return ['message' => $label, 'reply_markup' => broth_log_copilot_menu_branch_pick_keyboard($user, $forView, $includeAll), 'intent' => 'menu_branchpick'];
+    }
+    if ($route === 'branchsel') {
+        // menu:branchsel:<forView>:<branch>
+        $forView = $parts[2] ?? '';
+        $branch = strtoupper($parts[3] ?? '');
+        if ($forView === 'today') return broth_log_copilot_menu_log_view($user, $branch, $today, $now);
+        if ($forView === 'issues_today') return broth_log_copilot_menu_issues_view($user, $branch, $today, true);
+        if ($forView === 'logdate') return ['message' => 'Choose Date', 'reply_markup' => broth_log_copilot_menu_quick_date_keyboard('log', $branch), 'intent' => 'menu_datepick'];
+        if ($forView === 'issuedate') return ['message' => 'Choose Date', 'reply_markup' => broth_log_copilot_menu_quick_date_keyboard('issues', $branch), 'intent' => 'menu_datepick'];
+        return null;
+    }
+    if ($route === 'qdate') {
+        // menu:qdate:<kind>:<branch>:<key>
+        $kind = $parts[2] ?? 'log';
+        $branch = strtoupper($parts[3] ?? '');
+        $key = $parts[4] ?? '';
+        if ($key === 'cancel') return ['message' => broth_log_copilot_help_text(), 'reply_markup' => broth_log_copilot_menu_main_keyboard($roleClass), 'intent' => 'menu_main'];
+        if ($key === 'enter') {
+            broth_log_copilot_menu_set_date_context($user['telegram_user_id'], $kind, $branch);
+            return ['message' => "Please enter the date you want to check.\n\nExamples:\n08/21/2026\n2026-08-21\nAugust 21", 'reply_markup' => broth_log_copilot_menu_date_cancel_keyboard(), 'intent' => 'menu_date_prompt'];
+        }
+        $date = $key === 'yesterday' ? broth_log_business_now($now)->modify('-1 day')->format('Y-m-d')
+            : ($key === '2d' ? broth_log_business_now($now)->modify('-2 days')->format('Y-m-d') : $today);
+        return $kind === 'issues' ? broth_log_copilot_menu_issues_view($user, $branch, $date, $date === $today) : broth_log_copilot_menu_log_view($user, $branch, $date, $now);
+    }
+    if ($route === 'log') {
+        $branch = strtoupper($parts[2] ?? '');
+        $date = $parts[3] ?? $today;
+        return broth_log_copilot_menu_log_view($user, $branch, $date, $now);
+    }
+    if ($route === 'fulllog') {
+        $branch = strtoupper($parts[2] ?? '');
+        $date = $parts[3] ?? $today;
+        return broth_log_copilot_menu_full_log_view($user, $branch, $date);
+    }
+    if ($route === 'issues') {
+        $branch = strtoupper($parts[2] ?? '');
+        $date = $parts[3] ?? $today;
+        return broth_log_copilot_menu_issues_view($user, $branch, $date, $date === $today);
+    }
+    return ['message' => "I didn't understand that action.", 'reply_markup' => ['inline_keyboard' => [broth_log_copilot_menu_back_row()]], 'intent' => 'menu_unknown'];
+}
+
 function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $now = null): array {
     if (!broth_log_copilot_enabled()) return [];
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
@@ -1620,8 +2094,9 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
                 continue;
             }
             if (($row['update_type'] ?? '') === 'callback_query') {
-                $response = broth_log_copilot_callback_response((string)$row['message_text'], $user, (string)$row['chat_id'], $now);
-                $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], (string)$response['message']);
+                $menuResponse = broth_log_copilot_menu_callback_response((string)$row['message_text'], $user, (string)($row['chat_type'] ?? ''), $now);
+                $response = $menuResponse ?? broth_log_copilot_callback_response((string)$row['message_text'], $user, (string)$row['chat_id'], $now);
+                $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], (string)$response['message'], $response['reply_markup'] ?? null);
                 if (!empty($send['sent'])) {
                     run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
                     $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $response['intent'], 'outbound' => 'sent'];
@@ -1632,6 +2107,26 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
                 $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $response['intent'], 'outbound' => 'failed', 'reason' => $reason];
                 continue;
             }
+
+            // Pending "Enter Date" reply from the menu takes priority over ordinary parsing -
+            // returns null (falls through unchanged) unless this exact sender has an unexpired
+            // menu_date context, so it can never intercept a normal text command.
+            $menuDateResponse = broth_log_copilot_menu_date_entry_response((string)$row['message_text'], $user, $now);
+            if ($menuDateResponse !== null) {
+                $intentLabel = $menuDateResponse['intent'];
+                unset($menuDateResponse['_reprompt']);
+                $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], (string)$menuDateResponse['message'], $menuDateResponse['reply_markup'] ?? null);
+                if (!empty($send['sent'])) {
+                    run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+                    $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $intentLabel, 'outbound' => 'sent'];
+                    continue;
+                }
+                $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
+                run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $intentLabel, 'outbound' => 'failed', 'reason' => $reason];
+                continue;
+            }
+
             $parsed = broth_log_copilot_parse((string)$row['message_text'], $user, $now);
             run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at)
                  VALUES (?,?,datetime('now', '+24 hours'),datetime('now'))", [
@@ -1639,8 +2134,19 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
                 json_encode(['last_parse' => $parsed, 'chat_id' => $row['chat_id']]),
             ]);
             $actionResponse = broth_log_copilot_message_action_response((string)$row['message_text'], $parsed, $user, (string)$row['chat_id'], $now);
-            $message = $actionResponse ? (string)$actionResponse['message'] : broth_log_copilot_format_response($parsed, $user);
-            $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $message);
+            if ($actionResponse) {
+                $message = (string)$actionResponse['message'];
+                $replyMarkup = null;
+            } elseif (($parsed['intent'] ?? '') === 'help') {
+                $helpResponse = broth_log_copilot_help_response($user, (string)($row['chat_type'] ?? ''));
+                $message = (string)$helpResponse['message'];
+                $replyMarkup = $helpResponse['reply_markup'] ?? null;
+                $actionResponse = ['intent' => $helpResponse['intent']];
+            } else {
+                $message = broth_log_copilot_format_response($parsed, $user);
+                $replyMarkup = null;
+            }
+            $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $message, $replyMarkup);
             if (!empty($send['sent'])) {
                 run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
                 $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $actionResponse['intent'] ?? $parsed['intent'], 'language' => $parsed['language'], 'outbound' => 'sent'];

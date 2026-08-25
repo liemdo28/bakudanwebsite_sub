@@ -106,7 +106,85 @@ def test_mobile_current_day_styles_prevent_horizontal_layout_pressure():
 
 def test_asset_version_was_bumped():
     html = text('broth-log.html')
-    assert 'daily-date-picker' in html
+    assert 'shared-range-editor' in html
+
+
+def test_dashboard_uses_paper_sop_ranges_and_texas_time():
+    js = text('js/broth-log-dashboard.js')
+    for phrase in [
+        'min: 30',
+        'max: 45',
+        'min: -20',
+        'max: 5',
+        'min: 350',
+        'max: 360',
+        'function dateFromBusinessTimeParts',
+        'function alignDateToBusinessDate',
+        "timeZone: BUSINESS_TIMEZONE",
+        "hour12: true",
+        "timeZoneName: 'short'",
+    ]:
+        assert phrase in js
+
+
+def test_current_day_cards_and_table_show_shift():
+    js = text('js/broth-log-dashboard.js')
+    css = text('css/broth-log.css')
+    for phrase in [
+        'displayShift(record.shift, record.submittedAt)',
+        'displayShift(row.shift, row.submittedAt)',
+        '<div><dt>Shift</dt><dd>',
+        '<span>Time</span><span>Item / Station</span><span>Employee</span><span>Shift</span>',
+    ]:
+        assert phrase in js
+    assert 'content: "Shift: "' in css
+
+
+def test_shift_filter_uses_inferred_am_pm_shifts():
+    js = text('js/broth-log-dashboard.js')
+    assert "inferShift(row.shift, row.submittedAt) !== state.filters.shift" in js
+    assert "option('AM', 'AM shift', state.filters.shift)" in js
+    assert "option('PM', 'PM shift', state.filters.shift)" in js
+    assert "state.records.map(r => r.shift).filter(Boolean)" not in js
+
+
+def test_manager_range_editor_tool_exists_and_recalculates():
+    js = text('js/broth-log-dashboard.js')
+    css = text('css/broth-log.css')
+    for phrase in [
+        "RANGE_STORAGE_KEY = 'brothTemperatureRangesV1'",
+        "RANGE_API = '/api/broth-log/ranges'",
+        'function rangeEditor()',
+        'data-action="toggleRanges"',
+        'id="rangeEditorForm"',
+        'data-range-min=',
+        'data-range-max=',
+        'Save ranges',
+        'data-action="resetRanges"',
+        'function saveRangesFromForm',
+        'function loadSharedRanges',
+        'function saveSharedRanges',
+        "localStorage.getItem('bkdn_token')",
+        'await saveSharedRanges(ranges)',
+        'rebuildRecordsWithCurrentRanges()',
+        'Shared ranges saved. Current readings recalculated for all managers.',
+    ]:
+        assert phrase in js
+    assert '.bd-range-tool' in css
+    assert '.bd-range-row' in css
+
+
+def test_shared_range_api_routes_exist():
+    api = text('api/index.php')
+    for phrase in [
+        "function validate_broth_log_ranges",
+        "$path === '/broth-log/ranges' && $METHOD === 'GET'",
+        "$path === '/broth-log/ranges' && in_array($METHOD, ['POST', 'PUT', 'PATCH'], true)",
+        "role_check($user, $EDIT)",
+        "broth_log_temperature_ranges",
+        "audit_log($user, 'broth_log_ranges_update'",
+    ]:
+        assert phrase in api
 
 
 def main() -> int:

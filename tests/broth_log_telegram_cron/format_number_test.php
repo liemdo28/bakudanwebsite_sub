@@ -41,5 +41,10 @@ expect_eq(substr_count($coreSource, 'rtrim('), 2, 'broth-log-core.php has exactl
 $cronSource = file_get_contents(__DIR__ . '/../../scripts/broth-log-telegram-cron.php');
 expect_eq(substr_count($cronSource, 'rtrim('), 0, 'the cron script itself no longer carries its own temperature-formatting logic (delegates to the canonical core)');
 expect_eq(function_exists('broth_log_critical_alerts_for_branch'), true, 'the cron script requires the canonical core, which defines the function it delegates to');
+expect_eq(broth_log_sop_label(['min' => 30, 'max' => 45]), '30F - 45F', 'SOP target label renders a paper-form range');
+expect_eq(broth_log_sop_label(['min' => -20, 'max' => 5]), '-20F - 5F', 'SOP target label renders a negative freezer range');
+expect_eq(broth_log_severity_for(['min' => 30, 'max' => 45], 42.0), 'safe', 'range severity treats in-range temperatures as safe');
+expect_eq(broth_log_severity_for(['min' => 30, 'max' => 45], 48.0), 'high', 'range severity measures variance above max');
+expect_eq(broth_log_severity_for(['min' => 350, 'max' => 360], 325.0), 'critical', 'fryer range no longer accepts the old 325F threshold');
 
 echo "\nAll broth-log-telegram-cron format_number tests passed.\n";

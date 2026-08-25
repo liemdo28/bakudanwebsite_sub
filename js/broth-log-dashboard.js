@@ -26,6 +26,8 @@
     };
     const BUSINESS_TIMEZONE = 'America/Chicago';
     const VALID_RANGES = new Set(['today', 'week', 'month', 'all']);
+    const RANGE_STORAGE_KEY = 'brothTemperatureRangesV1';
+    const RANGE_API = '/api/broth-log/ranges';
 
     const READING_FIELDS = [
         ['walkInCoolerProduce', 'Walk-In Cooler (Produce)', 'cold'],
@@ -81,141 +83,142 @@
         pastaBoilerRight: ['pasta boiler right']
     };
 
-    const TEMPERATURE_SOP = {
+    const DEFAULT_TEMPERATURE_SOP = {
         walkInCoolerProduce: {
             category: 'Cold Holding',
             item: 'Walk-in Cooler',
-            operator: '<=',
-            target: 40,
+            min: 30,
+            max: 45,
             correctiveAction: 'Close door, re-temp in 10 min, alert MOD if still high'
         },
         walkInFreezer: {
             category: 'Cold Holding',
             item: 'Walk-in Freezer',
-            operator: '<=',
-            target: 0,
+            min: -20,
+            max: 5,
             correctiveAction: 'Close door, alert MOD if above 0F'
         },
         prepAreaCooler: {
             category: 'Cold Holding',
             item: 'Prep Area Cooler',
-            operator: '<=',
-            target: 40,
+            min: 30,
+            max: 45,
             correctiveAction: 'Alert MOD; move product if above 40F'
         },
         bowlWarmer: {
             category: 'Hot Holding',
             item: 'Bowl Warmers',
-            operator: '>=',
-            target: 100,
+            min: 100,
+            max: 125,
             correctiveAction: 'Adjust warmer and re-temp'
         },
         ramenReachInTop: {
             category: 'Cold Holding',
             item: 'Ramen Refrigeration Top',
-            operator: '<=',
-            target: 40,
+            min: 30,
+            max: 45,
             correctiveAction: 'Do not serve exposed product if high; cool/replace'
         },
         ramenReachInBelow: {
             category: 'Cold Holding',
             item: 'Ramen Refrigeration Below',
-            operator: '<=',
-            target: 40,
+            min: 30,
+            max: 45,
             correctiveAction: 'Cover/cool/replace and alert MOD if high'
         },
         lineFreezer: {
             category: 'Cold Holding',
             item: 'Line Freezer',
-            operator: '<=',
-            target: 0,
+            min: -20,
+            max: 0,
             correctiveAction: 'Alert MOD; verify product condition'
         },
         seasonedEggs: {
             category: 'Hot Holding',
             item: 'Seasoned Eggs',
-            operator: '>=',
-            target: 100,
+            min: 95,
+            max: 105,
             correctiveAction: 'Must have designated timer; verify 4-hour holding'
         },
         slicedPorkHot: {
             category: 'Hot Holding',
             item: 'Pork Chashu',
-            operator: '>=',
-            target: 100,
+            min: 95,
+            max: 105,
             correctiveAction: 'Verify SOP; if below hot holding standard, do not serve'
         },
         dicedPorkHot: {
             category: 'Hot Holding',
             item: 'Pork Chashu',
-            operator: '>=',
-            target: 100,
+            min: 95,
+            max: 105,
             correctiveAction: 'Verify SOP; if below hot holding standard, do not serve'
         },
         tapasReachInTop: {
             category: 'Cold Holding',
             item: 'Tapas Refrigeration Top',
-            operator: '<=',
-            target: 40,
+            min: 30,
+            max: 45,
             correctiveAction: 'Do not serve exposed product if high; cool/replace'
         },
         chickenCold: {
             category: 'Cold Holding',
             item: 'Chicken Chashu',
-            operator: '<=',
-            target: 40,
+            min: 30,
+            max: 40,
             correctiveAction: 'If above 40F, cover/cool/replace and alert MOD'
         },
         porkCold: {
             category: 'Cold Holding',
             item: 'Pork Cold Holding',
-            operator: '<=',
-            target: 40,
+            min: 30,
+            max: 40,
             correctiveAction: 'If above 40F, cover/cool/replace and alert MOD'
         },
         tapasReachInBelow: {
             category: 'Cold Holding',
             item: 'Tapas Refrigeration Below',
-            operator: '<=',
-            target: 40,
+            min: 30,
+            max: 45,
             correctiveAction: 'Cover/cool/replace and alert MOD if high'
         },
         walkInProduceRecheck: {
             category: 'Cold Holding',
             item: 'Walk-in Cooler',
-            operator: '<=',
-            target: 40,
+            min: 30,
+            max: 45,
             correctiveAction: 'Close door, re-temp in 10 min, alert MOD if still high'
         },
         fryerLeft: {
             category: 'Cooking Equipment',
             item: 'Fryer 1',
-            operator: '>=',
-            target: 325,
+            min: 350,
+            max: 360,
             correctiveAction: 'Adjust temperature dial and alert MOD'
         },
         fryerRight: {
             category: 'Cooking Equipment',
             item: 'Fryer 2',
-            operator: '>=',
-            target: 325,
+            min: 350,
+            max: 360,
             correctiveAction: 'Adjust temperature dial and alert MOD'
         },
         pastaBoilerLeft: {
             category: 'Cooking Equipment',
             item: 'Pasta Boiler 1',
-            operator: '>=',
-            target: 200,
+            min: 200,
+            max: 220,
             correctiveAction: 'Adjust temp and re-temp in 10 min'
         },
         pastaBoilerRight: {
             category: 'Cooking Equipment',
             item: 'Pasta Boiler 2',
-            operator: '>=',
-            target: 200,
+            min: 200,
+            max: 220,
             correctiveAction: 'Adjust temp and re-temp in 10 min'
         }
     };
+    let TEMPERATURE_SOP = loadTemperatureSop();
 
     const SEVERITY_RULES = {
         warningMax: 2,
@@ -278,7 +281,9 @@
         timer: null,
         syncInFlight: null,
         showStoreSelector: false,
-        routeUnsupported: routeBranch.unsupported
+        routeUnsupported: routeBranch.unsupported,
+        rangeEditorOpen: false,
+        rangeEditorMessage: ''
     };
 
     const root = document.getElementById('broth-dashboard');
@@ -339,12 +344,99 @@
         return '';
     }
 
+    function cloneSopConfig(config) {
+        return Object.fromEntries(Object.entries(config).map(([key, sop]) => [key, { ...sop }]));
+    }
+
+    function loadStoredRanges() {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(RANGE_STORAGE_KEY) || '{}');
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function normalizeRange(min, max) {
+        const minValue = toNumber(min);
+        const maxValue = toNumber(max);
+        if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || minValue > maxValue) return null;
+        return { min: minValue, max: maxValue };
+    }
+
+    function loadTemperatureSop() {
+        const next = cloneSopConfig(DEFAULT_TEMPERATURE_SOP);
+        const stored = loadStoredRanges();
+        applyRangesToSop(next, stored);
+        return next;
+    }
+
+    function applyRangesToSop(sopConfig, ranges) {
+        const stored = ranges && typeof ranges === 'object' ? ranges : {};
+        Object.entries(stored).forEach(([key, range]) => {
+            if (!sopConfig[key]) return;
+            const normalized = normalizeRange(range && range.min, range && range.max);
+            if (normalized) Object.assign(sopConfig[key], normalized);
+        });
+    }
+
+    function saveTemperatureSop() {
+        localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(customRangesFromConfig(TEMPERATURE_SOP)));
+    }
+
+    function customRangesFromConfig(config) {
+        const ranges = {};
+        Object.entries(config).forEach(([key, sop]) => {
+            const defaults = DEFAULT_TEMPERATURE_SOP[key] || {};
+            if (sop.min !== defaults.min || sop.max !== defaults.max) ranges[key] = { min: sop.min, max: sop.max };
+        });
+        return ranges;
+    }
+
+    function hasCustomRanges() {
+        return Object.values(loadStoredRanges()).some(Boolean);
+    }
+
+    function authHeaders() {
+        const token = localStorage.getItem('bkdn_token') || '';
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
+    async function loadSharedRanges() {
+        try {
+            const response = await fetch(RANGE_API, { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const payload = await response.json();
+            if (!payload || typeof payload !== 'object' || !payload.ranges) return false;
+            localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(payload.ranges));
+            TEMPERATURE_SOP = loadTemperatureSop();
+            state.rangeEditorMessage = payload.updated_at ? `Shared ranges loaded: ${payload.updated_at}` : '';
+            return true;
+        } catch (error) {
+            state.rangeEditorMessage = 'Using saved browser ranges; shared range API was unavailable.';
+            return false;
+        }
+    }
+
+    async function saveSharedRanges(ranges) {
+        const response = await fetch(RANGE_API, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            body: JSON.stringify({ ranges })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok === false) {
+            throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+        }
+        return payload;
+    }
+
     function parseDateCell(cell) {
         const raw = cell && cell.v ? String(cell.v) : '';
         const formatted = cell && cell.f ? String(cell.f) : '';
         const match = raw.match(/Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)/);
         if (match) {
-            return new Date(Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6]));
+            return dateFromBusinessTimeParts(Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6]));
         }
         const parsed = new Date(formatted || raw);
         return Number.isNaN(parsed.getTime()) ? null : parsed;
@@ -357,11 +449,13 @@
     }
 
     function sopLabel(sop) {
+        if (sop && Number.isFinite(sop.min) && Number.isFinite(sop.max)) return `${fmtNumber(sop.min)}F - ${fmtNumber(sop.max)}F`;
         return sop ? `${sop.operator} ${sop.target}F` : 'No SOP target';
     }
 
     function isSopSafe(sop, temp) {
         if (!sop || temp === null) return false;
+        if (Number.isFinite(sop.min) && Number.isFinite(sop.max)) return temp >= sop.min && temp <= sop.max;
         if (sop.operator === '<=') return temp <= sop.target;
         if (sop.operator === '>=') return temp >= sop.target;
         return true;
@@ -369,6 +463,11 @@
 
     function varianceFromTarget(sop, temp) {
         if (!sop || temp === null) return 0;
+        if (Number.isFinite(sop.min) && Number.isFinite(sop.max)) {
+            if (temp < sop.min) return sop.min - temp;
+            if (temp > sop.max) return temp - sop.max;
+            return 0;
+        }
         if (sop.operator === '<=') return temp - sop.target;
         if (sop.operator === '>=') return sop.target - temp;
         return 0;
@@ -403,18 +502,31 @@
         const issueSeverity = severityToIssueSeverity(severityKey);
         if (severityKey === 'safe') return ['Safe', issueSeverity, severityKey, null];
 
-        const issueType = sop.operator === '<=' ? 'Temperature Too High' : 'Temperature Too Low';
+        const issueType = Number.isFinite(sop.min) && Number.isFinite(sop.max)
+            ? (temp < sop.min ? 'Temperature Too Low' : 'Temperature Too High')
+            : sop.operator === '<=' ? 'Temperature Too High' : 'Temperature Too Low';
         return [`${severityLabel(severityKey)}: target ${sopLabel(sop)}`, issueSeverity, severityKey, issueType];
     }
 
     function signedDeviation(reading) {
-        if (reading.temperature === null || reading.targetTemperature === null) return null;
+        if (reading.temperature === null) return null;
+        if (Number.isFinite(reading.targetMin) && Number.isFinite(reading.targetMax)) {
+            if (reading.temperature < reading.targetMin) return reading.temperature - reading.targetMin;
+            if (reading.temperature > reading.targetMax) return reading.temperature - reading.targetMax;
+            return 0;
+        }
+        if (reading.targetTemperature === null) return null;
         return reading.temperature - reading.targetTemperature;
     }
 
     function deviationText(reading) {
         const diff = signedDeviation(reading);
         if (diff === null) return 'Not recorded';
+        if (Number.isFinite(reading.targetMin) && Number.isFinite(reading.targetMax)) {
+            if (diff === 0) return 'Within target range';
+            const sign = diff > 0 ? '+' : '';
+            return `${sign}${fmtNumber(diff)}F ${diff > 0 ? 'above range' : 'below range'}`;
+        }
         const sign = diff > 0 ? '+' : '';
         if (reading.targetOperator === '<=') {
             return `${sign}${fmtNumber(diff)}F ${diff <= 0 ? 'below/equal limit' : 'above limit'}`;
@@ -425,7 +537,8 @@
     function currentMarker(reading) {
         const diff = signedDeviation(reading);
         if (diff === null) return 50;
-        const span = Math.max(8, Math.abs(reading.targetTemperature || 0) * 0.08, 6);
+        const reference = Number.isFinite(reading.targetMax) ? Math.max(Math.abs(reading.targetMax), Math.abs(reading.targetMin || 0)) : Math.abs(reading.targetTemperature || 0);
+        const span = Math.max(8, reference * 0.08, 6);
         return Math.max(4, Math.min(96, 50 + (diff / span) * 38));
     }
 
@@ -483,6 +596,71 @@
 
     function businessToday() {
         return chicagoDateParts().iso;
+    }
+
+    function businessDateKey(date) {
+        return date ? chicagoDateParts(date).iso : '';
+    }
+
+    function businessTimeParts(date) {
+        if (!date) return null;
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: BUSINESS_TIMEZONE,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        }).formatToParts(date).reduce((out, part) => {
+            out[part.type] = part.value;
+            return out;
+        }, {});
+        return {
+            year: Number(parts.year),
+            month: Number(parts.month),
+            day: Number(parts.day),
+            hour: Number(parts.hour) % 24,
+            minute: Number(parts.minute),
+            second: Number(parts.second)
+        };
+    }
+
+    function businessTimeOffsetMs(date) {
+        const parts = businessTimeParts(date);
+        if (!parts) return 0;
+        return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - date.getTime();
+    }
+
+    function dateFromBusinessTimeParts(year, monthIndex, day, hour, minute, second) {
+        const wallTimeUtc = Date.UTC(year, monthIndex, day, hour, minute, second || 0);
+        let date = new Date(wallTimeUtc);
+        for (let i = 0; i < 3; i += 1) {
+            date = new Date(wallTimeUtc - businessTimeOffsetMs(date));
+        }
+        return date;
+    }
+
+    function alignDateToBusinessDate(date, dateKey) {
+        if (!date || !isValidDateKey(dateKey) || businessDateKey(date) === dateKey) return date;
+        const parts = businessTimeParts(date);
+        const m = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!parts || !m) return date;
+        return dateFromBusinessTimeParts(Number(m[1]), Number(m[2]) - 1, Number(m[3]), parts.hour, parts.minute, parts.second);
+    }
+
+    function inferShift(value, date) {
+        const explicit = String(value || '').trim().toUpperCase();
+        if (/\bAM\b/.test(explicit)) return 'AM';
+        if (/\bPM\b/.test(explicit)) return 'PM';
+        const parts = businessTimeParts(date);
+        return parts ? (parts.hour < 12 ? 'AM' : 'PM') : '';
+    }
+
+    function displayShift(shift, date) {
+        const inferred = inferShift(shift, date);
+        return inferred ? `${inferred} shift` : 'No shift';
     }
 
     function isValidDateKey(value) {
@@ -587,8 +765,12 @@
         const idx = buildIndex(cols);
         const cell = field => idx[field] >= 0 ? row.c[idx[field]] : null;
         const text = field => String(valueOf(cell(field)) || '').trim();
-        const submittedDate = parseDateCell(cell('submittedAt'));
+        const rawSubmittedDate = parseDateCell(cell('submittedAt'));
         const branch = text('branch') || sheetBranch;
+        const businessDate = text('businessDate') || (rawSubmittedDate ? businessDateKey(rawSubmittedDate) : '');
+        const submittedDate = alignDateToBusinessDate(rawSubmittedDate, businessDate);
+        const businessTime = text('businessTime') || fmtTime(submittedDate);
+        const shift = text('shift') || inferShift(businessTime, submittedDate);
         const readings = READING_FIELDS.map(([key, label, category]) => {
             const temp = toNumber(valueOf(cell(key)));
             const sop = TEMPERATURE_SOP[key] || null;
@@ -607,6 +789,8 @@
                 sopItem: sop ? sop.item : label,
                 targetOperator: sop ? sop.operator : '',
                 targetTemperature: sop ? sop.target : null,
+                targetMin: sop ? sop.min : null,
+                targetMax: sop ? sop.max : null,
                 targetLabel: sopLabel(sop),
                 correctiveActionSop: sop ? sop.correctiveAction : ''
             };
@@ -643,8 +827,7 @@
         const measured = readings.filter(r => r.temperature !== null);
         const compliant = readings.filter(r => r.severity === 'ok').length;
         const s = stats(measured.map(r => r.temperature));
-        const businessDate = text('businessDate') || (submittedDate ? submittedDate.toISOString().slice(0, 10) : '');
-        const idParts = [text('responseId'), branch, businessDate, text('businessTime'), text('employeeName'), submittedDate ? submittedDate.toISOString() : ''];
+        const idParts = [text('responseId'), branch, businessDate, businessTime, text('employeeName'), submittedDate ? submittedDate.toISOString() : ''];
         const record = {
             id: idParts.filter(Boolean).join('|'),
             sourceSheetId: SHEETS[sheetBranch].id,
@@ -652,8 +835,8 @@
             branch,
             submittedAt: submittedDate,
             businessDate,
-            businessTime: text('businessTime'),
-            shift: text('shift'),
+            businessTime,
+            shift,
             employeeName: text('employeeName') || 'Unassigned',
             notes: text('notes'),
             correctiveAction: text('correctiveAction'),
@@ -677,6 +860,86 @@
         record.validation.warnings = record.validation.missingRequired.map(field => `Missing required field: ${field}`);
         record.revisionHash = fingerprint(record);
         return record;
+    }
+
+    function rebuildRecordWithCurrentRanges(record) {
+        const readings = record.readings.map(reading => {
+            const sop = TEMPERATURE_SOP[reading.key] || null;
+            const [status, severity, severityKey, issueType] = statusFor(reading.key, reading.category, reading.temperature);
+            return {
+                ...reading,
+                status,
+                severity,
+                severityKey,
+                issueType,
+                sopCategory: sop ? sop.category : '',
+                sopItem: sop ? sop.item : reading.label,
+                targetOperator: sop ? sop.operator : '',
+                targetTemperature: sop ? sop.target : null,
+                targetMin: sop ? sop.min : null,
+                targetMax: sop ? sop.max : null,
+                targetLabel: sopLabel(sop),
+                correctiveActionSop: sop ? sop.correctiveAction : ''
+            };
+        });
+        const issues = readings
+            .filter(reading => reading.issueType)
+            .map(reading => ({
+                type: reading.issueType,
+                severity: reading.severity,
+                severityKey: reading.severityKey,
+                station: reading.label,
+                target: reading.targetLabel,
+                sopItem: reading.sopItem,
+                owner: record.employeeName || 'Unassigned',
+                status: record.correctiveAction ? 'Closed' : reading.severity === 'critical' ? 'Escalated' : 'Open',
+                createdAt: record.submittedAt,
+                closedAt: record.correctiveAction ? record.submittedAt : null,
+                resolution: record.correctiveAction || reading.correctiveActionSop,
+                preventiveAction: record.managerComment
+            }));
+        if (record.notes) {
+            issues.push({
+                type: 'Manager Note',
+                severity: 'warn',
+                station: 'Log',
+                owner: record.employeeName || 'Unassigned',
+                status: record.correctiveAction ? 'Closed' : 'Pending',
+                createdAt: record.submittedAt,
+                closedAt: record.correctiveAction ? record.submittedAt : null,
+                resolution: record.correctiveAction,
+                preventiveAction: record.managerComment
+            });
+        }
+        const measured = readings.filter(r => r.temperature !== null);
+        const compliant = readings.filter(r => r.severity === 'ok').length;
+        const s = stats(measured.map(r => r.temperature));
+        const next = {
+            ...record,
+            readings,
+            issues,
+            metrics: {
+                averageTemperature: s.avg,
+                highestTemperature: s.max,
+                lowestTemperature: s.min,
+                standardDeviation: s.std,
+                temperatureDrift: s.max - s.min,
+                complianceRate: readings.length ? compliant / readings.length : 0,
+                missingReadings: readings.length - measured.length,
+                riskScore: Math.min(100, issues.reduce((n, issue) => n + (issue.severity === 'critical' ? 18 : 8), 0))
+            }
+        };
+        next.revisionHash = fingerprint(next);
+        return next;
+    }
+
+    function rebuildRecordsWithCurrentRanges() {
+        Object.keys(state.recordsByBranch).forEach(branch => {
+            const rows = (state.recordsByBranch[branch] || []).map(rebuildRecordWithCurrentRanges);
+            state.recordsByBranch[branch] = rows;
+            state.recordIndexByBranch[branch] = Object.fromEntries(rows.map(row => [row.id, row]));
+        });
+        rebuildVisibleRecords();
     }
 
     const googleSheetsDataSource = {
@@ -848,7 +1111,7 @@
             if (state.filters.query && !haystack.includes(state.filters.query.toLowerCase())) return false;
             if (state.filters.branch !== 'all' && state.filters.branch !== 'current' && row.branch !== state.filters.branch) return false;
             if (state.filters.employee !== 'all' && row.employeeName !== state.filters.employee) return false;
-            if (state.filters.shift !== 'all' && row.shift !== state.filters.shift) return false;
+            if (state.filters.shift !== 'all' && inferShift(row.shift, row.submittedAt) !== state.filters.shift) return false;
             if (state.filters.issue === 'open' && !row.issues.some(i => i.status !== 'Closed')) return false;
             if (state.filters.issue === 'critical' && !row.issues.some(i => i.severity === 'critical')) return false;
             if (state.filters.issue === 'closed' && !row.issues.some(i => i.status === 'Closed')) return false;
@@ -930,7 +1193,25 @@
     }
 
     function fmtDate(d) {
-        return d ? d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+        return d ? new Intl.DateTimeFormat('en-US', {
+            timeZone: BUSINESS_TIMEZONE,
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+            timeZoneName: 'short'
+        }).format(d) : '-';
+    }
+
+    function fmtTime(d) {
+        return d ? new Intl.DateTimeFormat('en-US', {
+            timeZone: BUSINESS_TIMEZONE,
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+            timeZoneName: 'short'
+        }).format(d) : '';
     }
 
     function statusPill(row) {
@@ -948,9 +1229,41 @@
         return items.map(([id, label]) => `<button class="${state.activeView === id ? 'active' : ''}" data-view="${id}">${label}</button>`).join('');
     }
 
+    function rangeEditor() {
+        return `<section class="bd-card bd-section bd-range-tool" aria-label="Temperature range settings">
+            <div class="bd-section-head">
+                <h2>Range settings</h2>
+                <span>${hasCustomRanges() ? 'Custom ranges active' : 'Using default paper ranges'}</span>
+            </div>
+            ${state.rangeEditorMessage ? `<div class="bd-range-message">${esc(state.rangeEditorMessage)}</div>` : ''}
+            <form id="rangeEditorForm">
+                <div class="bd-range-grid" role="table" aria-label="Editable temperature target ranges">
+                    <div class="bd-range-row bd-range-header" role="row">
+                        <span>Item / Station</span><span>Default</span><span>Min F</span><span>Max F</span>
+                    </div>
+                    ${READING_FIELDS.map(([key, label]) => {
+                        const sop = TEMPERATURE_SOP[key] || {};
+                        const defaults = DEFAULT_TEMPERATURE_SOP[key] || {};
+                        const changed = sop.min !== defaults.min || sop.max !== defaults.max;
+                        return `<div class="bd-range-row ${changed ? 'changed' : ''}" role="row">
+                            <strong>${esc(label)}</strong>
+                            <span>${esc(sopLabel(defaults))}</span>
+                            <input data-range-min="${esc(key)}" type="number" step="0.1" value="${esc(sop.min)}" aria-label="${esc(label)} minimum temperature">
+                            <input data-range-max="${esc(key)}" type="number" step="0.1" value="${esc(sop.max)}" aria-label="${esc(label)} maximum temperature">
+                        </div>`;
+                    }).join('')}
+                </div>
+                <div class="bd-range-actions">
+                    <button class="bd-btn primary" type="submit">Save ranges</button>
+                    <button class="bd-btn" type="button" data-action="resetRanges">Reset to default</button>
+                    <button class="bd-btn" type="button" data-action="toggleRanges">Close</button>
+                </div>
+            </form>
+        </section>`;
+    }
+
     function filters(records) {
         const employees = [...new Set(state.records.map(r => r.employeeName))].sort();
-        const shifts = [...new Set(state.records.map(r => r.shift).filter(Boolean))].sort();
         return `
             <div class="bd-primary-filters">
                 <button class="bd-btn bd-today-btn ${isViewingToday() ? 'active' : ''}" data-action="today" aria-pressed="${isViewingToday()}">Today</button>
@@ -984,7 +1297,8 @@
             </select>
             <select data-filter="shift">
                 ${option('all', 'All shifts', state.filters.shift)}
-                ${shifts.map(s => option(s, s, state.filters.shift)).join('')}
+                ${option('AM', 'AM shift', state.filters.shift)}
+                ${option('PM', 'PM shift', state.filters.shift)}
             </select>
             <select data-filter="temp">
                 ${option('all', 'All readings', state.filters.temp)}
@@ -1072,7 +1386,7 @@
     function latestRecordLabel(records) {
         if (!records.length) return '';
         const latest = records.slice().sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0))[0];
-        return `${latest.branch} ${latest.businessTime || fmtDate(latest.submittedAt)} by ${latest.employeeName}`;
+        return `${latest.branch} ${fmtDate(latest.submittedAt)} · ${displayShift(latest.shift, latest.submittedAt)} by ${latest.employeeName}`;
     }
 
     function todayCount(label, value, key) {
@@ -1096,7 +1410,8 @@
                         <div><dt>Recorded</dt><dd>${reading ? fmtTemp(reading.temperature) : 'Not recorded'}</dd></div>
                         <div><dt>Required</dt><dd>${esc(issue.target || (reading ? reading.targetLabel : 'No SOP target'))}</dd></div>
                         <div><dt>Status</dt><dd>${esc(issue.status)}</dd></div>
-                        <div><dt>Time</dt><dd>${esc(row ? `${row.businessTime || fmtDate(row.submittedAt)}` : '-')}</dd></div>
+                        <div><dt>Time</dt><dd>${esc(row ? fmtDate(row.submittedAt) : '-')}</dd></div>
+                        <div><dt>Shift</dt><dd>${esc(row ? displayShift(row.shift, row.submittedAt) : '-')}</dd></div>
                         <div><dt>Employee</dt><dd>${esc(row ? row.employeeName : '-')}</dd></div>
                     </dl>
                     <p><b>Corrective action:</b> ${esc(issue.resolution || (reading ? reading.correctiveActionSop : '') || 'Follow SOP and notify MOD.')}</p>
@@ -1118,7 +1433,8 @@
                 <dl>
                     <div><dt>Entered</dt><dd>${fmtTemp(reading.temperature)}</dd></div>
                     <div><dt>Target</dt><dd>${esc(reading.targetLabel)}</dd></div>
-                    <div><dt>Time</dt><dd>${esc(record.businessTime || fmtDate(record.submittedAt))}</dd></div>
+                    <div><dt>Time</dt><dd>${esc(fmtDate(record.submittedAt))}</dd></div>
+                    <div><dt>Shift</dt><dd>${esc(displayShift(record.shift, record.submittedAt))}</dd></div>
                     <div><dt>Employee</dt><dd>${esc(record.employeeName)}</dd></div>
                 </dl>
                 <p><b>Corrective action:</b> ${esc(record.correctiveAction || reading.correctiveActionSop || 'Follow SOP and notify MOD.')}</p>
@@ -1184,9 +1500,9 @@
 
     function journalItem(row, selected) {
         return `<button class="bd-journal-item ${selected ? 'selected' : ''}" data-select-record="${esc(row.id)}" role="option" aria-selected="${selected ? 'true' : 'false'}">
-            <span class="bd-journal-date">${esc(row.businessDate)} <b>${esc(row.businessTime || fmtDate(row.submittedAt))}</b></span>
+            <span class="bd-journal-date">${esc(row.businessDate)} <b>${esc(fmtDate(row.submittedAt))}</b></span>
             <strong>${esc(row.employeeName)}</strong>
-            <span>${esc(row.shift || 'No shift')} · Avg ${fmtTemp(row.metrics.averageTemperature)}</span>
+            <span>${esc(displayShift(row.shift, row.submittedAt))} · Avg ${fmtTemp(row.metrics.averageTemperature)}</span>
             <span>${statusPill(row)} <small>${row.issues.length} issue${row.issues.length === 1 ? '' : 's'}</small></span>
         </button>`;
     }
@@ -1215,7 +1531,7 @@
             </div>
             <div class="bd-daily-table" role="table" aria-label="Daily recorded Broth Log items">
                 <div role="row" class="bd-daily-row bd-daily-header">
-                    <span>Time</span><span>Item / Station</span><span>Employee</span><span>Entered Temp</span><span>Target</span><span>Status</span><span>Corrective Action</span>
+                    <span>Time</span><span>Item / Station</span><span>Employee</span><span>Shift</span><span>Entered Temp</span><span>Target</span><span>Status</span><span>Corrective Action</span>
                 </div>
                 ${rows.map(dailyReadingRow).join('')}
             </div>
@@ -1233,9 +1549,10 @@
     function dailyReadingRow({ record, reading }) {
         const needsAction = reading.severityKey !== 'safe';
         return `<div role="row" class="bd-daily-row ${esc(reading.severityKey)}">
-            <span>${esc(record.businessTime || fmtDate(record.submittedAt))}</span>
+            <span>${esc(fmtDate(record.submittedAt))}</span>
             <strong>${esc(reading.label)}</strong>
             <span>${esc(record.employeeName)}</span>
+            <span>${esc(displayShift(record.shift, record.submittedAt))}</span>
             <b>${fmtTemp(reading.temperature)}</b>
             <span>${esc(reading.targetLabel)}</span>
             <span class="bd-pill ${esc(reading.severityKey)}">${esc(severityLabel(reading.severityKey))}</span>
@@ -1436,6 +1753,7 @@
                             <p>${esc(SHEETS[state.activeBranch].name)} · Daily manager review</p>
                         </div>
                         <div class="bd-actions">
+                            <button class="bd-btn ${state.rangeEditorOpen ? 'primary' : ''}" data-action="toggleRanges" aria-pressed="${state.rangeEditorOpen}">Ranges</button>
                             <details class="bd-action-menu">
                                 <summary>Export</summary>
                                 <div>
@@ -1448,6 +1766,7 @@
                     </div>
                     ${state.errors.map(e => `<div class="bd-error">${esc(e)}</div>`).join('')}
                     <div class="bd-filters">${filters(records)}</div>
+                    ${state.rangeEditorOpen ? rangeEditor() : ''}
                     ${renderView(records, summary)}
                     <details class="bd-system-info">
                         <summary>System info</summary>
@@ -1488,8 +1807,8 @@
         return `
             <div class="bd-detail-head">
                 <div>
-                    <h2>${esc(row.branch)} · ${esc(row.businessDate)} ${esc(row.businessTime)}</h2>
-                    <div class="bd-muted">${esc(row.employeeName)} · ${esc(row.shift)} · ${statusPill(row)}</div>
+                    <h2>${esc(row.branch)} · ${esc(row.businessDate)} ${esc(fmtDate(row.submittedAt))}</h2>
+                    <div class="bd-muted">${esc(row.employeeName)} · ${esc(displayShift(row.shift, row.submittedAt))} · ${statusPill(row)}</div>
                 </div>
                 <button class="bd-icon-btn bd-drawer-close" data-close>X</button>
             </div>
@@ -1508,7 +1827,7 @@
                     <strong>Action Required</strong>
                     <div>${actionReadings.map(reading => `<span class="${esc(reading.severityKey)}">${esc(reading.label)} · ${esc(severityLabel(reading.severityKey))} · ${esc(deviationText(reading))}</span>`).join('')}</div>
                 </div>` : ''}
-                <div class="bd-muted">Each row compares the original reading directly against that station's SOP threshold. SOP and Current markers use a per-station deviation scale.</div>
+                <div class="bd-muted">Each row compares the original reading directly against that station's SOP target range. SOP and Current markers use a per-station deviation scale.</div>
                 <div class="bd-temp-groups">${Object.entries(grouped).map(([group, readings]) => `
                     <section class="bd-temp-group">
                         <h3>${esc(group)}</h3>
@@ -1519,7 +1838,7 @@
             <section class="bd-card bd-section"><h2>Issues</h2>${issueList(row.issues)}</section>
             <section class="bd-card bd-section"><h2>Timeline</h2>${selectedTimeline(row)}</section>
             <section class="bd-card bd-section"><h2>Compliance</h2>${selectedCompliance(row)}</section>
-            <section class="bd-card bd-section"><h2>Employee / Metadata</h2><div class="bd-detail-grid">${field('Employee', row.employeeName)}${field('Shift', row.shift)}${field('Record ID', row.responseId || row.id.slice(0, 42))}${field('Source', row.sourceTab)}</div></section>
+            <section class="bd-card bd-section"><h2>Employee / Metadata</h2><div class="bd-detail-grid">${field('Employee', row.employeeName)}${field('Shift', displayShift(row.shift, row.submittedAt))}${field('Record ID', row.responseId || row.id.slice(0, 42))}${field('Source', row.sourceTab)}</div></section>
             <section class="bd-card bd-section"><h2>Notes</h2><p>${esc(row.notes || 'No notes')}</p><p>${esc(row.correctiveAction || 'No corrective action')}</p><p class="bd-muted">${esc(row.managerComment || 'No manager comment')}</p></section>
         `;
     }
@@ -1647,6 +1966,11 @@
             window.history.replaceState(null, '', url);
             syncSheets({ force: true });
         });
+        const rangeForm = root.querySelector('#rangeEditorForm');
+        if (rangeForm) rangeForm.addEventListener('submit', event => {
+            event.preventDefault();
+            saveRangesFromForm(rangeForm);
+        });
         root.querySelectorAll('[data-detail]').forEach(btn => btn.addEventListener('click', () => {
             const row = state.records.find(r => r.id === btn.dataset.detail);
             const drawer = root.querySelector('#detailDrawer');
@@ -1660,6 +1984,14 @@
 
     function actions(action) {
         if (action === 'sync') syncSheets({ force: true });
+        if (action === 'toggleRanges') {
+            state.rangeEditorOpen = !state.rangeEditorOpen;
+            state.rangeEditorMessage = '';
+            render();
+        }
+        if (action === 'resetRanges') {
+            resetSharedRanges();
+        }
         if (action === 'today') {
             state.filters.dateRange = 'today';
             state.filters.selectedDate = businessToday();
@@ -1691,6 +2023,57 @@
         if (action === 'print') window.print();
         if (action === 'csv') download('broth-log.csv', csv(filteredRecords()), 'text/csv');
         if (action === 'excel') download('broth-log.xls', excel(filteredRecords()), 'application/vnd.ms-excel');
+    }
+
+    async function saveRangesFromForm(form) {
+        const next = cloneSopConfig(TEMPERATURE_SOP);
+        const invalid = [];
+        READING_FIELDS.forEach(([key, label]) => {
+            const minInput = form.querySelector(`[data-range-min="${key}"]`);
+            const maxInput = form.querySelector(`[data-range-max="${key}"]`);
+            const normalized = normalizeRange(minInput ? minInput.value : '', maxInput ? maxInput.value : '');
+            if (!normalized) {
+                invalid.push(label);
+                return;
+            }
+            Object.assign(next[key], normalized);
+        });
+        if (invalid.length) {
+            state.rangeEditorOpen = true;
+            state.rangeEditorMessage = `Check min/max for: ${invalid.join(', ')}`;
+            render();
+            return;
+        }
+        const ranges = customRangesFromConfig(next);
+        try {
+            const payload = await saveSharedRanges(ranges);
+            localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(payload.ranges || ranges));
+            TEMPERATURE_SOP = loadTemperatureSop();
+            rebuildRecordsWithCurrentRanges();
+            state.rangeEditorOpen = true;
+            state.rangeEditorMessage = 'Shared ranges saved. Current readings recalculated for all managers.';
+            render();
+        } catch (error) {
+            state.rangeEditorOpen = true;
+            state.rangeEditorMessage = `Could not save shared ranges: ${error.message}. Sign in as a manager/admin and try again.`;
+            render();
+        }
+    }
+
+    async function resetSharedRanges() {
+        try {
+            const payload = await saveSharedRanges({});
+            localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(payload.ranges || {}));
+            TEMPERATURE_SOP = loadTemperatureSop();
+            rebuildRecordsWithCurrentRanges();
+            state.rangeEditorOpen = true;
+            state.rangeEditorMessage = 'Shared ranges reset to the default paper ranges.';
+            render();
+        } catch (error) {
+            state.rangeEditorOpen = true;
+            state.rangeEditorMessage = `Could not reset shared ranges: ${error.message}. Sign in as a manager/admin and try again.`;
+            render();
+        }
     }
 
     function updateRangeUrl(range) {
@@ -1756,8 +2139,14 @@
         state.timer = window.setInterval(() => syncSheets(), state.refreshSeconds * 1000);
     }
 
-    render();
-    window.addEventListener('popstate', applyUrlState);
-    syncSheets();
-    scheduleSync();
+    async function initDashboard() {
+        render();
+        window.addEventListener('popstate', applyUrlState);
+        const loadedSharedRanges = await loadSharedRanges();
+        if (loadedSharedRanges) render();
+        syncSheets();
+        scheduleSync();
+    }
+
+    initDashboard();
 }());

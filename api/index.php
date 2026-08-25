@@ -1113,6 +1113,45 @@ function telegram_cron_or_admin(): ?array {
     return $user;
 }
 
+function broth_log_range_keys(): array {
+    return [
+        'walkInCoolerProduce', 'walkInFreezer', 'prepAreaCooler', 'bowlWarmer',
+        'ramenReachInTop', 'ramenReachInBelow', 'lineFreezer', 'seasonedEggs',
+        'slicedPorkHot', 'dicedPorkHot', 'tapasReachInTop', 'chickenCold',
+        'porkCold', 'tapasReachInBelow', 'walkInProduceRecheck', 'fryerLeft',
+        'fryerRight', 'pastaBoilerLeft', 'pastaBoilerRight',
+    ];
+}
+
+function broth_log_ranges_from_settings(): array {
+    $row = q1("SELECT value,updated_at FROM settings WHERE key='broth_log_temperature_ranges'");
+    $ranges = [];
+    if ($row) {
+        $decoded = json_decode((string)$row['value'], true);
+        if (is_array($decoded)) $ranges = $decoded;
+    }
+    return ['ranges' => $ranges, 'updated_at' => $row['updated_at'] ?? null];
+}
+
+function validate_broth_log_ranges($input): array {
+    if (!is_array($input)) err('ranges must be an object.', 422);
+    $allowed = array_flip(broth_log_range_keys());
+    $ranges = [];
+    foreach ($input as $key => $range) {
+        if (!isset($allowed[$key])) err('Unknown range key: ' . $key, 422);
+        if (!is_array($range)) err('Range for ' . $key . ' must be an object.', 422);
+        if (!array_key_exists('min', $range) || !array_key_exists('max', $range)) err('Range for ' . $key . ' requires min and max.', 422);
+        if (!is_numeric($range['min']) || !is_numeric($range['max'])) err('Range for ' . $key . ' must be numeric.', 422);
+        $min = (float)$range['min'];
+        $max = (float)$range['max'];
+        if (!is_finite($min) || !is_finite($max) || $min > $max || $min < -500 || $max > 500) {
+            err('Invalid min/max for ' . $key . '.', 422);
+        }
+        $ranges[$key] = ['min' => $min + 0, 'max' => $max + 0];
+    }
+    return $ranges;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // ── AUTH ─────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────
@@ -1158,6 +1197,25 @@ if ($path === '/auth/change-password' && $METHOD === 'POST') {
     run("UPDATE users SET password_hash=?, updated_at=datetime('now') WHERE id=?",
         [password_hash($new, PASSWORD_BCRYPT), $user['id']]);
     ok(['success' => true]);
+}
+
+// ── BROTH LOG RANGES ─────────────────────────────────────────────────
+if ($path === '/broth-log/ranges' && $METHOD === 'GET') {
+    $config = broth_log_ranges_from_settings();
+    ok(['ranges' => $config['ranges'], 'updated_at' => $config['updated_at']]);
+}
+
+if ($path === '/broth-log/ranges' && in_array($METHOD, ['POST', 'PUT', 'PATCH'], true)) {
+    $user = auth();
+    role_check($user, $EDIT);
+    $ranges = validate_broth_log_ranges($BODY['ranges'] ?? null);
+    $before = broth_log_ranges_from_settings();
+    run("INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES ('broth_log_temperature_ranges',?,datetime('now'))", [
+        json_encode($ranges, JSON_UNESCAPED_SLASHES),
+    ]);
+    $after = broth_log_ranges_from_settings();
+    audit_log($user, 'broth_log_ranges_update', 'settings', null, $before['ranges'], $after['ranges']);
+    ok(['success' => true, 'ranges' => $after['ranges'], 'updated_at' => $after['updated_at']]);
 }
 
 // ── BROTH LOG TELEGRAM ───────────────────────────────────────────────

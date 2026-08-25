@@ -60,25 +60,25 @@ const BROTH_LOG_READINGS = [
     ['pastaBoilerRight', 'Pasta Boiler Right', 'boiler'],
 ];
 const BROTH_LOG_SOP = [
-    'walkInCoolerProduce' => ['category' => 'Cold Holding', 'item' => 'Walk-in Cooler', 'operator' => '<=', 'target' => 40, 'action' => 'Close door, re-temp in 10 min, alert MOD if still high'],
-    'walkInFreezer' => ['category' => 'Cold Holding', 'item' => 'Walk-in Freezer', 'operator' => '<=', 'target' => 0, 'action' => 'Close door, alert MOD if above 0F'],
-    'prepAreaCooler' => ['category' => 'Cold Holding', 'item' => 'Prep Area Cooler', 'operator' => '<=', 'target' => 40, 'action' => 'Alert MOD; move product if above 40F'],
-    'bowlWarmer' => ['category' => 'Hot Holding', 'item' => 'Bowl Warmers', 'operator' => '>=', 'target' => 100, 'action' => 'Adjust warmer and re-temp'],
-    'ramenReachInTop' => ['category' => 'Cold Holding', 'item' => 'Ramen Refrigeration Top', 'operator' => '<=', 'target' => 40, 'action' => 'Do not serve exposed product if high; cool/replace'],
-    'ramenReachInBelow' => ['category' => 'Cold Holding', 'item' => 'Ramen Refrigeration Below', 'operator' => '<=', 'target' => 40, 'action' => 'Cover/cool/replace and alert MOD if high'],
-    'lineFreezer' => ['category' => 'Cold Holding', 'item' => 'Line Freezer', 'operator' => '<=', 'target' => 0, 'action' => 'Alert MOD; verify product condition'],
-    'seasonedEggs' => ['category' => 'Hot Holding', 'item' => 'Seasoned Eggs', 'operator' => '>=', 'target' => 100, 'action' => 'Must have designated timer; verify 4-hour holding'],
-    'slicedPorkHot' => ['category' => 'Hot Holding', 'item' => 'Pork Chashu', 'operator' => '>=', 'target' => 100, 'action' => 'Verify SOP; if below hot holding standard, do not serve'],
-    'dicedPorkHot' => ['category' => 'Hot Holding', 'item' => 'Pork Chashu', 'operator' => '>=', 'target' => 100, 'action' => 'Verify SOP; if below hot holding standard, do not serve'],
-    'tapasReachInTop' => ['category' => 'Cold Holding', 'item' => 'Tapas Refrigeration Top', 'operator' => '<=', 'target' => 40, 'action' => 'Do not serve exposed product if high; cool/replace'],
-    'chickenCold' => ['category' => 'Cold Holding', 'item' => 'Chicken Chashu', 'operator' => '<=', 'target' => 40, 'action' => 'If above 40F, cover/cool/replace and alert MOD'],
-    'porkCold' => ['category' => 'Cold Holding', 'item' => 'Pork Cold Holding', 'operator' => '<=', 'target' => 40, 'action' => 'If above 40F, cover/cool/replace and alert MOD'],
-    'tapasReachInBelow' => ['category' => 'Cold Holding', 'item' => 'Tapas Refrigeration Below', 'operator' => '<=', 'target' => 40, 'action' => 'Cover/cool/replace and alert MOD if high'],
-    'walkInProduceRecheck' => ['category' => 'Cold Holding', 'item' => 'Walk-in Cooler', 'operator' => '<=', 'target' => 40, 'action' => 'Close door, re-temp in 10 min, alert MOD if still high'],
-    'fryerLeft' => ['category' => 'Cooking Equipment', 'item' => 'Fryer 1', 'operator' => '>=', 'target' => 325, 'action' => 'Adjust temperature dial and alert MOD'],
-    'fryerRight' => ['category' => 'Cooking Equipment', 'item' => 'Fryer 2', 'operator' => '>=', 'target' => 325, 'action' => 'Adjust temperature dial and alert MOD'],
-    'pastaBoilerLeft' => ['category' => 'Cooking Equipment', 'item' => 'Pasta Boiler 1', 'operator' => '>=', 'target' => 200, 'action' => 'Adjust temp and re-temp in 10 min'],
-    'pastaBoilerRight' => ['category' => 'Cooking Equipment', 'item' => 'Pasta Boiler 2', 'operator' => '>=', 'target' => 200, 'action' => 'Adjust temp and re-temp in 10 min'],
+    'walkInCoolerProduce' => ['category' => 'Cold Holding', 'item' => 'Walk-in Cooler', 'min' => 30, 'max' => 45, 'action' => 'Close door, re-temp in 10 min, alert MOD if still high'],
+    'walkInFreezer' => ['category' => 'Cold Holding', 'item' => 'Walk-in Freezer', 'min' => -20, 'max' => 5, 'action' => 'Close door, alert MOD if above 0F'],
+    'prepAreaCooler' => ['category' => 'Cold Holding', 'item' => 'Prep Area Cooler', 'min' => 30, 'max' => 45, 'action' => 'Alert MOD; move product if above 40F'],
+    'bowlWarmer' => ['category' => 'Hot Holding', 'item' => 'Bowl Warmers', 'min' => 100, 'max' => 125, 'action' => 'Adjust warmer and re-temp'],
+    'ramenReachInTop' => ['category' => 'Cold Holding', 'item' => 'Ramen Refrigeration Top', 'min' => 30, 'max' => 45, 'action' => 'Do not serve exposed product if high; cool/replace'],
+    'ramenReachInBelow' => ['category' => 'Cold Holding', 'item' => 'Ramen Refrigeration Below', 'min' => 30, 'max' => 45, 'action' => 'Cover/cool/replace and alert MOD if high'],
+    'lineFreezer' => ['category' => 'Cold Holding', 'item' => 'Line Freezer', 'min' => -20, 'max' => 0, 'action' => 'Alert MOD; verify product condition'],
+    'seasonedEggs' => ['category' => 'Hot Holding', 'item' => 'Seasoned Eggs', 'min' => 95, 'max' => 105, 'action' => 'Must have designated timer; verify 4-hour holding'],
+    'slicedPorkHot' => ['category' => 'Hot Holding', 'item' => 'Pork Chashu', 'min' => 95, 'max' => 105, 'action' => 'Verify SOP; if below hot holding standard, do not serve'],
+    'dicedPorkHot' => ['category' => 'Hot Holding', 'item' => 'Pork Chashu', 'min' => 95, 'max' => 105, 'action' => 'Verify SOP; if below hot holding standard, do not serve'],
+    'tapasReachInTop' => ['category' => 'Cold Holding', 'item' => 'Tapas Refrigeration Top', 'min' => 30, 'max' => 45, 'action' => 'Do not serve exposed product if high; cool/replace'],
+    'chickenCold' => ['category' => 'Cold Holding', 'item' => 'Chicken Chashu', 'min' => 30, 'max' => 40, 'action' => 'If above 40F, cover/cool/replace and alert MOD'],
+    'porkCold' => ['category' => 'Cold Holding', 'item' => 'Pork Cold Holding', 'min' => 30, 'max' => 40, 'action' => 'If above 40F, cover/cool/replace and alert MOD'],
+    'tapasReachInBelow' => ['category' => 'Cold Holding', 'item' => 'Tapas Refrigeration Below', 'min' => 30, 'max' => 45, 'action' => 'Cover/cool/replace and alert MOD if high'],
+    'walkInProduceRecheck' => ['category' => 'Cold Holding', 'item' => 'Walk-in Cooler', 'min' => 30, 'max' => 45, 'action' => 'Close door, re-temp in 10 min, alert MOD if still high'],
+    'fryerLeft' => ['category' => 'Cooking Equipment', 'item' => 'Fryer 1', 'min' => 350, 'max' => 360, 'action' => 'Adjust temperature dial and alert MOD'],
+    'fryerRight' => ['category' => 'Cooking Equipment', 'item' => 'Fryer 2', 'min' => 350, 'max' => 360, 'action' => 'Adjust temperature dial and alert MOD'],
+    'pastaBoilerLeft' => ['category' => 'Cooking Equipment', 'item' => 'Pasta Boiler 1', 'min' => 200, 'max' => 220, 'action' => 'Adjust temp and re-temp in 10 min'],
+    'pastaBoilerRight' => ['category' => 'Cooking Equipment', 'item' => 'Pasta Boiler 2', 'min' => 200, 'max' => 220, 'action' => 'Adjust temp and re-temp in 10 min'],
 ];
 
 function broth_log_business_now(?DateTimeImmutable $now = null): DateTimeImmutable {
@@ -138,6 +138,9 @@ function broth_log_build_index(array $cols): array {
 }
 
 function broth_log_sop_label(?array $sop): string {
+    if ($sop && isset($sop['min'], $sop['max'])) {
+        return broth_log_format_number((float)$sop['min']) . 'F - ' . broth_log_format_number((float)$sop['max']) . 'F';
+    }
     return $sop ? $sop['operator'] . ' ' . $sop['target'] . 'F' : 'No SOP target';
 }
 
@@ -148,7 +151,13 @@ function broth_log_severity_for(?array $sop, ?float $temp): string {
     // classify it 'safe', since that would let an unconfigured/mistyped station key silently
     // bypass every downstream safety check (e.g. resolve validation) regardless of temperature.
     if (!$sop) return 'unknown_config';
-    $variance = $sop['operator'] === '<=' ? $temp - $sop['target'] : $sop['target'] - $temp;
+    if (isset($sop['min'], $sop['max'])) {
+        $variance = 0;
+        if ($temp < $sop['min']) $variance = $sop['min'] - $temp;
+        if ($temp > $sop['max']) $variance = $temp - $sop['max'];
+    } else {
+        $variance = $sop['operator'] === '<=' ? $temp - $sop['target'] : $sop['target'] - $temp;
+    }
     if ($variance <= 0) return 'safe';
     if ($variance <= 2) return 'warning';
     if ($variance <= 5) return 'high';

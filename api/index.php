@@ -1288,6 +1288,8 @@ if ($path === '/broth-log/telegram/webhook' && $METHOD === 'POST') {
     if (!broth_log_copilot_webhook_authorized()) broth_log_copilot_reject('Unauthorized.', 401);
     if (!is_array($BODY)) broth_log_copilot_reject('Malformed JSON.', 400);
     $result = broth_log_copilot_enqueue_webhook($BODY);
+    $callbackAck = broth_log_copilot_acknowledge_callback_update($BODY);
+    if (($callbackAck['reason'] ?? '') !== 'not_callback_query') $result['callbackAck'] = $callbackAck;
     broth_log_copilot_json_response(['webhook' => $result]);
 }
 

@@ -302,6 +302,7 @@ function broth_log_copilot_extract_update(array $update): array {
         'chat_type' => isset($chat['type']) ? (string)$chat['type'] : '',
         'message_id' => isset($message['message_id']) ? (string)$message['message_id'] : '',
         'update_type' => $callback ? 'callback_query' : 'message',
+        'callback_query_id' => isset($callback['id']) ? (string)$callback['id'] : '',
         'text' => trim((string)$text),
     ];
 }
@@ -334,9 +335,49 @@ function broth_log_copilot_sanitized_update_payload(array $update, array $meta):
         'chat_id' => $meta['chat_id'],
         'chat_type' => $meta['chat_type'],
         'message_id' => $meta['message_id'],
+        'callback_query_id' => broth_log_copilot_sanitize_message((string)($meta['callback_query_id'] ?? '')),
         'message_text' => broth_log_copilot_sanitize_message($meta['text']),
         'received_keys' => array_values(array_intersect(array_keys($update), ['message','edited_message','callback_query'])),
     ];
+}
+
+function broth_log_copilot_answer_callback_query(string $callbackQueryId, string $text = ''): array {
+    $callbackQueryId = trim($callbackQueryId);
+    if ($callbackQueryId === '') return ['sent' => false, 'reason' => 'missing_callback_query_id'];
+    $token = broth_log_copilot_env('TELEGRAM_BOT_TOKEN');
+    if ($token === '') return ['sent' => false, 'reason' => 'missing_token'];
+    $payload = ['callback_query_id' => $callbackQueryId];
+    if ($text !== '') $payload['text'] = substr($text, 0, 180);
+
+    $transport = $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] ?? null;
+    if (is_callable($transport)) {
+        try {
+            $result = $transport('answerCallbackQuery', $payload, $token);
+            return is_array($result) ? $result : ['sent' => (bool)$result, 'mock' => true];
+        } catch (Throwable $e) {
+            return ['sent' => false, 'reason' => 'transport_exception', 'error' => broth_log_copilot_sanitize_error($e->getMessage())];
+        }
+    }
+    if (in_array(strtolower(broth_log_copilot_env('BROTH_LOG_COPILOT_TELEGRAM_MOCK', 'false')), ['1','true','yes','on'], true)) {
+        return ['sent' => true, 'mock' => true, 'callback_query_id_configured' => true];
+    }
+
+    $url = 'https://api.telegram.org/bot' . $token . '/answerCallbackQuery';
+    $result = broth_log_copilot_telegram_http_call($url, json_encode($payload));
+    $raw = $result['raw'];
+    $httpCode = $result['http_code'];
+    if ($raw !== false && $httpCode >= 200 && $httpCode < 300) {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded) && !empty($decoded['ok'])) return ['sent' => true, 'http_code' => $httpCode];
+        return ['sent' => false, 'reason' => 'telegram_rejected', 'http_code' => $httpCode, 'error' => broth_log_copilot_sanitize_error((string)$raw)];
+    }
+    return ['sent' => false, 'reason' => 'telegram_api_error', 'http_code' => $httpCode];
+}
+
+function broth_log_copilot_acknowledge_callback_update(array $update): array {
+    $callback = $update['callback_query'] ?? null;
+    if (!is_array($callback)) return ['sent' => false, 'reason' => 'not_callback_query'];
+    return broth_log_copilot_answer_callback_query((string)($callback['id'] ?? ''));
 }
 
 function broth_log_copilot_sanitize_message(string $message): string {
@@ -2254,8 +2295,8 @@ function broth_log_copilot_menu_date_entry_response(string $text, array $user, ?
 // Alert/Fallback) gets a safe, static, non-branching reply - never store/incident data, never a
 // keyboard that could route into protected views.
 function broth_log_copilot_help_response(array $user, string $chatType): array {
-    if ($chatType !== 'private') {
-        return ['message' => 'The Broth Log assistant menu works in private chat. Message the bot directly to use /help.', 'reply_markup' => null, 'intent' => 'help_group_denied'];
+    if ($chatType !== '' && $chatType !== 'private') {
+        return ['message' => '', 'reply_markup' => null, 'intent' => 'help_group_denied', 'silent' => true];
     }
     return ['message' => broth_log_copilot_help_text(), 'reply_markup' => broth_log_copilot_menu_main_keyboard(broth_log_copilot_role_class($user)), 'intent' => 'help_menu'];
 }
@@ -2264,8 +2305,8 @@ function broth_log_copilot_help_response(array $user, string $chatType): array {
 // the existing (unchanged) broth_log_copilot_callback_response() for ACK/Resolve tokens.
 function broth_log_copilot_menu_callback_response(string $callbackData, array $user, string $chatType, ?DateTimeImmutable $now = null): ?array {
     if (!str_starts_with($callbackData, 'menu:')) return null;
-    if ($chatType !== 'private') {
-        return ['message' => 'The Broth Log assistant menu works in private chat.', 'reply_markup' => null, 'intent' => 'menu_group_denied'];
+    if ($chatType !== '' && $chatType !== 'private') {
+        return ['message' => '', 'reply_markup' => null, 'intent' => 'menu_group_denied', 'silent' => true];
     }
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
     $parts = explode(':', $callbackData);
@@ -2437,6 +2478,11 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
             if (($row['update_type'] ?? '') === 'callback_query') {
                 $menuResponse = broth_log_copilot_menu_callback_response((string)$row['message_text'], $user, (string)($row['chat_type'] ?? ''), $now);
                 $response = $menuResponse ?? broth_log_copilot_callback_response((string)$row['message_text'], $user, (string)$row['chat_id'], $now);
+                if (!empty($response['silent'])) {
+                    run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status=NULL, outbound_error=NULL WHERE update_id=?", [$row['update_id']]);
+                    $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $response['intent'], 'outbound' => 'silent'];
+                    continue;
+                }
                 $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], (string)$response['message'], $response['reply_markup'] ?? null);
                 if (!empty($send['sent'])) {
                     run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
@@ -2480,6 +2526,11 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
                 $replyMarkup = null;
             } elseif (($parsed['intent'] ?? '') === 'help') {
                 $helpResponse = broth_log_copilot_help_response($user, (string)($row['chat_type'] ?? ''));
+                if (!empty($helpResponse['silent'])) {
+                    run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status=NULL, outbound_error=NULL WHERE update_id=?", [$row['update_id']]);
+                    $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $helpResponse['intent'], 'outbound' => 'silent'];
+                    continue;
+                }
                 $message = (string)$helpResponse['message'];
                 $replyMarkup = $helpResponse['reply_markup'] ?? null;
                 $actionResponse = ['intent' => $helpResponse['intent']];

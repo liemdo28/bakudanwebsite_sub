@@ -137,7 +137,7 @@ try {
         'message' => [
             'text' => '/help B1',
             'from' => ['id' => 101],
-            'chat' => ['id' => 999],
+            'chat' => ['id' => 999, 'type' => 'private'],
             'message_id' => 76,
         ],
     ];
@@ -1750,11 +1750,50 @@ try {
 
     // --- 18/19: group isolation - onboarding / Alert-Fallback groups get no protected /help or menu data ---
     $groupHelp = broth_log_copilot_help_response($menuManagerUser, 'group');
-    expect_eq($groupHelp['intent'], 'help_group_denied', '/help from a non-private chat returns the safe group-denied reply');
+    expect_eq($groupHelp['intent'], 'help_group_denied', '/help from a non-private chat is consumed without opening the assistant');
+    expect_true(!empty($groupHelp['silent']), 'group /help is silent in Ops/alert destinations');
     expect_true($groupHelp['reply_markup'] === null, 'group /help reply carries no keyboard');
     expect_true(!str_contains($groupHelp['message'], 'B1') && !str_contains($groupHelp['message'], 'Broth Log Assistant'), 'group /help reply contains no store/menu content');
     $groupMenuCb = broth_log_copilot_menu_callback_response('menu:today', $menuManagerUser, 'group', $now25);
     expect_eq($groupMenuCb['intent'], 'menu_group_denied', 'a menu: callback tapped from a non-private chat is denied, never rendered');
+    expect_true(!empty($groupMenuCb['silent']), 'a menu: callback from a group is consumed silently without cluttering Ops');
+
+    $ownerButtonMatrix = [];
+    foreach ($ownerHelp['reply_markup']['inline_keyboard'] as $row) {
+        foreach ($row as $btn) $ownerButtonMatrix[$btn['text']] = $btn['callback_data'];
+    }
+    foreach ([
+        "\u{1F4CA} Today's Summary" => 'menu_ceo_summary',
+        "\u{1F6A8} Exceptions" => 'menu_open',
+        "\u{1F3EA} Stores" => 'menu_branchpick',
+        "\u{1F4CC} Open Issues" => 'menu_open',
+        "\u{1F5D3} Historical" => 'menu_branchpick',
+        "\u{2753} Commands" => 'menu_commands',
+    ] as $label => $intent) {
+        expect_true(isset($ownerButtonMatrix[$label]) && $ownerButtonMatrix[$label] !== '', "owner button has callback_data: {$label}");
+        $handlerProbe = broth_log_copilot_menu_callback_response($ownerButtonMatrix[$label], $menuOwnerUser, 'private', $now25);
+        expect_eq($handlerProbe['intent'], $intent, "owner button callback has a handler: {$label}");
+    }
+
+    $sentMessagesBeforeAck = count($sentMessages);
+    $callbackAck = broth_log_copilot_acknowledge_callback_update([
+        'update_id' => 9701,
+        'callback_query' => [
+            'id' => 'cb-menu-9701',
+            'data' => 'menu:ceo_summary',
+            'from' => ['id' => (int)$menuOwnerId],
+            'message' => ['chat' => ['id' => 'menu-owner-private', 'type' => 'private'], 'message_id' => 9701],
+        ],
+    ]);
+    expect_true(!empty($callbackAck['sent']), 'private menu callback is acknowledged with answerCallbackQuery');
+    $ackTransportCall = $sentMessages[$sentMessagesBeforeAck] ?? null;
+    expect_eq($ackTransportCall['method'] ?? '', 'answerCallbackQuery', 'callback acknowledgement uses Telegram answerCallbackQuery');
+
+    broth_log_copilot_enqueue_webhook(['update_id' => 9702, 'callback_query' => ['id' => 'cb-menu-9702', 'data' => 'menu:ceo_summary', 'from' => ['id' => (int)$menuOwnerId], 'message' => ['chat' => ['id' => 'menu-owner-private', 'type' => 'private'], 'message_id' => 9702]]]);
+    $callbackPayload = q1("SELECT payload_json,message_text FROM broth_log_bot_inbox WHERE update_id='9702'");
+    $callbackPayloadJson = json_decode((string)$callbackPayload['payload_json'], true) ?: [];
+    expect_eq($callbackPayload['message_text'] ?? '', 'menu:ceo_summary', 'callback enqueue stores callback_data as message_text');
+    expect_eq($callbackPayloadJson['callback_query_id'] ?? '', 'cb-menu-9702', 'callback enqueue keeps callback_query_id for audit');
 
     // --- 5/6: branch authorization + forged callback denial ---
     // Echoes back records for whichever business date is actually requested (both 2026-08-25 and
@@ -1889,6 +1928,14 @@ try {
     expect_eq(find_processed($helpEndToEnd, '9900')['intent'] ?? '', 'help_menu', 'private DM /help resolves to the role-aware help_menu intent end-to-end');
     $helpSentPayload = end($sentMessages);
     expect_true(isset($helpSentPayload['payload']['reply_markup']['inline_keyboard']), 'private DM /help actually sends a Telegram inline keyboard, not just plain text');
+
+    $beforeGroupSilence = count($sentMessages);
+    broth_log_copilot_enqueue_webhook(['update_id' => 9901, 'message' => ['text' => '/help', 'from' => ['id' => (int)$menuOwnerId], 'chat' => ['id' => 'menu-ops-group', 'type' => 'group'], 'message_id' => 9901]]);
+    broth_log_copilot_enqueue_webhook(['update_id' => 9902, 'callback_query' => ['id' => 'cb-menu-9902', 'data' => 'menu:ceo_summary', 'from' => ['id' => (int)$menuOwnerId], 'message' => ['chat' => ['id' => 'menu-ops-group', 'type' => 'group'], 'message_id' => 9902]]]);
+    $groupSilentProcessed = broth_log_copilot_process_inbox(10, $now25);
+    expect_eq(find_processed($groupSilentProcessed, '9901')['outbound'] ?? '', 'silent', 'Ops/group /help is processed silently without assistant output');
+    expect_eq(find_processed($groupSilentProcessed, '9902')['outbound'] ?? '', 'silent', 'Ops/group menu callback is processed silently without assistant output');
+    expect_eq(count($sentMessages), $beforeGroupSilence, 'Ops/group assistant inputs create zero Telegram sendMessage calls');
 
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?,?,?)", [$menuOwnerId, $menuGmId, $menuManagerId, $menuManagerNamedId]);
     run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?,?,?,?)", [$menuIncUnack, $menuIncAck, $menuIncResolved, $menuIncAckNoName, $ackProbeId]);

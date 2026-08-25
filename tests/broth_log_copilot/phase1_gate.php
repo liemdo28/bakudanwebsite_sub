@@ -414,7 +414,13 @@ try {
 
     expect_eq(broth_log_copilot_ack($incidentId, ['telegram_user_id' => '999', 'allowed_branch_list' => ['B2']])['reason'], 'forbidden', 'cross-branch ACK is rejected');
     expect_eq(broth_log_copilot_resolve($incidentId, $user, null, 'fixed')['reason'], 'missing_resolution_evidence', 'resolve requires recheck temperature');
-    expect_eq(broth_log_copilot_resolve($incidentId, $user, 45, 'fixed')['reason'], 'recheck_still_unsafe', 'resolve rejects unsafe recheck');
+    // Stale fixture: this incident's station is prepAreaCooler (BROTH_LOG_SOP min=30/max=45,
+    // an inclusive range - the same convention the dashboard displays as "30F - 45F" and every
+    // other station in BROTH_LOG_SOP uses). 45 IS the safe boundary itself, not an unsafe value -
+    // broth_log_severity_for() has classified it 'safe' since this codebase's first commit
+    // (c081a8b), unchanged. 60F is unambiguously outside the safe range on either read of the
+    // boundary, so it actually exercises "resolve rejects unsafe recheck" as the label promises.
+    expect_eq(broth_log_copilot_resolve($incidentId, $user, 60, 'fixed')['reason'], 'recheck_still_unsafe', 'resolve rejects unsafe recheck');
 
     // Regression: an incident whose station key has no BROTH_LOG_SOP entry (unconfigured or
     // mistyped) must never be treated as automatically safe, no matter the recheck temperature.
@@ -437,10 +443,13 @@ try {
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$unknownStationIncidentId])['state'] ?? '', 'detected', 'unconfigured-station incident is not silently resolved using an invented threshold');
     expect_eq(broth_log_severity_for(BROTH_LOG_SOP['prepAreaCooler'], 38.0), 'safe', 'unaffected: a known, correctly configured station still classifies a genuinely safe reading as safe');
     expect_eq(broth_log_is_safe_recheck('prepAreaCooler', 38.0), true, 'unaffected: a known, correctly configured station still accepts a genuinely safe recheck');
+    // Same stale-fixture pattern as above: 45F is prepAreaCooler's safe boundary, not an
+    // "invalid"/unsafe recheck. 60F is unambiguously unsafe, so this actually exercises the
+    // rejection path the assertion below claims to test.
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1022,
         'message' => [
-            'text' => '/resolve #' . $incidentId . ' 45F closed door',
+            'text' => '/resolve #' . $incidentId . ' 60F closed door',
             'from' => ['id' => 101],
             'chat' => ['id' => 999],
             'message_id' => 82,
@@ -1111,7 +1120,9 @@ try {
     // O/P: Resolve from a DM uses the exact same safety rules as the group - unsafe recheck
     // rejected, safe recheck closes the canonical incident globally.
     $bobUser = broth_log_copilot_authorized_user($dmManagerB);
-    $unsafeResolve = broth_log_copilot_resolve($dmAckIncidentId, $bobUser, 45.0, 'checked', $dmAckNow); // still above the <=40F cooler target
+    // Same stale-fixture pattern fixed above: 45F is prepAreaCooler's inclusive-safe boundary
+    // (BROTH_LOG_SOP min=30/max=45), not an unsafe reading. 60F is unambiguously unsafe.
+    $unsafeResolve = broth_log_copilot_resolve($dmAckIncidentId, $bobUser, 60.0, 'checked', $dmAckNow);
     expect_true(!($unsafeResolve['ok'] ?? true), 'O: an unsafe recheck temperature is rejected, regardless of which surface (group or DM) it came from');
     expect_true((q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '') !== 'resolved', 'O: the incident remains open after a rejected unsafe resolve');
     $safeResolve = broth_log_copilot_resolve($dmAckIncidentId, $bobUser, 35.0, 'closed door and moved product', $dmAckNow);

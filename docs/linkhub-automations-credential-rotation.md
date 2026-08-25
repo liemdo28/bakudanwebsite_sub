@@ -47,13 +47,33 @@ file. `openssl rand` runs on the remote host itself, not locally.
 
 The one sequencing rule that matters here: **the private env file must
 contain the new password before the API password is actually rotated to
-that value.** Step 2 below does both in a single SSH session, in this
-exact order:
+that value, and the new password must be confirmed working before the old
+one is ever assumed dead.** Step 2 below does all of this in a single SSH
+session, in this exact order:
 
-1. Generate `NEWPASS`.
-2. Write `NEWPASS` into the private env file (`chmod 600` immediately after).
-3. Only then call `/auth/change-password` to rotate the live account
-   password to `NEWPASS`.
+1. Generate `NEWPASS` privately (server-side, never displayed).
+2. Secure the private env file directory (`700`).
+3. Write `NEWPASS` into the private env file (`chmod 600` immediately after).
+4. Rotate the live account password to `NEWPASS` via `/auth/change-password`.
+5. **Immediately verify the new credential**: log in again with `NEWPASS`
+   and confirm a token comes back, in the same session, before the old
+   password is assumed rotated away.
+
+This exact order — generate → secure file → rotate → verify new credential
+— matches the required conceptual order. Two deliberate deviations from a
+strict literal reading of "verify new credential, then verify old
+rejected, then verify automation runner, then remove inline cron, then
+verify cron":
+- Steps 1-5 above are collapsed into one SSH session (step 2 below) instead
+  of separate round-trips, specifically so `NEWPASS` never has to be
+  re-entered, re-derived, or persisted between steps — the fewer times a
+  secret crosses a session boundary, the fewer places it can leak. This is
+  strictly safer, not a shortcut.
+- "Verify old credential rejected" (step 3 below) is checked before
+  "verify automation runner" (step 4 below) — the reverse of collapsing
+  them — because a still-valid old password is the actual security defect
+  being fixed; confirming it's dead takes priority over confirming the
+  cron path works, and neither check depends on the other's result.
 
 Because the file is already correct *before* the rotation call fires,
 there is no window where the account's real password has changed but the
@@ -65,7 +85,10 @@ job continues authenticating with the *old* password via the still-inline
 crontab line, since crontab isn't touched until step 5). If the SSH
 session is interrupted between the file write and the rotation call
 succeeding, re-run step 2 from scratch (regenerating `NEWPASS` is fine —
-the old password is still valid until rotation actually succeeds).
+the old password is still valid until rotation actually succeeds). If the
+rotation call succeeds but the immediate re-login with `NEWPASS` in the
+same step fails, treat that as a hard stop and investigate before doing
+anything else — see Rollback.
 
 ### 1. Deploy the updated script
 
@@ -104,7 +127,21 @@ RESULT=$(curl -s -X POST https://www.bakudanramen.com/api/auth/change-password \
   -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
   -d "{\"current_password\":\"<OLD_PASSWORD>\",\"new_password\":\"$NEWPASS\"}")
 echo "$RESULT"
-unset NEWPASS TOKEN
+
+# Immediately verify the new password actually works, in this same
+# session, before assuming rotation succeeded. Only the presence/absence
+# of a token is checked -- the token value itself is never printed.
+NEWTOKEN=$(curl -s -X POST https://www.bakudanramen.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"admin@bakudanramen.com\",\"password\":\"$NEWPASS\"}" \
+  | php -r "echo json_decode(file_get_contents(\"php://stdin\"), true)[\"token\"] ?? \"\";")
+if [ -z "$NEWTOKEN" ]; then
+  echo "NEW PASSWORD DOES NOT AUTHENTICATE -- STOP, do not proceed, see Rollback" >&2
+  unset NEWPASS TOKEN NEWTOKEN
+  exit 1
+fi
+echo "OK: new password authenticates successfully"
+unset NEWPASS TOKEN NEWTOKEN
 '
 ```
 
@@ -122,24 +159,11 @@ Notes:
   `<OLD_PASSWORD>` via a local-only env var / secrets store rather than
   inlining it in shell history.
 
-### 3. Verify the new credentials work end-to-end
-
-```bash
-ssh hoale24new@pdx1-shared-a3-05.dreamhost.com \
-  '/usr/bin/php /home/hoale24new/bakudanramen.com/api/run_linkhub_automations.php --dry-run'
-```
-
-Expect: `DRY RUN: credentials present, lock acquired successfully. ...` — no
-"environment variables are not set" error. This confirms the script picked
-the new credentials up from the private file, not from the crontab line
-(which still has the *old* password inline at this point, so if the script
-were reading from `getenv()` only, this step would still pass on the old
-password — that's fine, it's superseded next).
-
-### 4. Verify the old password no longer authenticates
+### 3. Verify the old password no longer authenticates
 
 Confirms the rotation in step 2 actually took effect, without printing
-either password:
+either password. Checked first because a still-valid old password is the
+actual vulnerability being fixed here:
 
 ```bash
 ssh hoale24new@pdx1-shared-a3-05.dreamhost.com '
@@ -157,7 +181,24 @@ fi
 
 Only the HTTP status code is inspected/printed — never the response body,
 which is where a valid login would otherwise place a live token. Do not
-proceed to step 5 until this prints `OK`.
+proceed until this prints `OK`.
+
+### 4. Verify the automation runner end-to-end
+
+```bash
+ssh hoale24new@pdx1-shared-a3-05.dreamhost.com \
+  '/usr/bin/php /home/hoale24new/bakudanramen.com/api/run_linkhub_automations.php --dry-run'
+```
+
+Expect: `DRY RUN: credentials present, lock acquired successfully. ...` — no
+"environment variables are not set" error. This confirms the script picked
+the new credentials up from the private file (the crontab line at this
+point is still the old inline one — untouched until step 5 — so this
+specifically exercises the private-file loading path, not the crontab
+path). Note this only confirms the file is populated and readable, not
+that its contents authenticate — that was already independently confirmed
+in step 2's immediate re-login check and reconfirmed by step 3 rejecting
+the old password.
 
 ### 5. Rewrite the crontab line to drop inline credentials
 
@@ -191,7 +232,11 @@ hard-stop requirement that a rollback path be defined ahead of time.
 - **If step 2's rotation call fails** (non-2xx, no token): the account
   password was never changed (see "Lockout-risk analysis" above) — the
   crontab's old inline password still works. Safe to retry step 2.
-- **If step 2 succeeds but step 4 shows the old password still
+- **If step 2 succeeds but its own immediate re-login with `NEWPASS`
+  fails**: the account password may be in an inconsistent state — stop and
+  investigate directly (e.g. via the Admin login page with the new
+  password) rather than proceeding or retrying blindly.
+- **If step 2 succeeds but step 3 shows the old password still
   authenticates**: that's a genuine anomaly — stop and investigate rather
   than proceeding; do not touch the crontab yet.
 - **If anything fails after step 5** (crontab already rewritten): restore
@@ -199,7 +244,7 @@ hard-stop requirement that a rollback path be defined ahead of time.
   account password has already been rotated to the new value by this
   point, so a restored crontab must reference the *new* password if it's
   going to use inline credentials again even temporarily — never the old
-  one, which no longer works per step 4.
+  one, which no longer works per step 3.
 - In every case, `/home/hoale24new/bakudan-app/data/automations_cron.log`
   is the fastest signal something is wrong: a run of
   `ERROR: LINKHUB_ADMIN_EMAIL / LINKHUB_ADMIN_PASSWORD environment

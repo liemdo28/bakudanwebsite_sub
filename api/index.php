@@ -1289,7 +1289,12 @@ if ($path === '/broth-log/telegram/webhook' && $METHOD === 'POST') {
     if (!is_array($BODY)) broth_log_copilot_reject('Malformed JSON.', 400);
     $result = broth_log_copilot_enqueue_webhook($BODY);
     $callbackAck = broth_log_copilot_acknowledge_callback_update($BODY);
-    if (($callbackAck['reason'] ?? '') !== 'not_callback_query') $result['callbackAck'] = $callbackAck;
+    if (($callbackAck['reason'] ?? '') !== 'not_callback_query') {
+        $result['callbackAck'] = $callbackAck;
+        if (!empty($result['queued']) && !empty($result['update_id'])) {
+            $result['callbackProcessed'] = broth_log_copilot_process_inbox(1, null, (string)$result['update_id']);
+        }
+    }
     broth_log_copilot_json_response(['webhook' => $result]);
 }
 

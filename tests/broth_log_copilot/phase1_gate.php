@@ -1714,26 +1714,26 @@ try {
     expect_eq(broth_log_copilot_role_class($menuGmUser), 'gm', 'role_class: manager with 3 branches -> gm menu');
     expect_eq(broth_log_copilot_role_class($menuManagerUser), 'store_manager', 'role_class: manager with 1 branch -> store_manager menu');
 
-    // --- 1/2/3: role-aware /help menus, exact button layout, callback_data size ---
+    // --- 1/2/3: manager-action /help menu, exact button layout, callback_data size ---
     $mgrHelp = broth_log_copilot_help_response($menuManagerUser, 'private');
-    expect_eq($mgrHelp['intent'], 'help_menu', 'Manager /help returns the role-aware menu');
+    expect_eq($mgrHelp['intent'], 'help_menu', 'Manager /help returns the manager-action menu');
     $mgrKb = $mgrHelp['reply_markup']['inline_keyboard'];
     expect_eq(count($mgrKb), 3, 'Manager menu has exactly 3 rows');
-    expect_eq([$mgrKb[0][0]['text'], $mgrKb[0][1]['text']], ["\u{1F4C5} Today's Log", "\u{1F5D3} Choose Date"], "Manager menu row 1: Today's Log | Choose Date");
-    expect_eq([$mgrKb[1][0]['text'], $mgrKb[1][1]['text']], ["\u{1F6A8} Today's Issues", "\u{1F50E} Issues by Date"], "Manager menu row 2: Today's Issues | Issues by Date");
-    expect_eq([$mgrKb[2][0]['text'], $mgrKb[2][1]['text']], ["\u{1F4CC} Open Issues", "\u{2753} Commands"], 'Manager menu row 3: Open Issues | Commands');
+    expect_eq([$mgrKb[0][0]['text'], $mgrKb[0][1]['text']], ["\u{1F4CB} Today's Log", "\u{1F6A8} Today's Issues"], "Manager menu row 1: Today's Log | Today's Issues");
+    expect_eq([$mgrKb[1][0]['text'], $mgrKb[1][1]['text']], ["\u{1F4C5} Select Date", "\u{1F514} Open Issues"], 'Manager menu row 2: Select Date | Open Issues');
+    expect_eq($mgrKb[2][0]['text'], "\u{2753} Help", 'Manager menu row 3: Help');
+    $mgrMenuText = json_encode($mgrKb, JSON_UNESCAPED_UNICODE);
+    expect_true(!str_contains($mgrMenuText, 'Exceptions'), 'Main menu does not expose Exceptions');
+    expect_true(!str_contains($mgrMenuText, 'Stores'), 'Main menu does not expose Stores as a top-level action');
+    expect_true(!str_contains($mgrMenuText, 'Historical'), 'Main menu does not expose Historical');
+    expect_true(!str_contains($mgrMenuText, 'Commands'), 'Main menu does not expose Commands');
 
     $gmHelp = broth_log_copilot_help_response($menuGmUser, 'private');
     $gmKb = $gmHelp['reply_markup']['inline_keyboard'];
-    expect_eq(count($gmKb), 4, 'GM menu has exactly 4 rows');
-    expect_eq([$gmKb[0][0]['text'], $gmKb[0][1]['text']], ["\u{1F4C5} Today's Log", "\u{1F3EA} All Stores"], "GM menu row 1: Today's Log | All Stores");
-    expect_eq([$gmKb[1][0]['text'], $gmKb[1][1]['text']], ["\u{1F6A8} Today's Issues", "\u{1F4CC} Open Issues"], "GM menu row 2: Today's Issues | Open Issues");
-    expect_eq([$gmKb[2][0]['text'], $gmKb[2][1]['text']], ["\u{1F5D3} Log by Date", "\u{1F50E} Issues by Date"], 'GM menu row 3: Log by Date | Issues by Date');
-    expect_eq(count($gmKb[3]), 1, 'GM menu row 4 has exactly 1 button');
-    expect_eq($gmKb[3][0]['text'], "\u{2753} Commands", 'GM menu row 4: Commands');
+    expect_eq($gmKb, $mgrKb, 'GM sees the same manager-action main menu; store is a filter, not a main action');
 
     $ownerHelp = broth_log_copilot_help_response($menuOwnerUser, 'private');
-    expect_eq(count($ownerHelp['reply_markup']['inline_keyboard']), 3, 'Owner/CEO menu has 3 rows');
+    expect_eq($ownerHelp['reply_markup']['inline_keyboard'], $mgrKb, 'Owner/CEO sees the same manager-action main menu');
 
     foreach ([$mgrKb, $gmKb, $ownerHelp['reply_markup']['inline_keyboard']] as $kb) {
         foreach ($kb as $row) {
@@ -1763,16 +1763,25 @@ try {
         foreach ($row as $btn) $ownerButtonMatrix[$btn['text']] = $btn['callback_data'];
     }
     foreach ([
-        "\u{1F4CA} Today's Summary" => 'menu_ceo_summary',
-        "\u{1F6A8} Exceptions" => 'menu_open',
-        "\u{1F3EA} Stores" => 'menu_branchpick',
-        "\u{1F4CC} Open Issues" => 'menu_open',
-        "\u{1F5D3} Historical" => 'menu_branchpick',
-        "\u{2753} Commands" => 'menu_commands',
+        "\u{1F4CB} Today's Log" => 'menu_branchpick',
+        "\u{1F6A8} Today's Issues" => 'menu_branchpick',
+        "\u{1F4C5} Select Date" => 'menu_date_type',
+        "\u{1F514} Open Issues" => 'menu_open_overview',
+        "\u{2753} Help" => 'menu_help',
     ] as $label => $intent) {
         expect_true(isset($ownerButtonMatrix[$label]) && $ownerButtonMatrix[$label] !== '', "owner button has callback_data: {$label}");
         $handlerProbe = broth_log_copilot_menu_callback_response($ownerButtonMatrix[$label], $menuOwnerUser, 'private', $now25);
         expect_eq($handlerProbe['intent'], $intent, "owner button callback has a handler: {$label}");
+    }
+    foreach ([
+        'menu:ceo_summary' => 'menu_ceo_summary',
+        'menu:ceo_exceptions' => 'menu_open',
+        'menu:branchpick:today' => 'menu_branchpick',
+        'menu:branchpick:logdate' => 'menu_branchpick',
+        'menu:commands' => 'menu_commands',
+    ] as $legacyCallback => $intent) {
+        $legacyProbe = broth_log_copilot_menu_callback_response($legacyCallback, $menuOwnerUser, 'private', $now25);
+        expect_eq($legacyProbe['intent'], $intent, "legacy callback remains supported: {$legacyCallback}");
     }
 
     $sentMessagesBeforeAck = count($sentMessages);
@@ -1880,10 +1889,27 @@ try {
     $issuesByDateView = broth_log_copilot_menu_callback_response('menu:issues:B2:2026-08-19', $menuGmUser, 'private', $now25);
     expect_true(str_contains($issuesByDateView['message'], 'Resolved') && str_contains($issuesByDateView['message'], 'Maria'), '10: Issues by Date shows a since-resolved incident in its current Resolved state with its resolver');
     expect_true(str_contains($issuesByDateView['message'], '2026-08-19'), '12: Issues by Date header reflects the selected historical business date');
+    $selectDateStart = broth_log_copilot_menu_callback_response('menu:selectdate', $menuManagerUser, 'private', $now25);
+    expect_eq($selectDateStart['intent'], 'menu_date_type', 'Select Date starts with Broth Log vs Issues choice');
+    $selectDateText = json_encode($selectDateStart['reply_markup']['inline_keyboard'], JSON_UNESCAPED_UNICODE);
+    expect_true(str_contains($selectDateText, 'Broth Log') && str_contains($selectDateText, 'Issues'), 'Select Date supports Broth Log and Issues');
+    $gmDateKind = broth_log_copilot_menu_callback_response('menu:datekind:issues', $menuGmUser, 'private', $now25);
+    expect_eq($gmDateKind['intent'], 'menu_datepick', 'multi-store Select Date asks for date before store');
+    $gmDateStorePick = broth_log_copilot_menu_callback_response('menu:qdate:issues:ASK:yesterday', $menuGmUser, 'private', $now25);
+    expect_eq($gmDateStorePick['intent'], 'menu_branchpick', 'multi-store date flow asks for store after date');
+    expect_true(str_contains(json_encode($gmDateStorePick['reply_markup']['inline_keyboard'], JSON_UNESCAPED_UNICODE), 'B3'), 'multi-store date flow only exposes authorized store filters');
+    $gmDatedB3 = broth_log_copilot_menu_callback_response('menu:branchdate:issues:2026-08-24:B3', $menuGmUser, 'private', $now25);
+    expect_true(in_array($gmDatedB3['intent'], ['menu_issues', 'menu_issues_empty'], true), 'dated store callback renders issues for the selected store/date');
+    $openOverview = broth_log_copilot_menu_callback_response('menu:open', $menuGmUser, 'private', $now25);
+    expect_eq($openOverview['intent'], 'menu_open_overview', 'multi-store Open Issues shows branch counts first');
+    expect_true(str_contains($openOverview['message'], 'B1') && str_contains($openOverview['message'], 'B2') && str_contains($openOverview['message'], 'B3'), 'Open Issues overview includes branch-correct count rows');
+    $openB1 = broth_log_copilot_menu_callback_response('menu:openbranch:B1', $menuGmUser, 'private', $now25);
+    expect_eq($openB1['intent'], 'menu_open', 'Open Issues branch filter shows actionable list');
+    expect_true(str_contains($openB1['message'], 'Walk-In Freezer') && !str_contains($openB1['message'], $menuManagerId), 'Open Issues branch detail hides internal actor metadata');
 
     // --- 21: no menu callback can mutate an incident ---
     $beforeSnapshot = q1("SELECT state, acknowledged_by, resolved_by FROM broth_log_incidents WHERE incident_id=?", [$menuIncUnack]);
-    foreach (['menu:today', 'menu:issues_today', 'menu:log:B1:2026-08-25', 'menu:fulllog:B1:2026-08-25', 'menu:issues:B1:2026-08-25', 'menu:open'] as $probe) {
+    foreach (['menu:today', 'menu:issues_today', 'menu:log:B1:2026-08-25', 'menu:fulllog:B1:2026-08-25', 'menu:issues:B1:2026-08-25', 'menu:open', 'menu:selectdate', 'menu:help'] as $probe) {
         broth_log_copilot_menu_callback_response($probe, $menuManagerUser, 'private', $now25);
     }
     $afterSnapshot = q1("SELECT state, acknowledged_by, resolved_by FROM broth_log_incidents WHERE incident_id=?", [$menuIncUnack]);
@@ -2284,7 +2310,7 @@ try {
     $sevCriticalOnly = broth_log_copilot_menu_open_issues_view($sevOwnerUser, true);
     expect_true(str_contains($sevCriticalOnly['message'], 'Prep Area Cooler'), 'Severity audit: Critical Only still includes the real critical temperature issue');
     expect_true(!str_contains($sevCriticalOnly['message'], 'AM Broth Log'), 'Severity audit: Critical Only excludes the missing_shift issue, even though it also has severity=critical - a "1 missing PM log" must never surface as a "critical temperature reading"');
-    $sevAllIssues = broth_log_copilot_menu_open_issues_view($sevOwnerUser, false);
+    $sevAllIssues = broth_log_copilot_menu_open_issues_view($sevOwnerUser, false, $sevBranch);
     expect_true(str_contains($sevAllIssues['message'], 'Prep Area Cooler') && str_contains($sevAllIssues['message'], 'AM Broth Log'), 'Severity audit: the general (non-critical-only) Open Issues view still shows both types together - missing_shift is not hidden, only excluded from the temperature-specific filter');
     // Scoped to this test's own two fixture ids, not a branch-wide COUNT - this shared test-suite
     // database can carry other B2 critical incidents left open by earlier, unrelated sections of

@@ -105,6 +105,7 @@ try {
         'inbox_processed' => count($inbox),
         'due' => count($due),
         'missing_shift_alerts_enabled' => broth_log_copilot_missing_shift_alerts_enabled(),
+        'missing_shift_enabled_branches' => broth_log_copilot_missing_shift_enabled_branches(),
         'missing_shift_actions' => $missingShiftResults,
         'results' => $dryRun ? array_map(fn($a) => ['action' => $a['action'], 'incident_id' => $a['incident']['incident_id']], $due) : $results,
     ], JSON_PRETTY_PRINT) . PHP_EOL;

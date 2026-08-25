@@ -803,6 +803,26 @@ function broth_log_copilot_missing_shift_alerts_enabled(): bool {
     return in_array(strtolower(trim((string)(getenv('BROTH_LOG_SHIFT_ALERTS_ENABLED') ?: 'false'))), ['1','true','yes','on'], true);
 }
 
+// Staged-rollout allowlist, on top of the global master switch above. A comma-separated list of
+// branch codes, e.g. "B1" or "B1,B2". Deliberately fails closed: only ever the three known,
+// explicit branch codes ever come back - a typo, empty entry, or a wildcard like "*"/"ALL" is
+// silently dropped, never expanded into "every branch". Historical non-compliance was high enough
+// (see the Phase 4 audit) that global-only activation was judged unsafe for a first rollout.
+function broth_log_copilot_missing_shift_enabled_branches(): array {
+    $raw = trim((string)(getenv('BROTH_LOG_SHIFT_ALERT_BRANCHES') ?: ''));
+    if ($raw === '') return [];
+    $requested = array_filter(array_map('trim', explode(',', strtoupper($raw))), fn($b) => $b !== '');
+    return array_values(array_intersect($requested, ['B1', 'B2', 'B3']));
+}
+
+// The single check every enablement decision must go through: global flag AND this specific
+// branch is on the allowlist. Deliberately independent of branch_alert_mode, manager
+// authorization, and routing - those answer "where does an alert go", this answers "is the
+// detector even allowed to run for this branch at all". Never inferred from any of them.
+function broth_log_copilot_missing_shift_enabled_for_branch(string $branch): bool {
+    return broth_log_copilot_missing_shift_alerts_enabled() && in_array(strtoupper($branch), broth_log_copilot_missing_shift_enabled_branches(), true);
+}
+
 function broth_log_copilot_missing_shift_active_key(string $branch, string $businessDate, string $shift): string {
     return hash('sha256', implode('|', [strtoupper($branch), $businessDate, $shift, 'missing_shift']));
 }
@@ -842,7 +862,13 @@ function broth_log_copilot_create_missing_shift_incident(string $branch, string 
     $activeKey = broth_log_copilot_missing_shift_active_key($branch, $businessDate, $shift);
     $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=?", [$activeKey]);
     if ($existing) return (string)$existing['incident_id'];
-    $incidentId = 'bl-missing-' . substr($activeKey, 0, 10) . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(3));
+    // Deliberately "mshift", not "missing": broth_log_copilot_parse()'s keyword router treats any
+    // message text containing the substring "missing" as the unrelated missing_logs intent (a
+    // manager's "show today's missing logs" query), checked BEFORE the /resolve or /ack prefix
+    // match. An incident id containing "missing" would silently hijack a manager's "/resolve
+    // #<id>..." or "/ack #<id>" text reply into that wrong intent instead of ever reaching the
+    // resolve/ack handler - discovered via PR #41 hardening test C (Item 2).
+    $incidentId = 'bl-mshift-' . substr($activeKey, 0, 10) . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(3));
     $nowTs = gmdate('Y-m-d H:i:s');
     run("INSERT OR IGNORE INTO broth_log_incidents
         (incident_id,fingerprint,active_key,branch,business_date,response_id,station_key,station_label,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash,incident_type,shift)
@@ -905,6 +931,7 @@ function broth_log_copilot_process_missing_shifts(?DateTimeImmutable $now = null
     $businessDate = broth_log_business_date($now);
     $results = [];
     foreach (['B1', 'B2', 'B3'] as $branch) {
+        if (!broth_log_copilot_missing_shift_enabled_for_branch($branch)) continue;
         try {
             $records = broth_log_filter_records(broth_log_copilot_branch_records($branch), ['branch' => $branch, 'businessDate' => $businessDate]);
         } catch (Throwable $e) {
@@ -999,6 +1026,18 @@ function broth_log_copilot_resolve(string $incidentId, array $actor, ?float $rec
         if (!$incident || in_array($incident['state'], ['resolved','closed'], true)) {
             db()->exec('COMMIT');
             return ['ok' => false, 'reason' => 'incident_not_open'];
+        }
+        // Explicit, deterministic guard - not incidental. A missing_shift incident does not support
+        // manual Resolve by business design: its lifecycle is detected -> optionally ACKed ->
+        // automatically closed only when the actual log submission arrives (see
+        // broth_log_copilot_process_missing_shifts()/close_missing_shift_incident()). This must never
+        // depend on station_key happening to be empty - that's a coincidental side effect of the
+        // incident model, not the real safety property, and a future schema change could silently
+        // remove this protection if it were the only guard. Checked before every station/SOP/
+        // temperature-specific branch below, which stay in place anyway as defense in depth.
+        if (($incident['incident_type'] ?? 'temperature') === 'missing_shift') {
+            db()->exec('COMMIT');
+            return ['ok' => false, 'reason' => 'resolve_not_supported_for_missing_shift'];
         }
         if (!broth_log_copilot_user_can_branch($actor, $incident['branch'])) {
             db()->exec('COMMIT');
@@ -1683,6 +1722,13 @@ function broth_log_copilot_message_action_response(string $messageText, array $p
         $incident = broth_log_copilot_incident_from_result($incidentId);
         return ['message' => broth_log_copilot_incident_message($incident ?: ['incident_id' => $incidentId], 'resolve_confirm', $lang), 'intent' => 'resolve'];
     }
+    // The generic "%s. Include a safe recheck temperature..." wrapper below is actively wrong
+    // advice for a missing_shift incident (there is no recheck temperature concept for a missing
+    // log) - a short, accurate, incident-type-specific message instead. No internal reason code or
+    // incident id is exposed, matching this codebase's existing manager-facing UX convention.
+    if (($result['reason'] ?? '') === 'resolve_not_supported_for_missing_shift') {
+        return ['message' => 'This issue closes automatically when the Broth Log is submitted.', 'intent' => 'resolve_rejected'];
+    }
     return ['message' => broth_log_copilot_tr('resolve_rejected', $lang, [broth_log_copilot_reason_word((string)($result['reason'] ?? ''), $lang)]), 'intent' => 'resolve_rejected'];
 }
 
@@ -2059,7 +2105,12 @@ function broth_log_copilot_menu_open_issues_view(array $user, bool $criticalOnly
     $any = false;
     foreach ($branches as $branch) {
         $branch = strtoupper($branch);
-        $sql = "SELECT * FROM broth_log_incidents WHERE branch=? AND state NOT IN ('resolved','closed')" . ($criticalOnly ? " AND severity='critical'" : '') . " ORDER BY
+        // "Critical Only" is explicitly a temperature-severity concept - a missing_shift row is
+        // also stored with severity='critical' (it IS urgent), but must never be pulled into a
+        // filter whose label/intent is specifically about critical TEMPERATURE readings. The base
+        // (non-critical-only) Open Issues view below is intentionally unfiltered by incident_type -
+        // missing-shift issues still appear there, just not under this specific filter.
+        $sql = "SELECT * FROM broth_log_incidents WHERE branch=? AND state NOT IN ('resolved','closed')" . ($criticalOnly ? " AND severity='critical' AND incident_type='temperature'" : '') . " ORDER BY
             CASE WHEN severity='critical' AND state NOT IN ('acknowledged') THEN 0 WHEN severity='critical' THEN 1 ELSE 2 END, created_at ASC";
         $rows = q($sql, [$branch]);
         if (!$rows) { $lines[] = "{$branch}\nNo open issues."; $lines[] = ''; continue; }

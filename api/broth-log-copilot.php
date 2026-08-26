@@ -25,6 +25,18 @@ const BROTH_LOG_COPILOT_L2_ESCALATE_SECONDS = 300;
 const BROTH_LOG_COPILOT_REMINDER_SECONDS = 300;
 const BROTH_LOG_COPILOT_L3_REMINDER_SECONDS = 900;
 
+// If NOBODY has responded (no ACK, at any escalation level) within this many seconds of an
+// incident's own created_at, due_escalations() reports 'auto_stop' instead of the normal
+// remind/escalate action for it. This does NOT mean the underlying problem is resolved - nobody has
+// confirmed a safe recheck - so it transitions to its own terminal-for-reminders state
+// ('auto_stopped'), never 'resolved'/'closed', and remains fully ACK/Resolve-able afterward exactly
+// like any other still-open incident. It only stops the repeating Telegram reminder/escalation
+// pushes and tells every destination that already knows about this incident (the same
+// safety-audited recipient set ACK/Resolve/closure broadcasts already use) that this happened, so a
+// silently-unattended incident doesn't page forever but also never gets silently mistaken for
+// solved.
+const BROTH_LOG_COPILOT_AUTO_STOP_SECONDS = 14400;
+
 // Ops+Manager delivery-parity cutover boundary (America/Chicago business date, YYYY-MM-DD). A
 // ONE-TIME migration marker, not a rolling daily policy - consumed only by
 // broth_log_copilot_freeze_pre_cutover_incidents() below, an explicitly-invoked, idempotent,
@@ -91,6 +103,87 @@ function broth_log_copilot_env(string $key, string $default = ''): string {
 
 function broth_log_copilot_is_staging(): bool {
     return strtolower(broth_log_copilot_env('BROTH_LOG_COPILOT_ENV', 'production')) === 'staging';
+}
+
+// SQLite cannot ALTER a CHECK constraint on an existing table - the only way to widen the allowed
+// `state` values is a full table rebuild: create a new table with the updated CHECK, copy every
+// row across unchanged, verify the row count matches exactly, drop the old table, rename the new
+// one into place. This is the first migration in this codebase's history that has ever needed this
+// (every prior schema change was an additive ALTER TABLE ADD COLUMN, which SQLite supports
+// directly). Idempotent and safe to call on every request/worker tick like every other migration
+// step: it inspects the table's own recorded CREATE TABLE text in sqlite_master and does nothing if
+// 'auto_stopped' is already present there (already migrated, or a fresh install whose CREATE TABLE
+// IF NOT EXISTS above already included it from the start) or if the table doesn't exist yet.
+//
+// The new table's columns are read live from PRAGMA table_info() rather than hand-transcribed here
+// - an earlier draft of this function hand-listed the columns and silently omitted
+// level_entered_at/employee_name (both added later via ALTER TABLE ADD COLUMN, so absent from the
+// base CREATE TABLE text this function's author was working from), which would have permanently
+// dropped escalation-timing data for every incident on first deploy. Driving this from the table's
+// own live schema makes that entire class of bug structurally impossible: whatever columns
+// genuinely exist are exactly what gets preserved, with no separate list to fall out of sync.
+//
+// Both indexes that live on this table are recreated inside the SAME transaction, before commit -
+// not left to the CREATE INDEX IF NOT EXISTS loop later in migrate() - so the active_key uniqueness
+// guarantee is never even briefly unenforced between the rename and that later loop running. Any
+// failure - including a row-count mismatch - rolls back and re-throws rather than silently
+// swallowing it, unlike the best-effort ALTER TABLE ADD COLUMN loop below: a data-preserving
+// migration must never fail silently.
+function broth_log_copilot_migrate_incident_state_check(SQLite3 $db): void {
+    $existing = $db->querySingle("SELECT sql FROM sqlite_master WHERE type='table' AND name='broth_log_incidents'");
+    $currentSql = (string)($existing ?? '');
+    if ($currentSql === '' || strpos($currentSql, 'auto_stopped') !== false) return;
+
+    $columns = [];
+    $result = $db->query("PRAGMA table_info(broth_log_incidents)");
+    while ($col = $result->fetchArray(SQLITE3_ASSOC)) $columns[] = $col;
+    if (empty($columns)) return;
+
+    $columnDefs = [];
+    $columnNames = [];
+    foreach ($columns as $col) {
+        $name = (string)$col['name'];
+        $columnNames[] = $name;
+        $def = $name . ' ' . (string)$col['type'];
+        if ((int)$col['notnull'] === 1) $def .= ' NOT NULL';
+        if ($col['dflt_value'] !== null) {
+            // PRAGMA table_info() reports a non-constant default (e.g. created_at's original
+            // "DEFAULT (datetime('now'))") WITHOUT its enclosing parentheses - just "datetime('now')"
+            // - which SQLite's CREATE TABLE parser rejects unparenthesized (confirmed against a real
+            // copy of the production table before this fix: this exact case threw a syntax error).
+            // A literal (quoted string, bare number, or NULL/CURRENT_* keyword) is valid as-is;
+            // anything else is an expression and must be re-wrapped.
+            $dflt = (string)$col['dflt_value'];
+            $isLiteral = $dflt === '' || $dflt[0] === "'" || is_numeric($dflt) || in_array(strtoupper($dflt), ['NULL', 'CURRENT_TIME', 'CURRENT_DATE', 'CURRENT_TIMESTAMP'], true);
+            $def .= ' DEFAULT ' . ($isLiteral ? $dflt : '(' . $dflt . ')');
+        }
+        if ((int)$col['pk'] === 1) $def .= ' PRIMARY KEY';
+        $columnDefs[] = $def;
+    }
+    $columnSql = implode(",\n            ", $columnDefs);
+    $columnList = implode(', ', $columnNames);
+
+    $db->exec('BEGIN IMMEDIATE');
+    try {
+        $db->exec("CREATE TABLE broth_log_incidents_migrating (
+            $columnSql,
+            CHECK(state IN ('detected','notified_level_1','acknowledged','escalated_level_2','escalated_level_3','resolved','closed','reopened','unacknowledged_critical','auto_stopped'))
+        )");
+        $db->exec("INSERT INTO broth_log_incidents_migrating ($columnList) SELECT $columnList FROM broth_log_incidents");
+        $oldCount = (int)$db->querySingle("SELECT COUNT(*) FROM broth_log_incidents");
+        $newCount = (int)$db->querySingle("SELECT COUNT(*) FROM broth_log_incidents_migrating");
+        if ($oldCount !== $newCount) {
+            throw new RuntimeException("broth_log_incidents state-check migration row count mismatch: old=$oldCount new=$newCount");
+        }
+        $db->exec("DROP TABLE broth_log_incidents");
+        $db->exec("ALTER TABLE broth_log_incidents_migrating RENAME TO broth_log_incidents");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_broth_log_incidents_open ON broth_log_incidents(state, branch, updated_at)");
+        $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_broth_log_incidents_active_key ON broth_log_incidents(active_key)");
+        $db->exec('COMMIT');
+    } catch (Throwable $e) {
+        try { $db->exec('ROLLBACK'); } catch (Throwable $ignored) {}
+        throw $e;
+    }
 }
 
 function broth_log_copilot_migrate(SQLite3 $db): void {
@@ -174,7 +267,7 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         incident_type TEXT NOT NULL DEFAULT 'temperature',
         shift TEXT,
         closure_reason TEXT,
-        CHECK(state IN ('detected','notified_level_1','acknowledged','escalated_level_2','escalated_level_3','resolved','closed','reopened','unacknowledged_critical'))
+        CHECK(state IN ('detected','notified_level_1','acknowledged','escalated_level_2','escalated_level_3','resolved','closed','reopened','unacknowledged_critical','auto_stopped'))
     );
     CREATE TABLE IF NOT EXISTS broth_log_incident_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -235,6 +328,7 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     ");
+    broth_log_copilot_migrate_incident_state_check($db);
     foreach ([
         "ALTER TABLE broth_log_incidents ADD COLUMN active_key TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_expires_at TEXT",
@@ -1231,6 +1325,15 @@ function broth_log_copilot_due_escalations(?DateTimeImmutable $now = null): arra
         // interval like every subsequent one - not fire on whatever tick happens to run first.
         $sinceLast = $now->getTimestamp() - ($last ?? $levelStart)->getTimestamp();
         $level = (int)$incident['current_level'];
+        // Total elapsed time since the incident was first created (not since it entered its
+        // current level) - "no response" means nobody has ever ACKed it, regardless of how far it
+        // has escalated. Checked before, and takes priority over, the normal escalate/remind
+        // decision below: once 4 hours have passed with zero response, further escalation stops
+        // mattering.
+        if (($now->getTimestamp() - $created->getTimestamp()) >= BROTH_LOG_COPILOT_AUTO_STOP_SECONDS) {
+            $due[] = ['action' => 'auto_stop', 'incident' => $incident];
+            continue;
+        }
         $escalateThreshold = $level === 1 ? BROTH_LOG_COPILOT_L1_ESCALATE_SECONDS : BROTH_LOG_COPILOT_L2_ESCALATE_SECONDS;
         $reminderThreshold = $level === 3 ? BROTH_LOG_COPILOT_L3_REMINDER_SECONDS : BROTH_LOG_COPILOT_REMINDER_SECONDS;
         if ($level < 3 && $ageInLevel >= $escalateThreshold) {
@@ -1286,6 +1389,15 @@ function broth_log_copilot_apply_escalation_action(array $action, ?DateTimeImmut
         run("UPDATE broth_log_incidents SET state=?, current_level=?, last_reminder_at=?, reminder_count=0, level_entered_at=?, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$state, $level, $ts, $ts, $incident['incident_id'], $lockToken]);
         broth_log_copilot_audit($incident['incident_id'], $state, null, []);
         return ['ok' => true, 'action' => 'escalated', 'level' => $level, 'incident_id' => $incident['incident_id']];
+    }
+    if ($action['action'] === 'auto_stop') {
+        // active_key=NULL, exactly like resolve()/close_missing_shift_incident() - this is NOT a
+        // claim the underlying problem is fixed, only that nobody responded in time. Freeing
+        // active_key lets a genuinely new violation at the same station/branch/date open a fresh,
+        // freshly-notified incident instead of silently folding into this now-silent one forever.
+        run("UPDATE broth_log_incidents SET state='auto_stopped', active_key=NULL, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$incident['incident_id'], $lockToken]);
+        broth_log_copilot_audit($incident['incident_id'], 'auto_stopped', null, []);
+        return ['ok' => true, 'action' => 'auto_stopped', 'incident_id' => $incident['incident_id']];
     }
     if ($action['action'] === 'fallback_reminder') {
         // One-time audit marker that MOD manual fallback should now engage. State stays
@@ -1631,10 +1743,11 @@ function broth_log_copilot_incident_known_destinations(string $incidentId): arra
     return $result;
 }
 
-// $kind is one of 'acknowledged' | 'resolved' | 'missing_shift_closed'. Deliberately separate from
-// broth_log_copilot_incident_message()'s existing ack_confirm/resolve_confirm (unchanged, still the
-// more detailed confirmation shown only to the actor who performed the action) - these are always
-// concise and never include incident id, Telegram id, db keys, routing, or escalation metadata.
+// $kind is one of 'acknowledged' | 'resolved' | 'missing_shift_closed' | 'auto_stopped'.
+// Deliberately separate from broth_log_copilot_incident_message()'s existing
+// ack_confirm/resolve_confirm (unchanged, still the more detailed confirmation shown only to the
+// actor who performed the action) - these are always concise and never include incident id,
+// Telegram id, db keys, routing, or escalation metadata.
 function broth_log_copilot_ownership_broadcast_message(array $incident, string $kind, string $actorDisplay = ''): string {
     $branch = (string)($incident['branch'] ?? '');
     if (($incident['incident_type'] ?? 'temperature') === 'missing_shift') {
@@ -1642,7 +1755,14 @@ function broth_log_copilot_ownership_broadcast_message(array $incident, string $
         if ($kind === 'missing_shift_closed') {
             return "{$header}\n\nLog received.\nIssue closed automatically.";
         }
+        if ($kind === 'auto_stopped') {
+            return "\u{23F1} {$branch} \u{2014} " . (string)($incident['shift'] ?? '') . " Broth Log\n\nNo response after 4 hours.\nReminders stopped automatically.\nStill needs review.";
+        }
         return "{$header}\n\nAcknowledged by {$actorDisplay}\nWaiting for the log.";
+    }
+    if ($kind === 'auto_stopped') {
+        $header = "\u{23F1} {$branch} \u{2014} " . (string)($incident['station_label'] ?? '');
+        return "{$header}\n\nNo response after 4 hours.\nReminders stopped automatically.\nStill needs review.";
     }
     $header = "\u{2705} {$branch} \u{2014} " . (string)($incident['station_label'] ?? '');
     if ($kind === 'resolved') {
@@ -1656,11 +1776,24 @@ function broth_log_copilot_ownership_broadcast_message(array $incident, string $
 }
 
 // Resolve-only markup for the ACK broadcast on a still-open temperature incident - other managers
-// can resolve it directly from this message. Every other broadcast kind gets no buttons at all:
-// nothing further is actionable once resolved/closed, and missing_shift never supports manual
-// Resolve at any stage (matches the existing, unchanged guard in broth_log_copilot_resolve()).
+// can resolve it directly from this message. auto_stopped gets a full ACK+Resolve (ACK-only for
+// missing_shift) markup - unlike every other broadcast kind, the incident is still genuinely open
+// and unattended, so it must stay actionable directly from this message; it is NOT a claim that the
+// problem is resolved. Every other kind gets no buttons: nothing further is actionable once
+// resolved/closed, and missing_shift never supports manual Resolve at any stage (matches the
+// existing, unchanged guard in broth_log_copilot_resolve()).
 function broth_log_copilot_ownership_broadcast_reply_markup(array $incident, string $kind, ?DateTimeImmutable $now = null): ?array {
-    if ($kind !== 'acknowledged' || ($incident['incident_type'] ?? 'temperature') === 'missing_shift') return null;
+    $isMissingShift = ($incident['incident_type'] ?? 'temperature') === 'missing_shift';
+    if ($kind === 'auto_stopped') {
+        $expiresAt = ($now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+15 minutes')->getTimestamp();
+        $ack = broth_log_copilot_create_callback_token('ack', (string)$incident['incident_id'], $expiresAt);
+        if ($isMissingShift) {
+            return ['inline_keyboard' => [[['text' => 'ACK', 'callback_data' => $ack]]]];
+        }
+        $resolve = broth_log_copilot_create_callback_token('resolve', (string)$incident['incident_id'], $expiresAt);
+        return ['inline_keyboard' => [[['text' => 'ACK', 'callback_data' => $ack], ['text' => 'Resolve', 'callback_data' => $resolve]]]];
+    }
+    if ($kind !== 'acknowledged' || $isMissingShift) return null;
     $expiresAt = ($now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+15 minutes')->getTimestamp();
     $resolve = broth_log_copilot_create_callback_token('resolve', (string)$incident['incident_id'], $expiresAt);
     return ['inline_keyboard' => [[['text' => 'Resolve', 'callback_data' => $resolve]]]];
@@ -1684,7 +1817,7 @@ function broth_log_copilot_broadcast_incident_update(string $incidentId, string 
         $deliveryKey = 'incident:' . $incidentId . ':' . $kind . '_status:' . $chatId;
         $results[$chatId] = broth_log_copilot_send_idempotent($deliveryKey, $incidentId, $chatId, $kind . '_status', $message, $replyMarkup);
     }
-    $eventType = $kind === 'resolved' ? 'resolution_broadcast_sent' : ($kind === 'missing_shift_closed' ? 'closure_broadcast_sent' : 'ownership_broadcast_sent');
+    $eventType = $kind === 'resolved' ? 'resolution_broadcast_sent' : ($kind === 'missing_shift_closed' ? 'closure_broadcast_sent' : ($kind === 'auto_stopped' ? 'auto_stop_broadcast_sent' : 'ownership_broadcast_sent'));
     // The summary audit event represents the canonical broadcast OBLIGATION for this ACK/Resolve/
     // close being genuinely fulfilled at least once - never "this function was invoked," and never
     // "every destination succeeded on this specific call." Two conditions, both required:
@@ -2058,9 +2191,19 @@ function broth_log_copilot_apply_escalation_action_with_notification(array $acti
     if (empty($result['ok'])) return $result;
     $incident = broth_log_copilot_incident_from_result((string)$result['incident_id']);
     if (!$incident) return $result + ['outbound' => 'incident_missing'];
+    $incidentId = (string)$incident['incident_id'];
+    if ($result['action'] === 'auto_stopped') {
+        // Deliberately NOT another proactive reminder/escalation push (deliver_proactive_alert())
+        // - this is a status change, so it goes out through the same shared-ownership broadcast
+        // path as ACK/Resolve/closure, reaching only the same safety-audited, positively-classified
+        // recipient set (Ops + still-eligible managers who actually received this incident) already
+        // hardened for exactly this purpose. actorId='' - nobody performed this, the system did.
+        $broadcastResults = broth_log_copilot_broadcast_incident_update($incidentId, 'auto_stopped', '', $now);
+        $sent = count(array_filter($broadcastResults, fn($r) => !empty($r['sent'])));
+        return $result + ['outbound_sent' => $sent];
+    }
     $kind = $result['action'] === 'fallback' ? 'fallback' : ($result['action'] === 'escalated' ? 'escalation' : 'reminder');
     $level = (int)($result['level'] ?? $incident['current_level'] ?? 1);
-    $incidentId = (string)$incident['incident_id'];
     $reminderCount = $incident['reminder_count'] ?? 0;
     $message = broth_log_copilot_incident_message($incident, $kind);
     // Same destination resolution as broth_log_copilot_notify_incident(): eligible managers get

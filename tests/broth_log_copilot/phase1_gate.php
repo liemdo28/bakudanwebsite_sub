@@ -3216,6 +3216,121 @@ try {
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN ($pr49MgrPlaceholders)", $pr49MgrIds);
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($pr49Placeholders)", $pr49IncidentIds)['c'] ?? -1), 0, 'PR #49: no leftover fixture incidents remain');
 
+    // ============================================================================
+    // AUTO-STOP: if NOBODY responds (no ACK, at any escalation level) within
+    // BROTH_LOG_COPILOT_AUTO_STOP_SECONDS (4 hours) of an incident's own created_at,
+    // due_escalations() reports 'auto_stop' instead of the normal remind/escalate action. This is
+    // NOT a claim the problem is fixed - state becomes 'auto_stopped', never 'resolved'/'closed' -
+    // it only stops the repeating Telegram pushes and broadcasts to the same safety-audited
+    // recipient set ACK/Resolve/closure already use. The incident remains fully ACK/Resolve-able
+    // afterward.
+    // ============================================================================
+    $asEarlyMgr = '940'; $asEarlyChat = '910940001';
+    $asLateMgr = '941'; $asLateChat = '910941001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$asEarlyMgr, 'AutoStop Early', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$asEarlyMgr, $asEarlyChat]);
+
+    // --- boundary: just under 4 hours total age -> NOT auto_stop, normal escalation logic applies ---
+    $asBoundaryUnderId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-under']));
+    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:00:00', last_reminder_at=NULL, current_level=1, state='detected' WHERE incident_id=?", [$asBoundaryUnderId]);
+    $asUnderDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 03:59:59 UTC')), fn($d) => $d['incident']['incident_id'] === $asBoundaryUnderId));
+    expect_eq(count($asUnderDue), 1, 'boundary: exactly one due action at 3:59:59 elapsed');
+    expect_true(($asUnderDue[0]['action'] ?? '') !== 'auto_stop', 'boundary: at 1 second under 4 hours, the action is NOT auto_stop - normal escalation cadence still governs');
+
+    // --- boundary: at exactly 4 hours total age -> auto_stop, regardless of current level ---
+    $asBoundaryAtId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-at']));
+    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:05:00', last_reminder_at=NULL, current_level=3, state='escalated_level_3' WHERE incident_id=?", [$asBoundaryAtId]);
+    $asAtDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 04:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asBoundaryAtId));
+    expect_eq(count($asAtDue), 1, 'boundary: exactly one due action at exactly 4:00:00 elapsed');
+    expect_eq($asAtDue[0]['action'] ?? '', 'auto_stop', 'boundary: at exactly 4 hours elapsed, action is auto_stop even though the incident is already at level 3 (would otherwise be due for an L3 reminder)');
+
+    // --- applying auto_stop: state transitions, active_key freed, reminders stop for good ---
+    broth_log_copilot_notify_incident($asBoundaryAtId, new DateTimeImmutable('2026-08-20 00:00:00 UTC'));
+    $asBeforeActiveKey = q1("SELECT active_key FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId])['active_key'] ?? null;
+    expect_true($asBeforeActiveKey !== null, 'sanity: the incident has an active_key before auto_stop (still open/deduping)');
+    $asApplyResult = broth_log_copilot_apply_escalation_action_with_notification($asAtDue[0], new DateTimeImmutable('2026-08-20 04:00:00 UTC'));
+    expect_true($asApplyResult['ok'] ?? false, 'applying auto_stop succeeds');
+    expect_eq($asApplyResult['action'] ?? '', 'auto_stopped', 'applying auto_stop reports action=auto_stopped');
+    $asRow = q1("SELECT state, active_key FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId]);
+    expect_eq($asRow['state'] ?? '', 'auto_stopped', 'incident state becomes auto_stopped, never resolved/closed');
+    expect_true($asRow['active_key'] === null, 'active_key is freed on auto_stop, exactly like resolve()/close_missing_shift_incident() - NOT a claim the problem is fixed, only that a fresh future violation can open a fresh incident');
+    $asStillDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-21 00:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asBoundaryAtId));
+    expect_true(empty($asStillDue), 'once auto_stopped, the incident never appears in due_escalations() again - reminders/escalations stop for good');
+
+    // --- broadcast reaches Ops + eligible manager; excludes a manager authorized AFTER this incident,
+    // reusing PR #49's positive-classification recipient safety unchanged. ---
+    $asBroadcastKnown = broth_log_copilot_incident_known_destinations($asBoundaryAtId);
+    expect_true(in_array($opsGroupChatId, $asBroadcastKnown, true), 'auto_stop broadcast recipients include Ops');
+    expect_true(in_array($asEarlyChat, $asBroadcastKnown, true), 'auto_stop broadcast recipients include the already-eligible manager');
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$asLateMgr, 'AutoStop Late', 'manager', json_encode(['B1']), '2026-08-20 01:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$asLateMgr, $asLateChat]);
+    run("INSERT INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,status,sent_at) VALUES (?,?,?,?,?, 'sent', ?)",
+        ['autostop-contaminated', $asBoundaryAtId, $asLateChat, 'reminder', 'contaminated', '2026-08-20 01:30:00']);
+    $asBroadcastKnownAfter = broth_log_copilot_incident_known_destinations($asBoundaryAtId);
+    expect_true(!in_array($asLateChat, $asBroadcastKnownAfter, true), 'auto_stop broadcast recipients correctly exclude a manager authorized after this incident was created, exactly like ACK/Resolve/closure broadcasts');
+    $asAuditCount = (int)(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='auto_stop_broadcast_sent'", [$asBoundaryAtId])['c'] ?? -1);
+    expect_eq($asAuditCount, 1, 'exactly one auto_stop_broadcast_sent audit event was recorded when apply_escalation_action_with_notification() ran the broadcast');
+    // Re-running the broadcast (simulating a retry/duplicate worker tick) must not create a second event.
+    broth_log_copilot_broadcast_incident_update($asBoundaryAtId, 'auto_stopped', '', new DateTimeImmutable('2026-08-20 04:05:00 UTC'));
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='auto_stop_broadcast_sent'", [$asBoundaryAtId])['c'] ?? -1), 1, 'PR #47 audit-idempotency holds for auto_stop_broadcast_sent too - a retry never double-counts');
+
+    // --- the auto_stopped incident remains fully ACK-able and Resolve-able afterward, exactly like
+    // any other still-open incident - auto_stop is not a terminal claim of resolution. ---
+    $asEarlyUser = broth_log_copilot_authorized_user($asEarlyMgr);
+    $asAckResult = broth_log_copilot_ack($asBoundaryAtId, $asEarlyUser, new DateTimeImmutable('2026-08-20 05:00:00 UTC'));
+    expect_true($asAckResult['ok'] ?? false, 'an auto_stopped incident can still be ACKed by a human afterward');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId])['state'] ?? '', 'acknowledged', 'ACKing an auto_stopped incident transitions it to acknowledged normally');
+    $asResolveResult = broth_log_copilot_resolve($asBoundaryAtId, $asEarlyUser, 38.0, 'fixed after auto-stop', new DateTimeImmutable('2026-08-20 05:05:00 UTC'));
+    expect_true($asResolveResult['ok'] ?? false, 'a formerly auto_stopped, now-acknowledged incident can still be Resolved with recheck evidence');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId])['state'] ?? '', 'resolved', 'Resolve succeeds normally after auto_stop -> acknowledged');
+
+    // --- active_key freed by auto_stop lets a genuinely new violation at the same station/branch/date
+    // open a fresh, freshly-notified incident rather than silently folding into a silenced one. ---
+    $asReopenId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-reopen']));
+    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:00:00', last_reminder_at=NULL WHERE incident_id=?", [$asReopenId]);
+    $asReopenDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 04:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asReopenId));
+    broth_log_copilot_apply_escalation_action($asReopenDue[0], new DateTimeImmutable('2026-08-20 04:00:00 UTC'));
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asReopenId])['state'] ?? '', 'auto_stopped', 'sanity: second fixture incident is also auto_stopped');
+    $asFreshId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-fresh']));
+    expect_true($asFreshId !== $asReopenId && $asFreshId !== '', 'a brand new violation at the same station/branch/date opens a genuinely NEW incident once the old one is auto_stopped, not silently folded into it');
+    $asFreshSentBefore = count($sentMessages);
+    expect_true(broth_log_copilot_notify_incident($asFreshId, new DateTimeImmutable('2026-08-20 04:01:00 UTC'))['sent'] ?? false, 'the fresh new incident gets its own real initial notification');
+    expect_true(count($sentMessages) > $asFreshSentBefore, 'sanity - the fresh incident notification actually sent');
+
+    // --- a frozen (pre-cutover) incident, excluded from due_escalations() via the escalation_lock
+    // sentinel, is never auto_stopped either - PR #42's freeze mechanism is completely unaffected. ---
+    $asFrozenId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-frozen']));
+    run("UPDATE broth_log_incidents SET created_at='2020-01-01 00:00:00', level_entered_at='2020-01-01 00:00:00', last_reminder_at=NULL, escalation_lock_expires_at='9999-12-31 23:59:59' WHERE incident_id=?", [$asFrozenId]);
+    $asFrozenDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 04:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asFrozenId));
+    expect_true(empty($asFrozenDue), 'a frozen pre-cutover incident is never auto_stopped either - it stays permanently excluded from due_escalations() exactly as before');
+
+    // --- missing_shift also auto-stops after 4 hours of no response, same as temperature, and its
+    // auto_stop broadcast is ACK-only (no Resolve button), matching every other missing_shift broadcast. ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $asMsId = broth_log_copilot_create_missing_shift_incident('B1', '2026-08-20', 'AM');
+    run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:00:00', last_reminder_at=NULL WHERE incident_id=?", [$asMsId]);
+    broth_log_copilot_notify_incident($asMsId, new DateTimeImmutable('2026-08-20 00:00:00 UTC'));
+    $asMsDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 04:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asMsId));
+    expect_eq($asMsDue[0]['action'] ?? '', 'auto_stop', 'missing_shift incidents auto_stop after 4 hours of no response too - the rule applies to all incident types');
+    $asMsSentBefore = count($sentMessages);
+    broth_log_copilot_apply_escalation_action_with_notification($asMsDue[0], new DateTimeImmutable('2026-08-20 04:00:00 UTC'));
+    $asMsBroadcast = array_slice($sentMessages, $asMsSentBefore);
+    $asMsOpsMsg = null;
+    foreach ($asMsBroadcast as $m) { if (($m['payload']['chat_id'] ?? '') === $opsGroupChatId) $asMsOpsMsg = $m; }
+    expect_true($asMsOpsMsg !== null, 'sanity: Ops receives the missing_shift auto_stop broadcast');
+    expect_true(!isset($asMsOpsMsg['payload']['reply_markup']['inline_keyboard'][0][1]), 'missing_shift auto_stop broadcast is ACK-only - no second (Resolve) button, matching every other missing_shift broadcast');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asMsId])['state'] ?? '', 'auto_stopped', 'missing_shift incident correctly transitions to auto_stopped');
+
+    // Cleanup
+    $asIncidentIds = [$asBoundaryUnderId, $asBoundaryAtId, $asReopenId, $asFreshId, $asFrozenId, $asMsId];
+    $asPlaceholders = implode(',', array_fill(0, count($asIncidentIds), '?'));
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($asPlaceholders)", $asIncidentIds);
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($asPlaceholders)", $asIncidentIds);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN ($asPlaceholders)", $asIncidentIds);
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id IN (?,?)", [$asEarlyMgr, $asLateMgr]);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$asEarlyMgr, $asLateMgr]);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($asPlaceholders)", $asIncidentIds)['c'] ?? -1), 0, 'auto-stop: no leftover fixture incidents remain');
+
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {
     @unlink(TEST_DB_PATH);

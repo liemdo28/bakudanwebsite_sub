@@ -1557,51 +1557,74 @@ function broth_log_copilot_incident_reply_markup(string $incidentId, ?DateTimeIm
 // ============================================================================
 
 // Every destination that has ever received a message about this incident, per the existing
-// outbound-delivery audit trail - the actual, historically-accurate recipient set (not a
-// re-derivation of current routing config, which could drift from who actually saw the alert if
-// e.g. a manager's registration changed after the alert was originally sent) - INTERSECTED with
-// current cutover eligibility for Manager DM destinations specifically. This never rewrites or
-// deletes a single row of broth_log_outbound_deliveries - the historical evidence of what was
-// actually sent (including any pre-cutover delivery) is fully preserved - it only decides which of
-// those already-successful destinations still qualify as a valid recipient for a NEW broadcast
-// (ACK/Resolve/close) today.
+// outbound-delivery audit trail - INTERSECTED with two independent, strictly POSITIVE
+// classification checks. This never rewrites or deletes a single row of
+// broth_log_outbound_deliveries - the historical evidence of what was actually sent (including any
+// pre-cutover delivery) is fully preserved - it only decides which of those already-successful
+// destinations still qualify as a valid recipient for a NEW broadcast (ACK/Resolve/close) today.
+// A historical chat_id is classified by asking two independent, positive questions - never by
+// elimination/negative inference, and never by Telegram id shape (positive/negative id ranges are
+// not a security or routing decision, only an incidental fact about Telegram's own id space):
 //
-// A chat_id is classified as a Manager DM destination only if it matches a real private
-// registration for a manager (broth_log_private_chat_registrations JOIN broth_log_authorized_users
-// WHERE role='manager' - deliberately not filtered by active=1: an inactive manager's chat_id must
-// still be correctly classified as a manager destination and subjected to the eligibility check
-// below, never silently reclassified as a non-manager destination just because it fails an
-// unrelated active-status filter). Telegram's own id space guarantees this can never collide with
-// a group/Ops chat_id - private chat ids are always positive, group/supergroup ids are always
-// negative - and broth_log_private_chat_registrations is only ever populated via the /start flow
-// gated to chat_type='private', so a group/Ops chat_id can never appear there. Anything that does
-// not match this join is therefore necessarily a non-manager destination (Ops/group, or any future
-// destination type) and is always kept unconditionally - Ops routing must never be affected by this
-// filter, matching broth_log_copilot_route_chat_ids()'s complete independence from manager identity.
+// (1) Is it EVER traceable to any manager identity at all, via
+//     broth_log_private_chat_registrations JOIN broth_log_authorized_users(role='manager')?
+//     Deliberately not filtered by active/branch/timestamp here - this is classification, not
+//     eligibility, so a deactivated or branch-removed manager's chat_id must still be correctly
+//     recognized as "was a manager", not silently fall through to the Ops branch below. If yes,
+//     this destination is included only if the SAME chat_id is currently, actually eligible per
+//     broth_log_copilot_manager_dm_chat_ids($branch, $incident['created_at']) - the exact function
+//     proactive delivery itself uses, so active=1, this incident's branch in allowed_branches, AND
+//     authorized_at <= incident.created_at are all enforced identically and automatically. A
+//     manager who was legitimately delivered the original alert but has since been deactivated, or
+//     had this branch removed from their allowed_branches, is correctly excluded - matching the
+//     same "no longer authorized, no longer informed" default already established for proactive
+//     delivery.
 //
-// For a chat_id that IS classified as a Manager DM destination, apply the exact same cutover rule
-// used for proactive delivery (broth_log_copilot_manager_dm_chat_ids()): that manager must have
-// been authorized (authorized_users.created_at) at or before this incident's own created_at. A
-// manager whose only successful delivery for this incident happened before their own authorization
-// predates the incident (e.g. a pre-cutover reminder sent before this eligibility rule existed) is
-// correctly excluded from future ownership broadcasts for that incident, without altering the
-// historical record of what was actually sent. If the incident's created_at cannot be resolved,
-// fail closed for manager-classified destinations only (never for Ops), matching the fail-closed
-// direction already established in broth_log_copilot_deliver_proactive_alert().
+// (2) Otherwise, does it positively match a CURRENT Ops/group destination - any chat_id configured
+//     in broth_log_routing_rules for this incident's branch (any stage/level), or the current
+//     TELEGRAM_COPILOT_CHAT_ID env fallback? If yes, always kept unconditionally - Ops routing must
+//     never be affected by manager-eligibility rules.
+//
+// A chat_id matching NEITHER check is excluded (fail closed), never silently retained as an assumed
+// Ops/group destination. KNOWN LIMITATION, disclosed rather than papered over: broth_log_routing_rules
+// enforces UNIQUE(branch,stage,level), so a routing change overwrites the row in place with no
+// historical trace of the value it replaced; TELEGRAM_COPILOT_CHAT_ID is a plain env var with the
+// same property. If an incident's Ops routing is changed after its original alert was sent, the old
+// Ops chat_id will no longer positively match here and will stop receiving further ownership
+// broadcasts for that incident - a narrow, disclosed loss of follow-up visibility for a destination
+// that already has full original-alert context, not a security regression. Recovering full
+// historical Ops identity across a routing change would require a schema change (e.g. recording
+// destination type/routing snapshot on each outbound delivery), which this PR does not add.
 function broth_log_copilot_incident_known_destinations(string $incidentId): array {
     $historicalChatIds = array_column(q("SELECT DISTINCT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$incidentId]), 'chat_id');
     if (empty($historicalChatIds)) return $historicalChatIds;
-    $incidentCreatedAt = (string)(q1("SELECT created_at FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['created_at'] ?? '');
+    $incident = q1("SELECT branch, created_at FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
+    $branch = (string)($incident['branch'] ?? '');
+    $incidentCreatedAt = (string)($incident['created_at'] ?? '');
+
+    $everManagerChats = array_flip(array_column(q(
+        "SELECT DISTINCT pcr.private_chat_id AS chat_id
+         FROM broth_log_private_chat_registrations pcr
+         INNER JOIN broth_log_authorized_users au ON au.telegram_user_id = pcr.telegram_user_id
+         WHERE au.role = 'manager'"
+    ), 'chat_id'));
+    $currentlyEligibleManagerChats = ($branch !== '' && $incidentCreatedAt !== '')
+        ? array_flip(broth_log_copilot_manager_dm_chat_ids($branch, $incidentCreatedAt))
+        : [];
+
+    $envFallbackChat = broth_log_copilot_env('TELEGRAM_COPILOT_CHAT_ID');
+    $currentOpsChats = array_flip(array_merge(
+        $branch !== '' ? array_column(q("SELECT DISTINCT chat_id FROM broth_log_routing_rules WHERE branch=? AND chat_id IS NOT NULL AND chat_id != ''", [strtoupper($branch)]), 'chat_id') : [],
+        $envFallbackChat !== '' ? [$envFallbackChat] : []
+    ));
+
     $result = [];
     foreach ($historicalChatIds as $chatId) {
-        $managerRow = q1("SELECT au.created_at FROM broth_log_authorized_users au
-                           INNER JOIN broth_log_private_chat_registrations pcr ON pcr.telegram_user_id = au.telegram_user_id
-                           WHERE pcr.private_chat_id = ? AND au.role = 'manager'", [$chatId]);
-        if ($managerRow === null) {
-            $result[] = $chatId;
+        if (isset($everManagerChats[$chatId])) {
+            if (isset($currentlyEligibleManagerChats[$chatId])) $result[] = $chatId;
             continue;
         }
-        if ($incidentCreatedAt !== '' && (string)$managerRow['created_at'] <= $incidentCreatedAt) {
+        if (isset($currentOpsChats[$chatId])) {
             $result[] = $chatId;
         }
     }

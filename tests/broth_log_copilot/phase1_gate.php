@@ -3142,13 +3142,75 @@ try {
     $pr49CbResponse = broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $pr49CbIncId, $pr49CbExpires), $pr49EarlyUser, $pr49EarlyChat, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
     expect_true(isset($pr49CbResponse['intent']), '19: the callback response still returns a structured, displayable result after this change');
 
+    // ------------------------------------------------------------------------------
+    // FINAL SAFETY GATE follow-up: positive-classification hardening.
+    // ------------------------------------------------------------------------------
+
+    // --- point 4: a manager who legitimately received an incident, then is DEACTIVATED before
+    // anyone ACKs, must not receive the ownership broadcast - matching the "no longer authorized,
+    // no longer informed" default already established for proactive delivery. ---
+    $pr49DeactMgr = '935'; $pr49DeactChat = '910935001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pr49DeactMgr, 'PR49 Deact', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49DeactMgr, $pr49DeactChat]);
+    $pr49DeactIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-deact']));
+    broth_log_copilot_notify_incident($pr49DeactIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
+    $pr49DeactDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49DeactIncId]), 'chat_id');
+    expect_true(in_array($pr49DeactChat, $pr49DeactDelivered, true), 'sanity: the manager legitimately received the original alert while still active');
+    run("UPDATE broth_log_authorized_users SET active=0 WHERE telegram_user_id=?", [$pr49DeactMgr]);
+    $pr49DeactKnown = broth_log_copilot_incident_known_destinations($pr49DeactIncId);
+    expect_true(!in_array($pr49DeactChat, $pr49DeactKnown, true), 'point 4: a manager deactivated after legitimately receiving the incident is EXCLUDED from the ownership broadcast, despite a real historical sent row');
+    expect_true(in_array($opsGroupChatId, $pr49DeactKnown, true), 'point 4: sanity - Ops remains included regardless of manager deactivation');
+
+    // --- point 5: a manager who legitimately received a B1 incident, then has B1 removed from
+    // their allowed_branches, must not receive the ownership broadcast. ---
+    $pr49BranchMgr = '936'; $pr49BranchChat = '910936001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pr49BranchMgr, 'PR49 Branch', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49BranchMgr, $pr49BranchChat]);
+    $pr49BranchIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-branch']));
+    broth_log_copilot_notify_incident($pr49BranchIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
+    $pr49BranchDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49BranchIncId]), 'chat_id');
+    expect_true(in_array($pr49BranchChat, $pr49BranchDelivered, true), 'sanity: the manager legitimately received the original alert while still authorized for B1');
+    run("UPDATE broth_log_authorized_users SET allowed_branches=? WHERE telegram_user_id=?", [json_encode(['B2']), $pr49BranchMgr]);
+    $pr49BranchKnown = broth_log_copilot_incident_known_destinations($pr49BranchIncId);
+    expect_true(!in_array($pr49BranchChat, $pr49BranchKnown, true), 'point 5: a manager whose B1 access is removed after legitimately receiving a B1 incident is EXCLUDED from the ownership broadcast');
+    expect_true(in_array($opsGroupChatId, $pr49BranchKnown, true), 'point 5: sanity - Ops remains included regardless of the manager\'s branch access change');
+
+    // --- point 1: a chat_id that positively matches NEITHER a manager identity NOR a current
+    // Ops/routing destination must fail closed (excluded), never be silently assumed to be Ops
+    // merely because it isn't a manager. ---
+    $pr49UnknownChat = 'pr49-orphaned-unrecognized-chat-id';
+    $pr49UnknownIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-unknown']));
+    broth_log_copilot_notify_incident($pr49UnknownIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
+    run("INSERT INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,status,sent_at) VALUES (?,?,?,?,?, 'sent', ?)",
+        ['pr49-unknown-delivery', $pr49UnknownIncId, $pr49UnknownChat, 'reminder', 'orphaned/unrecognized destination - neither a manager nor a current Ops route', '2026-08-26 03:00:00']);
+    $pr49UnknownKnown = broth_log_copilot_incident_known_destinations($pr49UnknownIncId);
+    expect_true(!in_array($pr49UnknownChat, $pr49UnknownKnown, true), 'point 1: a chat_id matching neither a manager identity nor a current Ops/routing destination is EXCLUDED (fail closed), never silently preserved as an assumed Ops destination');
+    expect_true(in_array($opsGroupChatId, $pr49UnknownKnown, true), 'point 1: sanity - the real Ops destination for this incident is still correctly included alongside the excluded unknown one');
+
+    // --- point 3: disclosed, deliberate limitation - broth_log_routing_rules enforces
+    // UNIQUE(branch,stage,level), so a routing change overwrites the old chat_id with no historical
+    // trace. Once B1's Ops routing changes, the OLD Ops chat_id no longer positively matches and is
+    // excluded from further ownership broadcasts for incidents that were originally alerted under
+    // the old routing. This test locks in that decision as intentional, not an accidental regression. ---
+    $pr49RouteChangeIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-routechange']));
+    broth_log_copilot_notify_incident($pr49RouteChangeIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
+    $pr49RouteChangeDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49RouteChangeIncId]), 'chat_id');
+    expect_true(in_array($opsGroupChatId, $pr49RouteChangeDelivered, true), 'sanity: the original Ops group legitimately received this incident under the routing in effect at the time');
+    $pr49NewOpsChat = 'ops-group-chat-after-routing-change';
+    run("UPDATE broth_log_routing_rules SET chat_id=? WHERE branch='B1' AND stage='staging'", [$pr49NewOpsChat]);
+    $pr49RouteChangeKnown = broth_log_copilot_incident_known_destinations($pr49RouteChangeIncId);
+    expect_true(!in_array($opsGroupChatId, $pr49RouteChangeKnown, true), 'point 3 (disclosed, deliberate limitation): once B1 routing changes, the OLD Ops chat_id no longer positively matches current routing_rules and is excluded from further ownership broadcasts for pre-existing incidents - routing_rules has no history to recover it from');
+    run("UPDATE broth_log_routing_rules SET chat_id=? WHERE branch='B1' AND stage='staging'", [$opsGroupChatId]);
+    $pr49RouteChangeRestored = broth_log_copilot_incident_known_destinations($pr49RouteChangeIncId);
+    expect_true(in_array($opsGroupChatId, $pr49RouteChangeRestored, true), 'sanity: restoring the original routing value makes the original Ops group positively match again - this is a live, current-state classification, not a cached/stale decision');
+
     // Cleanup
-    $pr49IncidentIds = [$pr49OldIncId, $pr49NewIncId, $pr49B2IncId, $pr49PartialIncId, $pr49MsIncId, $pr49CbIncId];
+    $pr49IncidentIds = [$pr49OldIncId, $pr49NewIncId, $pr49B2IncId, $pr49PartialIncId, $pr49MsIncId, $pr49CbIncId, $pr49DeactIncId, $pr49BranchIncId, $pr49UnknownIncId, $pr49RouteChangeIncId];
     $pr49Placeholders = implode(',', array_fill(0, count($pr49IncidentIds), '?'));
     run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($pr49Placeholders)", $pr49IncidentIds);
     run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($pr49Placeholders)", $pr49IncidentIds);
     run("DELETE FROM broth_log_incidents WHERE incident_id IN ($pr49Placeholders)", $pr49IncidentIds);
-    $pr49MgrIds = [$pr49EarlyMgr, $pr49LateMgr, $pr49BoundaryMgr, $pr49LateBoundaryMgr, $pr49FailMgr];
+    $pr49MgrIds = [$pr49EarlyMgr, $pr49LateMgr, $pr49BoundaryMgr, $pr49LateBoundaryMgr, $pr49FailMgr, $pr49DeactMgr, $pr49BranchMgr];
     $pr49MgrPlaceholders = implode(',', array_fill(0, count($pr49MgrIds), '?'));
     run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id IN ($pr49MgrPlaceholders)", $pr49MgrIds);
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN ($pr49MgrPlaceholders)", $pr49MgrIds);

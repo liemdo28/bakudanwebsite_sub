@@ -2452,6 +2452,289 @@ try {
     expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_type='missing_shift'")['c'], 0, 'PR #41 hardening: zero missing_shift incidents remain anywhere after this section\'s cleanup');
     expect_eq(broth_log_copilot_missing_shift_alerts_enabled(), false, 'PR #41 hardening: flag correctly reads false again after final cleanup');
 
+    // ========================================================================================
+    // SHARED INCIDENT OWNERSHIP: ACK/Resolve broadcast to every destination that received the
+    // canonical incident (test matrix A-P)
+    // ========================================================================================
+    $ownGmA = '910'; $ownGmAChat = '910910001';
+    $ownGmB = '911'; $ownGmBChat = '910911001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$ownGmA, 'David', 'manager', json_encode(['B1'])]);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$ownGmA, $ownGmAChat]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$ownGmB, 'GM Grace', 'manager', json_encode(['B1'])]);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$ownGmB, $ownGmBChat]);
+    $ownNow = new DateTimeImmutable('2026-08-26 15:00:00 UTC');
+
+    // --- A: Ops ACKs first (authorized actor presses ACK from within the Ops group message) ---
+    $ownIncA = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-a']));
+    broth_log_copilot_notify_incident($ownIncA, $ownNow);
+    $ownADeliveredBefore = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$ownIncA]), 'chat_id');
+    expect_true(in_array($opsGroupChatId, $ownADeliveredBefore, true) && in_array($ownGmAChat, $ownADeliveredBefore, true) && in_array($ownGmBChat, $ownADeliveredBefore, true), 'A: sanity - Ops, David, and Grace all received the original incident');
+    $ownAAckExpires = $ownNow->modify('+15 minutes')->getTimestamp();
+    $ownAAckToken = broth_log_copilot_create_callback_token('ack', $ownIncA, $ownAAckExpires);
+    $ownAUser = broth_log_copilot_authorized_user($ownGmA);
+    $ownASentBefore = count($sentMessages);
+    $ownAResponse = broth_log_copilot_callback_response($ownAAckToken, $ownAUser, $opsGroupChatId, $ownNow);
+    expect_eq($ownAResponse['intent'], 'ack', 'A: David\'s ACK from the Ops group succeeds');
+    expect_eq(q1("SELECT state, acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncA])['state'], 'acknowledged', 'A: canonical incident is acknowledged globally');
+    expect_eq(q1("SELECT acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncA])['acknowledged_by'], $ownGmA, 'A: acknowledged_by correctly records David');
+    $ownABroadcast = array_slice($sentMessages, $ownASentBefore);
+    $ownABroadcastToOps = null; $ownABroadcastToGrace = null; $ownABroadcastToDavid = null;
+    foreach ($ownABroadcast as $m) {
+        $cid = $m['payload']['chat_id'] ?? '';
+        if ($cid === $opsGroupChatId) $ownABroadcastToOps = $m;
+        if ($cid === $ownGmBChat) $ownABroadcastToGrace = $m;
+        if ($cid === $ownGmAChat) $ownABroadcastToDavid = $m;
+    }
+    expect_true($ownABroadcastToOps !== null, 'A: the Ops group receives the ownership broadcast, even though David pressed the button from within that same group - other members have not seen anything yet');
+    expect_true($ownABroadcastToGrace !== null, 'A: Manager (Grace) receives "Acknowledged by David"');
+    expect_true(str_contains((string)($ownABroadcastToGrace['payload']['text'] ?? ''), 'Acknowledged by David'), 'A: broadcast text correctly names the actor by display name');
+    expect_true($ownABroadcastToDavid === null, 'A: David\'s own private DM does NOT receive a redundant ownership broadcast - he already has his callback confirmation');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncA])['c'], 1, 'A: exactly one ownership_broadcast_sent audit event, not one per destination');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncA]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncA]);
+
+    // --- B: Manager ACKs first (from their own private DM this time) ---
+    $ownIncB = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-b']));
+    broth_log_copilot_notify_incident($ownIncB, $ownNow);
+    $ownBAckToken = broth_log_copilot_create_callback_token('ack', $ownIncB, $ownAAckExpires);
+    $ownBSentBefore = count($sentMessages);
+    $ownBResponse = broth_log_copilot_callback_response($ownBAckToken, $ownAUser, $ownGmAChat, $ownNow);
+    expect_eq($ownBResponse['intent'], 'ack', 'B: David\'s ACK from his own DM succeeds');
+    $ownBBroadcast = array_slice($sentMessages, $ownBSentBefore);
+    $ownBOpsGotIt = false; $ownBDavidGotIt = false;
+    foreach ($ownBBroadcast as $m) {
+        if (($m['payload']['chat_id'] ?? '') === $opsGroupChatId) $ownBOpsGotIt = true;
+        if (($m['payload']['chat_id'] ?? '') === $ownGmAChat) $ownBDavidGotIt = true;
+    }
+    expect_true($ownBOpsGotIt, 'B: Ops receives the ownership update when a manager ACKs first');
+    expect_true(!$ownBDavidGotIt, 'B: David does not get a duplicate broadcast to the same DM he pressed ACK from');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncB]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncB]);
+
+    // --- C: two authorized actors ACK concurrently - first commit wins, exactly one broadcast ---
+    $ownIncC = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-c']));
+    broth_log_copilot_notify_incident($ownIncC, $ownNow);
+    $ownCTokenA = broth_log_copilot_create_callback_token('ack', $ownIncC, $ownAAckExpires);
+    $ownCTokenB = broth_log_copilot_create_callback_token('ack', $ownIncC, $ownAAckExpires);
+    $ownBUser = broth_log_copilot_authorized_user($ownGmB);
+    $ownCRespA = broth_log_copilot_callback_response($ownCTokenA, $ownAUser, $ownGmAChat, $ownNow);
+    $ownCRespB = broth_log_copilot_callback_response($ownCTokenB, $ownBUser, $ownGmBChat, $ownNow);
+    expect_eq($ownCRespA['intent'], 'ack', 'C: David (first) wins the race');
+    expect_eq($ownCRespB['intent'], 'ack_rejected', 'C: Grace (second) is rejected');
+    expect_true(str_contains((string)$ownCRespB['message'], 'Already acknowledged by David'), 'C: Grace\'s rejection names the actual winner, David, not a generic error');
+    expect_eq(q1("SELECT acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncC])['acknowledged_by'], $ownGmA, 'C: acknowledged_by is never overwritten by the losing actor');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='acknowledged'", [$ownIncC])['c'], 1, 'C: exactly one acknowledged audit event, never two');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncC])['c'], 1, 'C: exactly one ownership broadcast, not one per race attempt');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncC]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncC]);
+
+    // --- D: same actor double-acks via the text-command path (not token-replay-protected the same
+    // way callbacks are) - still idempotent, still exactly one broadcast. ---
+    $ownIncD = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-d']));
+    broth_log_copilot_notify_incident($ownIncD, $ownNow);
+    $ownDParsed = ['intent' => 'ack', 'incident_id' => $ownIncD, 'language' => 'en'];
+    $ownDResp1 = broth_log_copilot_message_action_response('/ack #' . $ownIncD, $ownDParsed, $ownAUser, $ownGmAChat, $ownNow);
+    $ownDResp2 = broth_log_copilot_message_action_response('/ack #' . $ownIncD, $ownDParsed, $ownAUser, $ownGmAChat, $ownNow);
+    expect_eq($ownDResp1['intent'], 'ack', 'D: first /ack succeeds');
+    expect_eq($ownDResp2['intent'], 'ack_rejected', 'D: second /ack from the same actor is rejected as already-acknowledged, not double-processed');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncD])['c'], 1, 'D: idempotent - exactly one broadcast even with a double-ack attempt');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncD]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncD]);
+
+    // --- E: unauthorized user presses ACK - zero mutation, zero broadcast ---
+    $ownIncE = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-e']));
+    broth_log_copilot_notify_incident($ownIncE, $ownNow);
+    $ownETokenUnauth = broth_log_copilot_create_callback_token('ack', $ownIncE, $ownAAckExpires);
+    $ownEUnauthUser = ['telegram_user_id' => '999777', 'allowed_branch_list' => ['B2'], 'preferred_language' => 'en'];
+    $ownESentBefore = count($sentMessages);
+    $ownEResp = broth_log_copilot_callback_response($ownETokenUnauth, $ownEUnauthUser, $opsGroupChatId, $ownNow);
+    expect_eq($ownEResp['intent'], 'callback_forbidden', 'E: an unauthorized user (wrong branch) pressing ACK is denied');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ownIncE])['state'], 'detected', 'E: zero mutation from the denied press');
+    expect_eq(count($sentMessages), $ownESentBefore, 'E: zero broadcast messages sent for a denied ACK');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncE])['c'], 0, 'E: zero broadcast audit events for a denied ACK');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncE]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncE]);
+
+    // --- F: temperature ACK stays open, reminders stop, Solve remains available (broadcast includes a Resolve button) ---
+    $ownIncF = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-f']));
+    broth_log_copilot_notify_incident($ownIncF, $ownNow);
+    $ownFAckToken = broth_log_copilot_create_callback_token('ack', $ownIncF, $ownAAckExpires);
+    $ownFSentBefore = count($sentMessages);
+    broth_log_copilot_callback_response($ownFAckToken, $ownAUser, $ownGmAChat, $ownNow);
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ownIncF])['state'], 'acknowledged', 'F: temperature incident stays open (acknowledged, not resolved/closed)');
+    run("UPDATE broth_log_incidents SET level_entered_at=? WHERE incident_id=?", [$ownNow->format('Y-m-d H:i:s'), $ownIncF]);
+    $ownFDue = array_values(array_filter(broth_log_copilot_due_escalations($ownNow->modify('+1 hour')), fn($d) => $d['incident']['incident_id'] === $ownIncF));
+    expect_true(empty($ownFDue), 'F: reminders/escalations stop for the acknowledged incident');
+    $ownFBroadcastToOps = null;
+    foreach (array_slice($sentMessages, $ownFSentBefore) as $m) {
+        if (($m['payload']['chat_id'] ?? '') === $opsGroupChatId) $ownFBroadcastToOps = $m;
+    }
+    expect_true($ownFBroadcastToOps !== null, 'F: sanity - Ops received the ownership broadcast');
+    expect_eq(count($ownFBroadcastToOps['payload']['reply_markup']['inline_keyboard'][0] ?? []), 1, 'F: the ACK broadcast for a still-open temperature incident carries exactly one button');
+    expect_eq($ownFBroadcastToOps['payload']['reply_markup']['inline_keyboard'][0][0]['text'] ?? '', 'Resolve', 'F: Solve/Resolve remains actionable directly from the broadcast message');
+
+    // --- G: valid temperature Solve - resolved, all recipients informed, reminders remain stopped ---
+    $ownGResolveActor = broth_log_copilot_authorized_user($ownGmA);
+    $ownGSentBefore = count($sentMessages);
+    $ownGResolveResult = broth_log_copilot_resolve($ownIncF, $ownGResolveActor, 38.0, 'closed door and moved product', $ownNow);
+    expect_true($ownGResolveResult['ok'] ?? false, 'G: valid Resolve succeeds');
+    broth_log_copilot_broadcast_incident_update($ownIncF, 'resolved', $ownGmA, $ownNow);
+    $ownGBroadcastToOps = null; $ownGBroadcastToGrace = null;
+    foreach (array_slice($sentMessages, $ownGSentBefore) as $m) {
+        if (($m['payload']['chat_id'] ?? '') === $opsGroupChatId) $ownGBroadcastToOps = $m;
+        if (($m['payload']['chat_id'] ?? '') === $ownGmBChat) $ownGBroadcastToGrace = $m;
+    }
+    expect_true($ownGBroadcastToOps !== null && $ownGBroadcastToGrace !== null, 'G: both Ops and Grace are informed of the resolution');
+    expect_true(str_contains((string)($ownGBroadcastToGrace['payload']['text'] ?? ''), 'Resolved by David'), 'G: resolution broadcast names the resolver');
+    expect_true(!isset($ownGBroadcastToGrace['payload']['reply_markup']), 'G: the resolution broadcast carries no buttons - nothing further is actionable once resolved');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncF])['c'], 1, 'G: exactly one resolution_broadcast_sent audit event');
+    $ownGStillDue = array_values(array_filter(broth_log_copilot_due_escalations($ownNow->modify('+1 hour')), fn($d) => $d['incident']['incident_id'] === $ownIncF));
+    expect_true(empty($ownGStillDue), 'G: reminders remain stopped after resolution (resolved is excluded from due_escalations() same as before)');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncF]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncF]);
+
+    // --- H: unsafe temperature Solve is rejected - no false resolution broadcast, ownership preserved ---
+    $ownIncH = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-h']));
+    broth_log_copilot_notify_incident($ownIncH, $ownNow);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $ownIncH, $ownAAckExpires), $ownAUser, $ownGmAChat, $ownNow);
+    $ownHUnsafeResult = broth_log_copilot_resolve($ownIncH, $ownAUser, 120.0, 'tried but still too warm', $ownNow);
+    expect_true(!($ownHUnsafeResult['ok'] ?? true), 'H: an unsafe recheck temperature is rejected');
+    expect_eq($ownHUnsafeResult['reason'] ?? '', 'recheck_still_unsafe', 'H: rejected with the correct, existing reason code - unweakened');
+    expect_eq(q1("SELECT state, acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncH])['state'], 'acknowledged', 'H: incident stays open (acknowledged), not falsely resolved');
+    expect_eq(q1("SELECT acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncH])['acknowledged_by'], $ownGmA, 'H: David\'s ACK ownership is preserved, untouched by the failed Resolve attempt');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncH])['c'], 0, 'H: no resolution_broadcast_sent event for a rejected Resolve');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncH]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncH]);
+
+    // --- I: Missing Shift ACK - acknowledged, reminder stops, no Resolve button anywhere, stays open ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $ownMsInc = broth_log_copilot_create_missing_shift_incident('B1', '2026-08-26', 'AM');
+    broth_log_copilot_notify_incident($ownMsInc, $ownNow);
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    $ownMsSentBefore = count($sentMessages);
+    $ownMsResp = broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $ownMsInc, $ownAAckExpires), $ownAUser, $ownGmAChat, $ownNow);
+    expect_eq($ownMsResp['intent'], 'ack', 'I: missing_shift ACK succeeds');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ownMsInc])['state'], 'acknowledged', 'I: missing_shift incident stays open (acknowledged, not closed)');
+    $ownMsBroadcastToOps = null;
+    foreach (array_slice($sentMessages, $ownMsSentBefore) as $m) {
+        if (($m['payload']['chat_id'] ?? '') === $opsGroupChatId) $ownMsBroadcastToOps = $m;
+    }
+    expect_true($ownMsBroadcastToOps !== null, 'I: sanity - Ops received the missing_shift ownership broadcast');
+    expect_true(!isset($ownMsBroadcastToOps['payload']['reply_markup']), 'I: no Resolve button appears anywhere for missing_shift, even in the ACK broadcast');
+    expect_true(str_contains((string)($ownMsBroadcastToOps['payload']['text'] ?? ''), 'Waiting for the log'), 'I: broadcast text matches the missing_shift-specific wording');
+    run("UPDATE broth_log_incidents SET level_entered_at=? WHERE incident_id=?", [$ownNow->format('Y-m-d H:i:s'), $ownMsInc]);
+    $ownMsDue = array_values(array_filter(broth_log_copilot_due_escalations($ownNow->modify('+1 hour')), fn($d) => $d['incident']['incident_id'] === $ownMsInc));
+    expect_true(empty($ownMsDue), 'I: reminders stop for the acknowledged missing_shift incident');
+
+    // --- J: real (late) submission auto-closes the ACKed missing_shift incident; LATE preserved, closure broadcast sent ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $ownJSentBefore = count($sentMessages);
+    $ownJCloseResult = broth_log_copilot_close_missing_shift_incident($ownMsInc, 'LATE', $ownNow);
+    expect_true($ownJCloseResult['ok'] ?? false, 'J: close succeeds');
+    broth_log_copilot_broadcast_incident_update($ownMsInc, 'missing_shift_closed', '', $ownNow);
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    $ownJRow = q1("SELECT state, closure_reason FROM broth_log_incidents WHERE incident_id=?", [$ownMsInc]);
+    expect_eq($ownJRow['state'], 'closed', 'J: missing_shift auto-closes');
+    expect_eq($ownJRow['closure_reason'], 'late_submission_received', 'J: closure_reason correctly preserves LATE, never silently upgraded to on-time');
+    $ownJBroadcastToOps = null; $ownJBroadcastToGrace = null;
+    foreach (array_slice($sentMessages, $ownJSentBefore) as $m) {
+        if (($m['payload']['chat_id'] ?? '') === $opsGroupChatId) $ownJBroadcastToOps = $m;
+        if (($m['payload']['chat_id'] ?? '') === $ownGmBChat) $ownJBroadcastToGrace = $m;
+    }
+    expect_true($ownJBroadcastToOps !== null && $ownJBroadcastToGrace !== null, 'J: closure broadcast reaches Ops and every manager who received the original alert');
+    expect_true(str_contains((string)($ownJBroadcastToOps['payload']['text'] ?? ''), 'closed automatically'), 'J: closure broadcast text is correct');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='closure_broadcast_sent'", [$ownMsInc])['c'], 1, 'J: exactly one closure_broadcast_sent audit event');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='acknowledged'", [$ownMsInc])['c'], 1, 'J: the earlier ACK audit event is preserved, not erased by the close');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownMsInc]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownMsInc]);
+
+    // --- K: onboarding isolation - the broadcast never reaches the Manager Onboarding Group ---
+    $ownIncK = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-k']));
+    broth_log_copilot_notify_incident($ownIncK, $ownNow);
+    $ownKSentBefore = count($sentMessages);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $ownIncK, $ownAAckExpires), $ownAUser, $ownGmAChat, $ownNow);
+    $ownKOnboardingChatId = getenv('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID');
+    $ownKBroadcastChats = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $ownKSentBefore));
+    expect_true(!in_array($ownKOnboardingChatId, $ownKBroadcastChats, true), 'K: the ownership broadcast never reaches the Manager Onboarding Group');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncK]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncK]);
+
+    // --- L: B1 isolation - a B1 incident's broadcast never touches a B2/B3 chat, since the
+    // recipient set is derived only from that incident's own delivery history. Not asserting an
+    // exact destination count/identity here: this shared test-suite database can carry other
+    // B1-eligible managers registered by earlier, unrelated sections of this same file (same
+    // caveat already documented elsewhere in this file). The actual property under test is
+    // isolation from B2/B3, not an exact recipient list. ---
+    $ownIncL = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-l']));
+    broth_log_copilot_notify_incident($ownIncL, $ownNow);
+    $ownLDestinations = broth_log_copilot_incident_known_destinations($ownIncL);
+    expect_true(count($ownLDestinations) > 0, 'L: sanity - the B1 incident has known destinations');
+    expect_true(in_array($opsGroupChatId, $ownLDestinations, true), 'L: Ops is among the known destinations');
+    $ownLB2B3Chats = array_values(array_unique(array_merge(broth_log_copilot_manager_dm_chat_ids('B2'), broth_log_copilot_manager_dm_chat_ids('B3'))));
+    foreach ($ownLB2B3Chats as $b2b3Chat) {
+        expect_true(!in_array($b2b3Chat, $ownLDestinations, true), 'L: no B2/B3-eligible manager chat ever appears among a B1 incident\'s known destinations');
+    }
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncL]);
+
+    // --- M: repeated processing (webhook-retry style) of the identical successful ACK callback
+    // never duplicates business state or the broadcast - the single-use replay-protected token
+    // already guarantees this (broth_log_callback_replays), verified explicitly here. ---
+    $ownIncM = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-m']));
+    broth_log_copilot_notify_incident($ownIncM, $ownNow);
+    $ownMToken = broth_log_copilot_create_callback_token('ack', $ownIncM, $ownAAckExpires);
+    $ownMResp1 = broth_log_copilot_callback_response($ownMToken, $ownAUser, $ownGmAChat, $ownNow);
+    $ownMResp2 = broth_log_copilot_callback_response($ownMToken, $ownAUser, $ownGmAChat, $ownNow);
+    expect_eq($ownMResp1['intent'], 'ack', 'M: first delivery of the callback succeeds');
+    expect_eq($ownMResp2['intent'], 'callback_rejected', 'M: a webhook-retry redelivery of the identical callback is rejected as already-used, not reprocessed');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncM])['c'], 1, 'M: exactly one broadcast despite the retried delivery');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncM]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncM]);
+
+    // --- N: partial Telegram send failure during the broadcast never rolls back the canonical ACK;
+    // only the failed destination remains retryable, the succeeded one is not resent. ---
+    $ownIncN = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-n']));
+    broth_log_copilot_notify_incident($ownIncN, $ownNow);
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $ownGmBChat): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        if (($payload['chat_id'] ?? '') === $ownGmBChat) return ['sent' => false, 'reason' => 'simulated failure for Grace only'];
+        return ['sent' => true, 'mock' => true];
+    };
+    $ownNAckResp = broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $ownIncN, $ownAAckExpires), $ownAUser, $ownGmAChat, $ownNow);
+    expect_eq($ownNAckResp['intent'], 'ack', 'N: the canonical ACK commits even though one broadcast destination will fail');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ownIncN])['state'], 'acknowledged', 'N: incident state remains committed regardless of the downstream send failure');
+    $ownNGraceStatus = q1("SELECT status FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=? AND message_kind='acknowledged_status'", [$ownIncN, $ownGmBChat])['status'] ?? '';
+    expect_eq($ownNGraceStatus, 'failed', 'N: the failed destination is recorded as failed, retryable, not silently dropped');
+    $ownNOpsStatus = q1("SELECT status FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=? AND message_kind='acknowledged_status'", [$ownIncN, $opsGroupChatId])['status'] ?? '';
+    expect_eq($ownNOpsStatus, 'sent', 'N: the succeeded destination (Ops) is unaffected by the other destination\'s failure');
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+    $ownNRetrySentBefore = count($sentMessages);
+    broth_log_copilot_broadcast_incident_update($ownIncN, 'acknowledged', $ownGmA, $ownNow);
+    $ownNRetryChats = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $ownNRetrySentBefore));
+    expect_true(in_array($ownGmBChat, $ownNRetryChats, true), 'N: retrying the broadcast resends to the previously-failed destination (Grace)');
+    expect_true(!in_array($opsGroupChatId, $ownNRetryChats, true), 'N: retrying the broadcast does NOT resend to the already-succeeded destination (Ops)');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncN]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncN]);
+
+    // --- O: a historical/frozen incident is unaffected by this feature - ACKing one (if a human
+    // manually reaches it) works normally and it still never resumes automatic reminders. ---
+    $ownOIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'businessDate' => '2026-08-20', 'responseId' => 'resp-own-o']));
+    broth_log_copilot_freeze_pre_cutover_incidents($ownNow);
+    expect_eq(q1("SELECT escalation_lock_expires_at FROM broth_log_incidents WHERE incident_id=?", [$ownOIncId])['escalation_lock_expires_at'], BROTH_LOG_COPILOT_FROZEN_LOCK_SENTINEL, 'O: sanity - the historical incident is frozen');
+    $ownOAckResult = broth_log_copilot_ack($ownOIncId, $ownAUser, $ownNow);
+    expect_true($ownOAckResult['ok'] ?? false, 'O: a frozen historical incident can still be manually ACKed');
+    $ownODue = array_values(array_filter(broth_log_copilot_due_escalations($ownNow->modify('+1 year')), fn($d) => $d['incident']['incident_id'] === $ownOIncId));
+    expect_true(empty($ownODue), 'O: the historical incident still never resumes automatic reminders after being ACKed - this feature does not reintroduce old reminder spam');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownOIncId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownOIncId]);
+
+    // Cleanup shared fixtures
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id IN (?,?)", [$ownGmA, $ownGmB]);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$ownGmA, $ownGmB]);
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE response_id LIKE 'resp-own-%'")['c'] ?? 0, 0, 'shared incident ownership: no leftover fixture incidents remain');
+
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {
     @unlink(TEST_DB_PATH);

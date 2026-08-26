@@ -1051,8 +1051,11 @@ function broth_log_copilot_process_missing_shifts(?DateTimeImmutable $now = null
                     }
                 }
             } elseif (in_array($status['status'], ['ON_TIME', 'LATE'], true) && $existing && !in_array($existing['state'], ['resolved', 'closed'], true)) {
-                broth_log_copilot_close_missing_shift_incident((string)$existing['incident_id'], $status['status'], $now);
-                $results[] = ['branch' => $branch, 'shift' => $shift, 'action' => 'auto_closed', 'incident_id' => $existing['incident_id'], 'final_status' => $status['status']];
+                $closeResult = broth_log_copilot_close_missing_shift_incident((string)$existing['incident_id'], $status['status'], $now);
+                if (!empty($closeResult['ok'])) {
+                    broth_log_copilot_broadcast_incident_update((string)$existing['incident_id'], 'missing_shift_closed', '', $now);
+                    $results[] = ['branch' => $branch, 'shift' => $shift, 'action' => 'auto_closed', 'incident_id' => $existing['incident_id'], 'final_status' => $status['status']];
+                }
             }
         }
     }
@@ -1514,6 +1517,82 @@ function broth_log_copilot_incident_reply_markup(string $incidentId, ?DateTimeIm
     ]]];
 }
 
+// ============================================================================
+// SHARED INCIDENT OWNERSHIP: when an authorized actor ACKs, Resolves, or a missing_shift incident
+// auto-closes, every OTHER destination that received the SAME canonical incident is told who did
+// it (or that it closed automatically) with one concise status message - never a second incident,
+// never separate per-recipient state. The actor's own private DM is excluded (they already got an
+// immediate callback confirmation via the existing, unchanged ack_confirm/resolve_confirm path); a
+// group destination is never excluded this way, even if the actor happened to press the button
+// from within that group, since other members there have not seen anything yet.
+// ============================================================================
+
+// Every destination that has ever received a message about this incident, per the existing
+// outbound-delivery audit trail - the actual, historically-accurate recipient set (not a
+// re-derivation of current routing config, which could drift from who actually saw the alert if
+// e.g. a manager's registration changed after the alert was originally sent).
+function broth_log_copilot_incident_known_destinations(string $incidentId): array {
+    return array_column(q("SELECT DISTINCT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$incidentId]), 'chat_id');
+}
+
+// $kind is one of 'acknowledged' | 'resolved' | 'missing_shift_closed'. Deliberately separate from
+// broth_log_copilot_incident_message()'s existing ack_confirm/resolve_confirm (unchanged, still the
+// more detailed confirmation shown only to the actor who performed the action) - these are always
+// concise and never include incident id, Telegram id, db keys, routing, or escalation metadata.
+function broth_log_copilot_ownership_broadcast_message(array $incident, string $kind, string $actorDisplay = ''): string {
+    $branch = (string)($incident['branch'] ?? '');
+    if (($incident['incident_type'] ?? 'temperature') === 'missing_shift') {
+        $header = "\u{2705} {$branch} \u{2014} " . (string)($incident['shift'] ?? '') . ' Broth Log';
+        if ($kind === 'missing_shift_closed') {
+            return "{$header}\n\nLog received.\nIssue closed automatically.";
+        }
+        return "{$header}\n\nAcknowledged by {$actorDisplay}\nWaiting for the log.";
+    }
+    $header = "\u{2705} {$branch} \u{2014} " . (string)($incident['station_label'] ?? '');
+    if ($kind === 'resolved') {
+        $lines = [$header, '', "Resolved by {$actorDisplay}"];
+        $recheck = $incident['recheck_temperature_f'] ?? null;
+        if ($recheck !== null) $lines[] = 'Recheck: ' . broth_log_copilot_format_number((float)$recheck) . "\u{00B0}F \u{2713}";
+        $lines[] = 'Issue closed.';
+        return implode("\n", $lines);
+    }
+    return "{$header}\n\nAcknowledged by {$actorDisplay}\nReminders stopped.";
+}
+
+// Resolve-only markup for the ACK broadcast on a still-open temperature incident - other managers
+// can resolve it directly from this message. Every other broadcast kind gets no buttons at all:
+// nothing further is actionable once resolved/closed, and missing_shift never supports manual
+// Resolve at any stage (matches the existing, unchanged guard in broth_log_copilot_resolve()).
+function broth_log_copilot_ownership_broadcast_reply_markup(array $incident, string $kind, ?DateTimeImmutable $now = null): ?array {
+    if ($kind !== 'acknowledged' || ($incident['incident_type'] ?? 'temperature') === 'missing_shift') return null;
+    $expiresAt = ($now ?: new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+15 minutes')->getTimestamp();
+    $resolve = broth_log_copilot_create_callback_token('resolve', (string)$incident['incident_id'], $expiresAt);
+    return ['inline_keyboard' => [[['text' => 'Resolve', 'callback_data' => $resolve]]]];
+}
+
+// Idempotent per destination via the same deterministic delivery_key + send_idempotent() pattern
+// used everywhere else in this file, so retries/duplicate webhook triggers can never double-send -
+// a destination that already received this exact broadcast is skipped, not resent. Records one
+// summary audit event for the broadcast step itself, distinct from any individual destination's
+// send outcome (which is already recorded per-row in broth_log_outbound_deliveries as always).
+function broth_log_copilot_broadcast_incident_update(string $incidentId, string $kind, string $actorId = '', ?DateTimeImmutable $now = null): array {
+    $incident = broth_log_copilot_incident_from_result($incidentId);
+    if (!$incident) return [];
+    $actorDisplay = $actorId !== '' ? broth_log_copilot_handler_from_actor($actorId, '')['display'] : '';
+    $message = broth_log_copilot_ownership_broadcast_message($incident, $kind, $actorDisplay);
+    $replyMarkup = broth_log_copilot_ownership_broadcast_reply_markup($incident, $kind, $now);
+    $excludeChatId = $actorId !== '' ? (q1("SELECT private_chat_id FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$actorId])['private_chat_id'] ?? null) : null;
+    $results = [];
+    foreach (broth_log_copilot_incident_known_destinations($incidentId) as $chatId) {
+        if ($excludeChatId !== null && $chatId === $excludeChatId) continue;
+        $deliveryKey = 'incident:' . $incidentId . ':' . $kind . '_status:' . $chatId;
+        $results[$chatId] = broth_log_copilot_send_idempotent($deliveryKey, $incidentId, $chatId, $kind . '_status', $message, $replyMarkup);
+    }
+    $eventType = $kind === 'resolved' ? 'resolution_broadcast_sent' : ($kind === 'missing_shift_closed' ? 'closure_broadcast_sent' : 'ownership_broadcast_sent');
+    broth_log_copilot_audit($incidentId, $eventType, null, ['destinations' => count($results)]);
+    return $results;
+}
+
 function broth_log_copilot_send_idempotent(string $deliveryKey, ?string $incidentId, string $chatId, string $kind, string $message, ?array $replyMarkup = null): array {
     run("INSERT OR IGNORE INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,reply_markup_json,status)
          VALUES (?,?,?,?,?,?,?)", [
@@ -1758,6 +1837,20 @@ function broth_log_copilot_incident_from_result(string $incidentId): ?array {
     return q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
 }
 
+// A rejected ACK specifically because someone else already won the race (item 6) gets the winner's
+// name rather than the generic reason-word template - "Already acknowledged by David" is directly
+// actionable for the presser, while a bare "ACK was rejected: already acknowledged" is not. Every
+// other rejection reason (forbidden, disabled, incident_not_open, etc.) keeps the existing generic
+// wording unchanged.
+function broth_log_copilot_ack_rejection_message(string $incidentId, string $reason, string $lang): string {
+    if ($reason === 'already_acknowledged') {
+        $fresh = broth_log_copilot_incident_from_result($incidentId);
+        $handler = $fresh ? broth_log_copilot_incident_handler_summary($fresh) : ['display' => 'someone else'];
+        return "Already acknowledged by {$handler['display']}.";
+    }
+    return broth_log_copilot_tr('ack_rejected', $lang, [broth_log_copilot_reason_word($reason, $lang)]);
+}
+
 function broth_log_copilot_callback_response(string $callbackData, array $user, string $chatId, ?DateTimeImmutable $now = null): array {
     $now = $now ?: new DateTimeImmutable('now', new DateTimeZone('UTC'));
     $lang = $user['preferred_language'] ?? 'en';
@@ -1776,9 +1869,10 @@ function broth_log_copilot_callback_response(string $callbackData, array $user, 
         $result = broth_log_copilot_ack((string)$incident['incident_id'], $user, $now);
         if (!empty($result['ok'])) {
             $fresh = broth_log_copilot_incident_from_result((string)$incident['incident_id']) ?: $incident;
+            broth_log_copilot_broadcast_incident_update((string)$incident['incident_id'], 'acknowledged', (string)$user['telegram_user_id'], $now);
             return ['message' => broth_log_copilot_incident_message($fresh, 'ack_confirm', $lang), 'intent' => 'ack'];
         }
-        return ['message' => broth_log_copilot_tr('ack_rejected', $lang, [broth_log_copilot_reason_word((string)($result['reason'] ?? ''), $lang)]), 'intent' => 'ack_rejected'];
+        return ['message' => broth_log_copilot_ack_rejection_message((string)$incident['incident_id'], (string)($result['reason'] ?? ''), $lang), 'intent' => 'ack_rejected'];
     }
     if ($callback['action'] === 'resolve') {
         run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at)
@@ -1818,15 +1912,17 @@ function broth_log_copilot_message_action_response(string $messageText, array $p
         $result = broth_log_copilot_ack($incidentId, $user, $now);
         if (!empty($result['ok'])) {
             $incident = broth_log_copilot_incident_from_result($incidentId);
+            broth_log_copilot_broadcast_incident_update($incidentId, 'acknowledged', (string)$user['telegram_user_id'], $now);
             return ['message' => broth_log_copilot_incident_message($incident ?: ['incident_id' => $incidentId], 'ack_confirm', $lang), 'intent' => 'ack'];
         }
-        return ['message' => broth_log_copilot_tr('ack_rejected', $lang, [broth_log_copilot_reason_word((string)($result['reason'] ?? ''), $lang)]), 'intent' => 'ack_rejected'];
+        return ['message' => broth_log_copilot_ack_rejection_message($incidentId, (string)($result['reason'] ?? ''), $lang), 'intent' => 'ack_rejected'];
     }
     $note = broth_log_copilot_resolution_note($messageText, $parsed);
     $result = broth_log_copilot_resolve($incidentId, $user, $parsed['temperature_f'] ?? null, $note, $now);
     if (!empty($result['ok'])) {
         run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id=?", [$user['telegram_user_id']]);
         $incident = broth_log_copilot_incident_from_result($incidentId);
+        broth_log_copilot_broadcast_incident_update($incidentId, 'resolved', (string)$user['telegram_user_id'], $now);
         return ['message' => broth_log_copilot_incident_message($incident ?: ['incident_id' => $incidentId], 'resolve_confirm', $lang), 'intent' => 'resolve'];
     }
     // The generic "%s. Include a safe recheck temperature..." wrapper below is actively wrong

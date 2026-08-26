@@ -642,13 +642,30 @@ function broth_log_copilot_private_registration_response(?array $user, string $l
 // broth_log_private_chat_registrations). Deliberately separate from broth_log_copilot_route_chat_ids()
 // (the group-routing lookup /pilotid's Ops-chat gate also depends on) so that adding a manager's
 // private chat here can never widen what counts as the production Ops group.
-function broth_log_copilot_manager_dm_chat_ids(string $branch): array {
+// $incidentCreatedAt (optional): when provided, a manager is only eligible if
+// broth_log_authorized_users.created_at <= $incidentCreatedAt - i.e. they were already
+// authorized at or before the moment this specific incident was created. A manager authorized
+// AFTER an incident already existed never inherits its reminders/escalations/re-deliveries, but
+// remains fully eligible for any incident created from their own authorization moment onward.
+// created_at is the right anchor: it is set exactly once at row-INSERT time and never written to
+// again by any application code (verified - zero UPDATE statements touch this table anywhere in
+// this file), so it reliably represents "when this manager became authorized," not something that
+// could silently drift. Omitting the parameter (the default) preserves the exact prior behavior -
+// every existing caller of this function outside broth_log_copilot_deliver_proactive_alert() (test
+// fixtures checking raw eligibility, for example) is unaffected.
+function broth_log_copilot_manager_dm_chat_ids(string $branch, ?string $incidentCreatedAt = null): array {
     $branchUpper = strtoupper($branch);
     $chatIds = [];
-    foreach (q("SELECT au.allowed_branches, pcr.private_chat_id
-                FROM broth_log_authorized_users au
-                INNER JOIN broth_log_private_chat_registrations pcr ON pcr.telegram_user_id = au.telegram_user_id
-                WHERE au.role='manager' AND au.active=1") as $row) {
+    $sql = "SELECT au.allowed_branches, pcr.private_chat_id
+            FROM broth_log_authorized_users au
+            INNER JOIN broth_log_private_chat_registrations pcr ON pcr.telegram_user_id = au.telegram_user_id
+            WHERE au.role='manager' AND au.active=1";
+    $params = [];
+    if ($incidentCreatedAt !== null) {
+        $sql .= " AND au.created_at <= ?";
+        $params[] = $incidentCreatedAt;
+    }
+    foreach (q($sql, $params) as $row) {
         $branches = json_decode((string)$row['allowed_branches'], true) ?: [];
         if (in_array($branchUpper, array_map('strtoupper', $branches), true) && (string)$row['private_chat_id'] !== '') {
             $chatIds[] = (string)$row['private_chat_id'];
@@ -679,7 +696,19 @@ function broth_log_copilot_branch_alert_mode(string $branch): string {
 function broth_log_copilot_deliver_proactive_alert(string $incidentId, string $branch, int $level, callable $sendToChat): array {
     $branch = strtoupper($branch);
     $groupChats = broth_log_copilot_route_chat_ids($branch, $level);
-    $managerChats = broth_log_copilot_manager_dm_chat_ids($branch);
+    // Manager DM eligibility is scoped to this specific incident's own creation time (see
+    // broth_log_copilot_manager_dm_chat_ids()'s own comment) - applies uniformly across the whole
+    // proactive lifecycle (initial notify, reminder, escalation, L3) since every one of those goes
+    // through this single function. Deliberately does NOT apply to $groupChats/Ops - the clean
+    // manager cutover requirement is explicitly manager-DM-only; Ops visibility stays unconditional.
+    // Fail-closed, not fail-open, if the incident's created_at is somehow unresolvable (should never
+    // happen - the schema is NOT NULL and every real caller just fetched this exact row - but this
+    // path must never silently degrade into "no filter"): passing '' (not null) still triggers
+    // manager_dm_chat_ids()'s comparison, and 'au.created_at <= ""' can never be true for any real
+    // manager row (no authorized_users.created_at value is empty or sorts before an empty string) -
+    // so this failure mode excludes every manager and delivers to Ops only, never the reverse.
+    $incidentCreatedAt = (string)(q1("SELECT created_at FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['created_at'] ?? '');
+    $managerChats = broth_log_copilot_manager_dm_chat_ids($branch, $incidentCreatedAt);
     $mode = broth_log_copilot_branch_alert_mode($branch);
 
     $chats = array_values(array_unique(array_merge($groupChats, $managerChats)));

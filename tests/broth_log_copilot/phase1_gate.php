@@ -2833,6 +2833,136 @@ try {
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$ownGmA, $ownGmB]);
     expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE response_id LIKE 'resp-own-%' OR response_id LIKE 'resp-audit-%'")['c'] ?? 0, 0, 'shared incident ownership: no leftover fixture incidents remain');
 
+    // ========================================================================================
+    // MANAGER INCIDENT CUTOVER SAFETY: a manager authorized AFTER an incident already existed
+    // must never inherit that incident's reminders/escalations/broadcasts - but remains fully
+    // eligible for any incident created from their own authorization moment onward.
+    // ========================================================================================
+    $cutEarlyMgr = '920'; $cutEarlyChat = '910920001'; // authorized well before any test incident
+    $cutLateMgr = '921'; $cutLateChat = '910921001';   // authorized AFTER the "old" incident
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$cutEarlyMgr, 'Early Mgr', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$cutEarlyMgr, $cutEarlyChat]);
+
+    // --- 1: manager authorized before an incident exists -> receives its initial alert ---
+    $cutOldIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-old']));
+    $cutOldCreatedAt = q1("SELECT created_at FROM broth_log_incidents WHERE incident_id=?", [$cutOldIncId])['created_at'];
+    broth_log_copilot_notify_incident($cutOldIncId, $ownNow);
+    $cutOldDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$cutOldIncId]), 'chat_id');
+    expect_true(in_array($cutEarlyChat, $cutOldDelivered, true), '1: a manager authorized before the incident existed receives its initial alert');
+    expect_true(in_array($opsGroupChatId, $cutOldDelivered, true), '1: sanity - Ops is unaffected by manager-cutover filtering');
+
+    // --- 2: a NEW manager authorized at exactly the old incident's own created_at (boundary =) is
+    // still eligible - the comparison is inclusive (<=), so simultaneous authorization counts. ---
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", ['922', 'Exact Boundary Mgr', 'manager', json_encode(['B1']), $cutOldCreatedAt]);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", ['922', '910922001']);
+    $cutBoundaryEligible = broth_log_copilot_manager_dm_chat_ids('B1', $cutOldCreatedAt);
+    expect_true(in_array('910922001', $cutBoundaryEligible, true), '2: a manager authorized at EXACTLY the incident\'s created_at timestamp is still eligible (inclusive boundary)');
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id='922'");
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id='922'");
+
+    // --- 3: manager authorized AFTER the old incident -> does not receive its reminder (or any
+    // further proactive delivery for it - reminder/escalation both go through the same function). ---
+    $cutLateCreatedAt = (new DateTimeImmutable($cutOldCreatedAt . ' UTC'))->modify('+1 hour')->format('Y-m-d H:i:s');
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$cutLateMgr, 'Late Mgr', 'manager', json_encode(['B1']), $cutLateCreatedAt]);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$cutLateMgr, $cutLateChat]);
+    run("UPDATE broth_log_incidents SET level_entered_at='2026-08-26 00:00:00', last_reminder_at=NULL WHERE incident_id=?", [$cutOldIncId]);
+    $cutOldDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-26 01:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $cutOldIncId));
+    expect_true(!empty($cutOldDue), '3: sanity - the old incident is genuinely due for a reminder');
+    broth_log_copilot_apply_escalation_action_with_notification($cutOldDue[0], new DateTimeImmutable('2026-08-26 01:00:00 UTC'));
+    $cutOldReminderDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND message_kind='reminder'", [$cutOldIncId]), 'chat_id');
+    expect_true(!in_array($cutLateChat, $cutOldReminderDelivered, true), '3: the manager authorized AFTER this incident does NOT receive its reminder');
+    expect_true(in_array($cutEarlyChat, array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=?", [$cutOldIncId]), 'chat_id'), true), '3: the already-eligible early manager keeps receiving it normally');
+
+    // --- 9: not added via L2/L3 escalation either - walk the SAME old incident through escalation. ---
+    run("UPDATE broth_log_incidents SET level_entered_at='2026-08-26 00:00:00', last_reminder_at='2026-08-26 00:00:00' WHERE incident_id=?", [$cutOldIncId]);
+    $cutEscDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-26 00:11:00 UTC')), fn($d) => $d['incident']['incident_id'] === $cutOldIncId));
+    expect_true(!empty($cutEscDue), 'sanity - the old incident is due to escalate');
+    broth_log_copilot_apply_escalation_action_with_notification($cutEscDue[0], new DateTimeImmutable('2026-08-26 00:11:00 UTC'));
+    $cutEscDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND message_kind='escalation'", [$cutOldIncId]), 'chat_id');
+    expect_true(!in_array($cutLateChat, $cutEscDelivered, true), '9: the excluded manager is not added through L2 escalation delivery either');
+
+    // --- 10: repeated worker ticks never add the excluded manager - simulate several more ticks. ---
+    for ($tick = 1; $tick <= 3; $tick++) {
+        $cutTickNow = (new DateTimeImmutable('2026-08-26 00:11:00 UTC'))->modify("+{$tick} hour");
+        $cutTickDue = array_values(array_filter(broth_log_copilot_due_escalations($cutTickNow), fn($d) => $d['incident']['incident_id'] === $cutOldIncId));
+        if (!empty($cutTickDue)) broth_log_copilot_apply_escalation_action_with_notification($cutTickDue[0], $cutTickNow);
+    }
+    expect_true(!in_array($cutLateChat, array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=?", [$cutOldIncId]), 'chat_id'), true), '10: repeated worker ticks across several more cycles never add the excluded manager');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id=?", [$cutOldIncId])['c'], 1, '11: still exactly one canonical incident row - no duplicate was created by any of this');
+
+    // --- 4: the SAME late manager receives a genuinely NEW incident created after their own authorization ---
+    $cutNewIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-new']));
+    // create_incident() always stamps created_at with the real wall-clock time, unaffected by
+    // whatever $now is later passed to notify_incident() (that only controls callback-token expiry)
+    // - so this incident's created_at must be explicitly backdated to genuinely postdate the late
+    // manager's own (artificially future-set) authorization timestamp, for a deterministic test.
+    $cutNewCreatedAt = (new DateTimeImmutable($cutLateCreatedAt . ' UTC'))->modify('+1 minute')->format('Y-m-d H:i:s');
+    run("UPDATE broth_log_incidents SET created_at=? WHERE incident_id=?", [$cutNewCreatedAt, $cutNewIncId]);
+    broth_log_copilot_notify_incident($cutNewIncId, new DateTimeImmutable($cutNewCreatedAt . ' UTC'));
+    $cutNewDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$cutNewIncId]), 'chat_id');
+    expect_true(in_array($cutLateChat, $cutNewDelivered, true), '4: the same manager DOES receive a new incident created after their own authorization');
+    expect_true(in_array($cutEarlyChat, $cutNewDelivered, true), '4: the already-eligible early manager also receives the new incident, as always');
+    expect_true(in_array($opsGroupChatId, $cutNewDelivered, true), '6: Ops continues receiving new-incident delivery too, unaffected by manager-cutover filtering');
+
+    // --- 13/14: shared-ownership broadcast (PR #47) composes correctly with zero further changes -
+    // the excluded manager never appears in the OLD incident's known destinations (since they never
+    // actually received anything), so an ACK broadcast for it correctly excludes them; the properly-
+    // eligible manager on the NEW incident is correctly included. ---
+    $cutOldKnownDestinations = broth_log_copilot_incident_known_destinations($cutOldIncId);
+    expect_true(!in_array($cutLateChat, $cutOldKnownDestinations, true), '14: the excluded manager never appears among the old incident\'s known destinations - PR #47\'s broadcast recipient set (derived from actual delivery history) automatically stays correct with zero further changes');
+    $cutEarlyUser = broth_log_copilot_authorized_user($cutEarlyMgr);
+    $cutOldAckExpires = (new DateTimeImmutable('2026-08-26 04:00:00 UTC'))->modify('+15 minutes')->getTimestamp();
+    $cutOldAckSentBefore = count($sentMessages);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $cutOldIncId, $cutOldAckExpires), $cutEarlyUser, $cutEarlyChat, new DateTimeImmutable('2026-08-26 04:00:00 UTC'));
+    $cutOldAckBroadcastChats = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $cutOldAckSentBefore));
+    expect_true(!in_array($cutLateChat, $cutOldAckBroadcastChats, true), '14: the excluded manager does not suddenly receive the old incident\'s ACK ownership broadcast merely because they are currently authorized');
+    expect_true(in_array($opsGroupChatId, $cutOldAckBroadcastChats, true), '12: Ops still correctly receives the ownership broadcast for the old incident');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$cutOldIncId])['state'], 'acknowledged', '12: ACK/reminder-stop semantics are unchanged - the old incident is acknowledged normally');
+    $cutOldStillDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-26 10:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $cutOldIncId));
+    expect_true(empty($cutOldStillDue), '12: reminders stop globally after ACK, exactly as before');
+
+    $cutLateUser = broth_log_copilot_authorized_user($cutLateMgr);
+    $cutNewAckExpires = (new DateTimeImmutable('2026-08-26 04:05:00 UTC'))->modify('+15 minutes')->getTimestamp();
+    $cutNewAckSentBefore = count($sentMessages);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $cutNewIncId, $cutNewAckExpires), $cutLateUser, $cutLateChat, new DateTimeImmutable('2026-08-26 04:05:00 UTC'));
+    $cutNewAckBroadcastChats = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $cutNewAckSentBefore));
+    expect_true(in_array($cutEarlyChat, $cutNewAckBroadcastChats, true) && in_array($opsGroupChatId, $cutNewAckBroadcastChats, true), '13: for the NEW incident the late manager legitimately received, ACKing it correctly broadcasts ownership to everyone who actually got it (early manager + Ops)');
+
+    // --- 7: B2/B3 routing/eligibility entirely unaffected - the new optional parameter defaults to
+    // null (no filtering) for any caller that doesn't pass it, exactly as before. ---
+    expect_true(!in_array($cutLateChat, broth_log_copilot_manager_dm_chat_ids('B2'), true), '7: the cutover-test manager was never authorized for B2 at all - unaffected either way');
+    $cutB2B3Baseline = count(broth_log_copilot_manager_dm_chat_ids('B2'));
+    expect_eq(count(broth_log_copilot_manager_dm_chat_ids('B2')), $cutB2B3Baseline, '7: repeated calls to manager_dm_chat_ids(branch) without the new parameter remain stable/backward-compatible');
+
+    // --- 8: onboarding group receives nothing throughout any of this ---
+    $cutOnboardingChatId = getenv('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID');
+    expect_true(!in_array($cutOnboardingChatId, $cutOldDelivered, true) && !in_array($cutOnboardingChatId, $cutNewDelivered, true) && !in_array($cutOnboardingChatId, $cutOldAckBroadcastChats, true), '8: the Manager Onboarding Group receives nothing throughout the entire cutover-safety scenario');
+
+    // Cleanup
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN (?,?)", [$cutOldIncId, $cutNewIncId]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?)", [$cutOldIncId, $cutNewIncId]);
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id IN (?,?)", [$cutEarlyMgr, $cutLateMgr]);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$cutEarlyMgr, $cutLateMgr]);
+    // Scoped to exactly this section's own two incident ids, not a broad response_id LIKE pattern -
+    // "resp-cutover-*" collides with the earlier, unrelated Ops+Manager parity section's own
+    // fixture naming (from PR #42) elsewhere in this file, which is cleaned up by its own section.
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN (?,?)", [$cutOldIncId, $cutNewIncId])['c'] ?? 0, 0, 'manager incident cutover safety: no leftover fixture incidents remain');
+
+    // --- fail-safe: an unresolvable incident created_at must fail CLOSED (exclude every manager),
+    // never fail open (include everyone, defeating the whole safety property). Proven directly
+    // against manager_dm_chat_ids() with the exact empty-string sentinel deliver_proactive_alert()
+    // now passes on that failure path - '' can never be >= any real authorized_users.created_at. ---
+    $cutFailSafeMgr = '925'; $cutFailSafeChat = '910925001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$cutFailSafeMgr, 'FailSafe Mgr', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$cutFailSafeMgr, $cutFailSafeChat]);
+    $cutFailSafeEligibleNormally = broth_log_copilot_manager_dm_chat_ids('B1', '2026-08-26 00:00:00');
+    expect_true(in_array($cutFailSafeChat, $cutFailSafeEligibleNormally, true), 'fail-safe sanity: this manager is normally eligible under any real, resolvable incident timestamp');
+    $cutFailSafeEligibleOnFailure = broth_log_copilot_manager_dm_chat_ids('B1', '');
+    expect_true(!in_array($cutFailSafeChat, $cutFailSafeEligibleOnFailure, true), 'fail-safe: when the incident timestamp is unresolvable (empty string sentinel), even a long-authorized manager is excluded - fails CLOSED, not open');
+    expect_eq($cutFailSafeEligibleOnFailure, [], 'fail-safe: zero managers of any kind pass on the unresolvable-timestamp path - only Ops (unaffected, resolved separately) would still receive the incident');
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$cutFailSafeMgr]);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$cutFailSafeMgr]);
+
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {
     @unlink(TEST_DB_PATH);

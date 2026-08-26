@@ -1559,9 +1559,53 @@ function broth_log_copilot_incident_reply_markup(string $incidentId, ?DateTimeIm
 // Every destination that has ever received a message about this incident, per the existing
 // outbound-delivery audit trail - the actual, historically-accurate recipient set (not a
 // re-derivation of current routing config, which could drift from who actually saw the alert if
-// e.g. a manager's registration changed after the alert was originally sent).
+// e.g. a manager's registration changed after the alert was originally sent) - INTERSECTED with
+// current cutover eligibility for Manager DM destinations specifically. This never rewrites or
+// deletes a single row of broth_log_outbound_deliveries - the historical evidence of what was
+// actually sent (including any pre-cutover delivery) is fully preserved - it only decides which of
+// those already-successful destinations still qualify as a valid recipient for a NEW broadcast
+// (ACK/Resolve/close) today.
+//
+// A chat_id is classified as a Manager DM destination only if it matches a real private
+// registration for a manager (broth_log_private_chat_registrations JOIN broth_log_authorized_users
+// WHERE role='manager' - deliberately not filtered by active=1: an inactive manager's chat_id must
+// still be correctly classified as a manager destination and subjected to the eligibility check
+// below, never silently reclassified as a non-manager destination just because it fails an
+// unrelated active-status filter). Telegram's own id space guarantees this can never collide with
+// a group/Ops chat_id - private chat ids are always positive, group/supergroup ids are always
+// negative - and broth_log_private_chat_registrations is only ever populated via the /start flow
+// gated to chat_type='private', so a group/Ops chat_id can never appear there. Anything that does
+// not match this join is therefore necessarily a non-manager destination (Ops/group, or any future
+// destination type) and is always kept unconditionally - Ops routing must never be affected by this
+// filter, matching broth_log_copilot_route_chat_ids()'s complete independence from manager identity.
+//
+// For a chat_id that IS classified as a Manager DM destination, apply the exact same cutover rule
+// used for proactive delivery (broth_log_copilot_manager_dm_chat_ids()): that manager must have
+// been authorized (authorized_users.created_at) at or before this incident's own created_at. A
+// manager whose only successful delivery for this incident happened before their own authorization
+// predates the incident (e.g. a pre-cutover reminder sent before this eligibility rule existed) is
+// correctly excluded from future ownership broadcasts for that incident, without altering the
+// historical record of what was actually sent. If the incident's created_at cannot be resolved,
+// fail closed for manager-classified destinations only (never for Ops), matching the fail-closed
+// direction already established in broth_log_copilot_deliver_proactive_alert().
 function broth_log_copilot_incident_known_destinations(string $incidentId): array {
-    return array_column(q("SELECT DISTINCT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$incidentId]), 'chat_id');
+    $historicalChatIds = array_column(q("SELECT DISTINCT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$incidentId]), 'chat_id');
+    if (empty($historicalChatIds)) return $historicalChatIds;
+    $incidentCreatedAt = (string)(q1("SELECT created_at FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['created_at'] ?? '');
+    $result = [];
+    foreach ($historicalChatIds as $chatId) {
+        $managerRow = q1("SELECT au.created_at FROM broth_log_authorized_users au
+                           INNER JOIN broth_log_private_chat_registrations pcr ON pcr.telegram_user_id = au.telegram_user_id
+                           WHERE pcr.private_chat_id = ? AND au.role = 'manager'", [$chatId]);
+        if ($managerRow === null) {
+            $result[] = $chatId;
+            continue;
+        }
+        if ($incidentCreatedAt !== '' && (string)$managerRow['created_at'] <= $incidentCreatedAt) {
+            $result[] = $chatId;
+        }
+    }
+    return $result;
 }
 
 // $kind is one of 'acknowledged' | 'resolved' | 'missing_shift_closed'. Deliberately separate from

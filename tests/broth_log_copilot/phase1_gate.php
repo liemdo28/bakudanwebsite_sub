@@ -2963,6 +2963,197 @@ try {
     run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$cutFailSafeMgr]);
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$cutFailSafeMgr]);
 
+    // ============================================================================
+    // PR #49: Shared-ownership cutover recipient safety. broth_log_copilot_incident_known_destinations()
+    // must intersect "actually received historically" (unchanged, still read from
+    // broth_log_outbound_deliveries) with "still incident-valid" under the same
+    // manager-authorized-at-or-before-incident.created_at rule PR #48 established for proactive
+    // delivery - WITHOUT ever touching the underlying historical delivery rows, and WITHOUT letting
+    // current eligibility alone substitute for actual delivery history (the partial-failure case).
+    // Ops must remain completely unaffected throughout.
+    // ============================================================================
+    $pr49EarlyMgr = '930'; $pr49EarlyChat = '910930001';
+    $pr49LateMgr = '931'; $pr49LateChat = '910931001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pr49EarlyMgr, 'PR49 Early', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49EarlyMgr, $pr49EarlyChat]);
+
+    // --- old incident, created before the late manager's authorization ---
+    $pr49OldIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-old']));
+    run("UPDATE broth_log_incidents SET created_at=? WHERE incident_id=?", ['2026-08-26 01:00:00', $pr49OldIncId]);
+    broth_log_copilot_notify_incident($pr49OldIncId, new DateTimeImmutable('2026-08-26 01:00:00 UTC'));
+    $pr49OldInitialDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49OldIncId]), 'chat_id');
+    expect_true(in_array($opsGroupChatId, $pr49OldInitialDelivered, true), '1: Ops receives the old incident\'s initial alert');
+    expect_true(in_array($pr49EarlyChat, $pr49OldInitialDelivered, true), '2: the already-eligible early manager receives the old incident\'s initial alert');
+
+    // Late manager becomes authorized AFTER the old incident already exists.
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pr49LateMgr, 'PR49 Late', 'manager', json_encode(['B1']), '2026-08-26 02:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49LateMgr, $pr49LateChat]);
+
+    // Simulate the real production contamination directly: a pre-cutover reminder that really was
+    // sent to this now-ineligible manager for the OLD incident, before PR #48's eligibility filter
+    // existed. This is a synthetic INSERT only to reproduce a known historical fact in a controlled
+    // test - never a rewrite/deletion of a real delivery row (PR #49 requires such rows stay untouched).
+    run("INSERT INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,status,sent_at) VALUES (?,?,?,?,?, 'sent', ?)",
+        ['pr49-contaminated-old-reminder', $pr49OldIncId, $pr49LateChat, 'reminder', 'contaminated pre-cutover reminder', '2026-08-26 02:30:00']);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_outbound_deliveries WHERE delivery_key='pr49-contaminated-old-reminder'")['c'] ?? -1), 1, 'sanity: the contaminated historical delivery row exists before any PR #49 filtering runs');
+
+    // --- 1, 2, 3: known_destinations() for the OLD incident must include Ops and the early manager,
+    // but EXCLUDE the late manager despite their real, contaminated historical 'sent' row. ---
+    $pr49OldKnown = broth_log_copilot_incident_known_destinations($pr49OldIncId);
+    expect_true(in_array($opsGroupChatId, $pr49OldKnown, true), '1: old-incident known destinations still include Ops');
+    expect_true(in_array($pr49EarlyChat, $pr49OldKnown, true), '2: old-incident known destinations still include the early manager');
+    expect_true(!in_array($pr49LateChat, $pr49OldKnown, true), '3: old-incident known destinations EXCLUDE the late manager despite their historical contaminated delivery - the cutover boundary applies to broadcast eligibility too, not just future deliveries');
+
+    // --- 4: the contaminated delivery row itself is never modified or deleted by this filter - it
+    // remains exactly as it was, full historical evidence. ---
+    $pr49ContaminatedRow = q1("SELECT status, message_kind, chat_id FROM broth_log_outbound_deliveries WHERE delivery_key='pr49-contaminated-old-reminder'");
+    expect_eq($pr49ContaminatedRow['status'] ?? '', 'sent', '4: the contaminated historical delivery row\'s status is untouched');
+    expect_eq($pr49ContaminatedRow['message_kind'] ?? '', 'reminder', '4: the contaminated historical delivery row\'s message_kind is untouched');
+    expect_eq($pr49ContaminatedRow['chat_id'] ?? '', $pr49LateChat, '4: the contaminated historical delivery row\'s destination is untouched');
+
+    // --- 9: ACK broadcast on the old incident follows the same rule. ---
+    $pr49EarlyUser = broth_log_copilot_authorized_user($pr49EarlyMgr);
+    $pr49OldAckExpires = (new DateTimeImmutable('2026-08-26 05:00:00 UTC'))->modify('+15 minutes')->getTimestamp();
+    $pr49SentBefore = count($sentMessages);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $pr49OldIncId, $pr49OldAckExpires), $pr49EarlyUser, $pr49EarlyChat, new DateTimeImmutable('2026-08-26 05:00:00 UTC'));
+    $pr49OldAckChats = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $pr49SentBefore));
+    expect_true(in_array($opsGroupChatId, $pr49OldAckChats, true), '9: ACK ownership broadcast for the old incident still reaches Ops');
+    expect_true(!in_array($pr49LateChat, $pr49OldAckChats, true), '9: ACK ownership broadcast for the old incident does not reach the excluded late manager');
+    // --- 15, 16: first ACK wins, reminders stop globally - unaffected by this PR ---
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$pr49OldIncId])['state'], 'acknowledged', '15: the old incident is acknowledged normally');
+    $pr49OldStillDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-26 10:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $pr49OldIncId));
+    expect_true(empty($pr49OldStillDue), '16: reminders stop globally after ACK, exactly as before');
+    $pr49SecondAckSentBefore = count($sentMessages);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $pr49OldIncId, $pr49OldAckExpires), $pr49EarlyUser, $pr49EarlyChat, new DateTimeImmutable('2026-08-26 05:05:00 UTC'));
+    expect_eq(count($sentMessages), $pr49SecondAckSentBefore, '15: first ACK wins - a second ACK attempt on an already-acknowledged incident sends nothing further');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$pr49OldIncId])['c'] ?? -1), 1, '17: PR #47 audit-idempotency remains exactly-once even with the new recipient filtering in place');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id=?", [$pr49OldIncId])['c'] ?? -1), 1, '20: no additional canonical incident was created by any of this');
+
+    // ------------------------------------------------------------------------------
+    // NEW incident, created after the late manager's own authorization - plus exact-boundary
+    // and one-second-late boundary managers.
+    // ------------------------------------------------------------------------------
+    $pr49BoundaryMgr = '932'; $pr49BoundaryChat = '910932001';         // authorized exactly AT the new incident's created_at
+    $pr49LateBoundaryMgr = '933'; $pr49LateBoundaryChat = '910933001'; // authorized one second AFTER
+    $pr49NewCreatedAt = '2026-08-26 03:00:00';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pr49BoundaryMgr, 'PR49 Boundary', 'manager', json_encode(['B1']), $pr49NewCreatedAt]);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49BoundaryMgr, $pr49BoundaryChat]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pr49LateBoundaryMgr, 'PR49 Late Boundary', 'manager', json_encode(['B1']), '2026-08-26 03:00:01']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49LateBoundaryMgr, $pr49LateBoundaryChat]);
+
+    $pr49NewIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-new']));
+    run("UPDATE broth_log_incidents SET created_at=? WHERE incident_id=?", [$pr49NewCreatedAt, $pr49NewIncId]);
+    broth_log_copilot_notify_incident($pr49NewIncId, new DateTimeImmutable($pr49NewCreatedAt . ' UTC'));
+    $pr49NewDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49NewIncId]), 'chat_id');
+    expect_true(in_array($pr49LateChat, $pr49NewDelivered, true), 'sanity: the late manager (authorized before this new incident) legitimately receives its initial alert');
+    expect_true(in_array($pr49BoundaryChat, $pr49NewDelivered, true), '7: a manager authorized EXACTLY at the incident\'s created_at legitimately receives its initial alert (inclusive boundary)');
+    expect_true(!in_array($pr49LateBoundaryChat, $pr49NewDelivered, true), 'sanity: a manager authorized one second after the incident was created does not receive its initial alert');
+
+    // The one-second-late manager never legitimately received this incident, but simulate a synthetic
+    // contaminated row for them too, to prove known_destinations() excludes them on eligibility
+    // grounds even when a 'sent' row does exist (mirrors the old-incident contamination above, at
+    // the new-incident boundary).
+    run("INSERT INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,status,sent_at) VALUES (?,?,?,?,?, 'sent', ?)",
+        ['pr49-contaminated-new-boundary', $pr49NewIncId, $pr49LateBoundaryChat, 'reminder', 'contaminated boundary reminder', $pr49NewCreatedAt]);
+
+    $pr49NewKnown = broth_log_copilot_incident_known_destinations($pr49NewIncId);
+    expect_true(in_array($opsGroupChatId, $pr49NewKnown, true), '6: Ops is included among the new incident\'s known destinations');
+    expect_true(in_array($pr49LateChat, $pr49NewKnown, true), '5: the late manager IS included in the new incident\'s known destinations because their actual delivery succeeded and they remain eligible');
+    expect_true(in_array($pr49BoundaryChat, $pr49NewKnown, true), '7: the exactly-at-boundary manager remains eligible and included');
+    expect_true(!in_array($pr49LateBoundaryChat, $pr49NewKnown, true), '8: the one-second-late manager is EXCLUDED from known destinations despite a (contaminated) historical sent row - authorized_at > incident.created_at');
+
+    // --- 14: B2/B3 unaffected - the same classification logic, applied on a different branch,
+    // behaves identically and independently (it never references branch at all). ---
+    $pr49B2IncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B2', 'responseId' => 'resp-pr49-b2']));
+    broth_log_copilot_notify_incident($pr49B2IncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
+    $pr49B2Known = broth_log_copilot_incident_known_destinations($pr49B2IncId);
+    expect_true(!in_array($pr49LateBoundaryChat, $pr49B2Known, true), '14: B2 known destinations are entirely unaffected by the B1-scoped boundary manager (never registered for B2 at all)');
+
+    // ------------------------------------------------------------------------------
+    // 6: partial-delivery failure - a currently-eligible manager's SEND for this specific incident
+    // fails outright. They must NOT appear in known_destinations() merely because they are
+    // eligible - actual successful delivery remains a required condition.
+    // ------------------------------------------------------------------------------
+    $pr49FailMgr = '934'; $pr49FailChat = '910934001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pr49FailMgr, 'PR49 Fail', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49FailMgr, $pr49FailChat]);
+    $pr49PartialTransportPrev = $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] ?? null;
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $pr49FailChat): array {
+        if ((string)($payload['chat_id'] ?? '') === $pr49FailChat) return ['sent' => false, 'reason' => 'simulated_send_failure'];
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+    $pr49PartialIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-partial']));
+    broth_log_copilot_notify_incident($pr49PartialIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
+    $pr49PartialDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49PartialIncId]), 'chat_id');
+    expect_true(in_array($opsGroupChatId, $pr49PartialDelivered, true), 'partial-delivery sanity: Ops still received the initial alert');
+    expect_true(!in_array($pr49FailChat, $pr49PartialDelivered, true), 'partial-delivery sanity: the fail-manager\'s own send genuinely failed and left no sent row');
+    $pr49PartialKnown = broth_log_copilot_incident_known_destinations($pr49PartialIncId);
+    expect_true(!in_array($pr49FailChat, $pr49PartialKnown, true), '6: the currently-eligible fail-manager is EXCLUDED from known destinations because their actual delivery failed - eligibility alone never substitutes for real delivery history');
+    expect_true(in_array($opsGroupChatId, $pr49PartialKnown, true), '6: sanity - Ops remains included in known destinations for the partial-failure incident');
+
+    // --- 18: partial-send retry semantics remain correct - restore the working transport and retry;
+    // the previously-failed destination should now succeed via the existing send_idempotent() retry
+    // path, independent of / unaffected by the new recipient-filtering logic. ---
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+    broth_log_copilot_notify_incident($pr49PartialIncId, new DateTimeImmutable('2026-08-26 03:05:00 UTC'));
+    $pr49PartialDeliveredAfterRetry = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49PartialIncId]), 'chat_id');
+    expect_true(in_array($pr49FailChat, $pr49PartialDeliveredAfterRetry, true), '18: a retry successfully delivers to the previously-failed, still-eligible manager');
+    $pr49PartialKnownAfterRetry = broth_log_copilot_incident_known_destinations($pr49PartialIncId);
+    expect_true(in_array($pr49FailChat, $pr49PartialKnownAfterRetry, true), '18: after a successful retry, the manager now legitimately appears in known destinations - the intersection is re-evaluated fresh on every call, never cached/stale');
+    if ($pr49PartialTransportPrev !== null) $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = $pr49PartialTransportPrev;
+
+    // --- 10: temperature Resolve broadcast follows the same rule. ---
+    $pr49ResolveSentBefore = count($sentMessages);
+    broth_log_copilot_resolve($pr49NewIncId, $pr49EarlyUser, 38.0, 'fixed', new DateTimeImmutable('2026-08-26 03:15:00 UTC'));
+    broth_log_copilot_broadcast_incident_update($pr49NewIncId, 'resolved', (string)$pr49EarlyUser['telegram_user_id'], new DateTimeImmutable('2026-08-26 03:15:00 UTC'));
+    $pr49ResolveChats = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $pr49ResolveSentBefore));
+    expect_true(in_array($opsGroupChatId, $pr49ResolveChats, true), '10: Resolve ownership broadcast reaches Ops');
+    expect_true(in_array($pr49LateChat, $pr49ResolveChats, true), '10: Resolve ownership broadcast reaches the legitimately-eligible late manager');
+    expect_true(!in_array($pr49LateBoundaryChat, $pr49ResolveChats, true), '10: Resolve ownership broadcast excludes the one-second-late manager despite their contaminated historical row');
+
+    // --- 11: Missing Shift closure broadcast follows the same rule. ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $pr49MsIncId = broth_log_copilot_create_missing_shift_incident('B1', '2026-08-26', 'PM');
+    run("UPDATE broth_log_incidents SET created_at=? WHERE incident_id=?", [$pr49NewCreatedAt, $pr49MsIncId]);
+    broth_log_copilot_notify_incident($pr49MsIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
+    run("INSERT INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,status,sent_at) VALUES (?,?,?,?,?, 'sent', ?)",
+        ['pr49-contaminated-ms', $pr49MsIncId, $pr49LateBoundaryChat, 'reminder', 'contaminated ms reminder', '2026-08-26 03:00:00']);
+    broth_log_copilot_close_missing_shift_incident($pr49MsIncId, 'ON_TIME', new DateTimeImmutable('2026-08-26 06:00:00 UTC'));
+    $pr49MsSentBefore = count($sentMessages);
+    broth_log_copilot_broadcast_incident_update($pr49MsIncId, 'missing_shift_closed', '', new DateTimeImmutable('2026-08-26 06:00:00 UTC'));
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    $pr49MsChats = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $pr49MsSentBefore));
+    expect_true(in_array($opsGroupChatId, $pr49MsChats, true), '11: Missing Shift closure broadcast reaches Ops');
+    expect_true(!in_array($pr49LateBoundaryChat, $pr49MsChats, true), '11: Missing Shift closure broadcast excludes the one-second-late manager despite their contaminated historical row');
+
+    // --- 13: Manager Onboarding Group never appears anywhere in this entire scenario. ---
+    $pr49OnboardingChatId = getenv('TELEGRAM_MANAGER_ONBOARDING_CHAT_ID');
+    expect_true(!in_array($pr49OnboardingChatId, $pr49OldKnown, true) && !in_array($pr49OnboardingChatId, $pr49NewKnown, true) && !in_array($pr49OnboardingChatId, $pr49OldAckChats, true) && !in_array($pr49OnboardingChatId, $pr49ResolveChats, true) && !in_array($pr49OnboardingChatId, $pr49MsChats, true), '13: the Manager Onboarding Group receives nothing anywhere in the PR #49 scenario');
+
+    // --- 19: callback response behavior unchanged - a valid ACK callback press still returns the
+    // expected structured response after this change. ---
+    $pr49CbIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-cb']));
+    broth_log_copilot_notify_incident($pr49CbIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
+    $pr49CbExpires = (new DateTimeImmutable('2026-08-26 03:00:00 UTC'))->modify('+15 minutes')->getTimestamp();
+    $pr49CbResponse = broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $pr49CbIncId, $pr49CbExpires), $pr49EarlyUser, $pr49EarlyChat, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
+    expect_true(isset($pr49CbResponse['intent']), '19: the callback response still returns a structured, displayable result after this change');
+
+    // Cleanup
+    $pr49IncidentIds = [$pr49OldIncId, $pr49NewIncId, $pr49B2IncId, $pr49PartialIncId, $pr49MsIncId, $pr49CbIncId];
+    $pr49Placeholders = implode(',', array_fill(0, count($pr49IncidentIds), '?'));
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($pr49Placeholders)", $pr49IncidentIds);
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($pr49Placeholders)", $pr49IncidentIds);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN ($pr49Placeholders)", $pr49IncidentIds);
+    $pr49MgrIds = [$pr49EarlyMgr, $pr49LateMgr, $pr49BoundaryMgr, $pr49LateBoundaryMgr, $pr49FailMgr];
+    $pr49MgrPlaceholders = implode(',', array_fill(0, count($pr49MgrIds), '?'));
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id IN ($pr49MgrPlaceholders)", $pr49MgrIds);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN ($pr49MgrPlaceholders)", $pr49MgrIds);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($pr49Placeholders)", $pr49IncidentIds)['c'] ?? -1), 0, 'PR #49: no leftover fixture incidents remain');
+
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {
     @unlink(TEST_DB_PATH);

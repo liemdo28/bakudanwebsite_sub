@@ -701,8 +701,14 @@ function broth_log_copilot_deliver_proactive_alert(string $incidentId, string $b
     // proactive lifecycle (initial notify, reminder, escalation, L3) since every one of those goes
     // through this single function. Deliberately does NOT apply to $groupChats/Ops - the clean
     // manager cutover requirement is explicitly manager-DM-only; Ops visibility stays unconditional.
+    // Fail-closed, not fail-open, if the incident's created_at is somehow unresolvable (should never
+    // happen - the schema is NOT NULL and every real caller just fetched this exact row - but this
+    // path must never silently degrade into "no filter"): passing '' (not null) still triggers
+    // manager_dm_chat_ids()'s comparison, and 'au.created_at <= ""' can never be true for any real
+    // manager row (no authorized_users.created_at value is empty or sorts before an empty string) -
+    // so this failure mode excludes every manager and delivers to Ops only, never the reverse.
     $incidentCreatedAt = (string)(q1("SELECT created_at FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['created_at'] ?? '');
-    $managerChats = broth_log_copilot_manager_dm_chat_ids($branch, $incidentCreatedAt !== '' ? $incidentCreatedAt : null);
+    $managerChats = broth_log_copilot_manager_dm_chat_ids($branch, $incidentCreatedAt);
     $mode = broth_log_copilot_branch_alert_mode($branch);
 
     $chats = array_values(array_unique(array_merge($groupChats, $managerChats)));

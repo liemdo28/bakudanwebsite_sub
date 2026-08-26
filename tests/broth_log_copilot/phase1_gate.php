@@ -2948,6 +2948,21 @@ try {
     // fixture naming (from PR #42) elsewhere in this file, which is cleaned up by its own section.
     expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN (?,?)", [$cutOldIncId, $cutNewIncId])['c'] ?? 0, 0, 'manager incident cutover safety: no leftover fixture incidents remain');
 
+    // --- fail-safe: an unresolvable incident created_at must fail CLOSED (exclude every manager),
+    // never fail open (include everyone, defeating the whole safety property). Proven directly
+    // against manager_dm_chat_ids() with the exact empty-string sentinel deliver_proactive_alert()
+    // now passes on that failure path - '' can never be >= any real authorized_users.created_at. ---
+    $cutFailSafeMgr = '925'; $cutFailSafeChat = '910925001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$cutFailSafeMgr, 'FailSafe Mgr', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$cutFailSafeMgr, $cutFailSafeChat]);
+    $cutFailSafeEligibleNormally = broth_log_copilot_manager_dm_chat_ids('B1', '2026-08-26 00:00:00');
+    expect_true(in_array($cutFailSafeChat, $cutFailSafeEligibleNormally, true), 'fail-safe sanity: this manager is normally eligible under any real, resolvable incident timestamp');
+    $cutFailSafeEligibleOnFailure = broth_log_copilot_manager_dm_chat_ids('B1', '');
+    expect_true(!in_array($cutFailSafeChat, $cutFailSafeEligibleOnFailure, true), 'fail-safe: when the incident timestamp is unresolvable (empty string sentinel), even a long-authorized manager is excluded - fails CLOSED, not open');
+    expect_eq($cutFailSafeEligibleOnFailure, [], 'fail-safe: zero managers of any kind pass on the unresolvable-timestamp path - only Ops (unaffected, resolved separately) would still receive the incident');
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$cutFailSafeMgr]);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$cutFailSafeMgr]);
+
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {
     @unlink(TEST_DB_PATH);

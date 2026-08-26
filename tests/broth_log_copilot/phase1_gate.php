@@ -2730,10 +2730,108 @@ try {
     run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownOIncId]);
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownOIncId]);
 
+    // ========================================================================================
+    // AUDIT IDEMPOTENCY FIX: the summary broadcast audit event must represent the canonical
+    // broadcast obligation being genuinely fulfilled at least once - never "this function was
+    // invoked," and never claimed on a call where nothing actually delivered.
+    // ========================================================================================
+
+    // --- J: manually invoking the broadcast again when every destination is already a duplicate
+    // adds zero new events (the underlying send-level idempotency was always correct; this proves
+    // the SUMMARY event now matches it). ---
+    $auditJInc = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-audit-j']));
+    broth_log_copilot_notify_incident($auditJInc, $ownNow);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $auditJInc, $ownAAckExpires), $ownAUser, $ownGmAChat, $ownNow);
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$auditJInc])['c'], 1, 'J: exactly one event after the real ACK broadcast');
+    broth_log_copilot_broadcast_incident_update($auditJInc, 'acknowledged', $ownGmA, $ownNow);
+    broth_log_copilot_broadcast_incident_update($auditJInc, 'acknowledged', $ownGmA, $ownNow);
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$auditJInc])['c'], 1, 'J: calling the broadcast again with every destination already a duplicate adds zero new events');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$auditJInc]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$auditJInc]);
+
+    // --- K: every destination fails on the first attempt - must NOT record a false
+    // "broadcast_sent" event, since nothing was actually delivered. A later attempt that finally
+    // succeeds records exactly one event, the first time real delivery genuinely happens. ---
+    $auditKInc = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-audit-k']));
+    broth_log_copilot_notify_incident($auditKInc, $ownNow);
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => false, 'reason' => 'simulated total outage'];
+    };
+    broth_log_copilot_broadcast_incident_update($auditKInc, 'acknowledged', $ownGmA, $ownNow);
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$auditKInc])['c'], 0, 'K: zero destinations delivered - no false ownership_broadcast_sent event is recorded');
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+    broth_log_copilot_broadcast_incident_update($auditKInc, 'acknowledged', $ownGmA, $ownNow);
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$auditKInc])['c'], 1, 'K: once a later attempt genuinely delivers, exactly one event is recorded - the first real success, whichever call it happens on');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$auditKInc]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$auditKInc]);
+
+    // --- L: partial send (one destination succeeds, one fails) on the FIRST attempt - the
+    // canonical broadcast genuinely happened (at least partially), so exactly one truthful event
+    // is recorded, matching the existing partial-success semantics used throughout this file. ---
+    $auditLInc = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-audit-l']));
+    broth_log_copilot_notify_incident($auditLInc, $ownNow);
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $ownGmBChat): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        if (($payload['chat_id'] ?? '') === $ownGmBChat) return ['sent' => false, 'reason' => 'simulated failure for Grace only'];
+        return ['sent' => true, 'mock' => true];
+    };
+    broth_log_copilot_broadcast_incident_update($auditLInc, 'acknowledged', $ownGmA, $ownNow);
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$auditLInc])['c'], 1, 'L: partial delivery (Ops sent, Grace failed) still records exactly one truthful ownership_broadcast_sent event');
+    $auditLGraceStatus = q1("SELECT status FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=? AND message_kind='acknowledged_status'", [$auditLInc, $ownGmBChat])['status'] ?? '';
+    expect_eq($auditLGraceStatus, 'failed', 'L: sanity - Grace\'s delivery genuinely failed and is recorded as retryable');
+
+    // --- M: retrying the previously-failed destination now succeeds - this is a REAL new
+    // delivery (not suppressed), but it must NOT create a second, misleading ownership_broadcast_sent
+    // event for the same canonical ACK - the broadcast obligation was already truthfully recorded
+    // in L. Per-destination detail (Grace's delivery going from failed to sent) remains fully
+    // visible in broth_log_outbound_deliveries regardless. ---
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+    $auditMSentBefore = count($sentMessages);
+    broth_log_copilot_broadcast_incident_update($auditLInc, 'acknowledged', $ownGmA, $ownNow);
+    $auditMRetriedChats = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $auditMSentBefore));
+    expect_true(in_array($ownGmBChat, $auditMRetriedChats, true), 'M: the retry is a real new delivery attempt to Grace - not suppressed');
+    expect_eq(q1("SELECT status FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=? AND message_kind='acknowledged_status'", [$auditLInc, $ownGmBChat])['status'] ?? '', 'sent', 'M: Grace\'s delivery is now genuinely recorded as sent after the retry');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$auditLInc])['c'], 1, 'M: still exactly one ownership_broadcast_sent event overall - the retry\'s real delivery does not create a misleading duplicate business event for the same canonical ACK');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$auditLInc]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$auditLInc]);
+
+    // --- I: missing_shift auto-close, then a repeated worker-style processing pass for the same
+    // already-closed incident - must not duplicate the closure broadcast audit event. ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $auditIInc = broth_log_copilot_create_missing_shift_incident('B1', '2026-08-26', 'PM');
+    broth_log_copilot_notify_incident($auditIInc, $ownNow);
+    $auditICloseResult1 = broth_log_copilot_close_missing_shift_incident($auditIInc, 'ON_TIME', $ownNow);
+    expect_true($auditICloseResult1['ok'] ?? false, 'I: first close succeeds');
+    broth_log_copilot_broadcast_incident_update($auditIInc, 'missing_shift_closed', '', $ownNow);
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='closure_broadcast_sent'", [$auditIInc])['c'], 1, 'I: exactly one closure_broadcast_sent event after the real auto-close');
+    // Simulate a repeated worker tick finding the same (already-closed) incident: the existing,
+    // unmodified close_missing_shift_incident() transaction guard rejects the second close attempt
+    // outright, so process_missing_shifts()'s own "if (!empty($closeResult['ok']))" gate (unchanged
+    // by this fix) never even calls the broadcast a second time - verified directly here.
+    $auditICloseResult2 = broth_log_copilot_close_missing_shift_incident($auditIInc, 'ON_TIME', $ownNow);
+    expect_true(!($auditICloseResult2['ok'] ?? true), 'I: a repeated close attempt on the already-closed incident is rejected, exactly like the existing PR #41 race-safety guard');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='closure_broadcast_sent'", [$auditIInc])['c'], 1, 'I: still exactly one closure_broadcast_sent event - repeated worker processing never duplicates it');
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$auditIInc]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$auditIInc]);
+
+    // Reset transport back to the always-succeeds default used throughout the rest of this file.
+    $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
+        $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
+        return ['sent' => true, 'mock' => true];
+    };
+
     // Cleanup shared fixtures
     run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id IN (?,?)", [$ownGmA, $ownGmB]);
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$ownGmA, $ownGmB]);
-    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE response_id LIKE 'resp-own-%'")['c'] ?? 0, 0, 'shared incident ownership: no leftover fixture incidents remain');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE response_id LIKE 'resp-own-%' OR response_id LIKE 'resp-audit-%'")['c'] ?? 0, 0, 'shared incident ownership: no leftover fixture incidents remain');
 
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {

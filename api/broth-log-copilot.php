@@ -1589,7 +1589,29 @@ function broth_log_copilot_broadcast_incident_update(string $incidentId, string 
         $results[$chatId] = broth_log_copilot_send_idempotent($deliveryKey, $incidentId, $chatId, $kind . '_status', $message, $replyMarkup);
     }
     $eventType = $kind === 'resolved' ? 'resolution_broadcast_sent' : ($kind === 'missing_shift_closed' ? 'closure_broadcast_sent' : 'ownership_broadcast_sent');
-    broth_log_copilot_audit($incidentId, $eventType, null, ['destinations' => count($results)]);
+    // The summary audit event represents the canonical broadcast OBLIGATION for this ACK/Resolve/
+    // close being genuinely fulfilled at least once - never "this function was invoked," and never
+    // "every destination succeeded on this specific call." Two conditions, both required:
+    // (1) this call actually delivered something new. Deliberately NOT empty($r['duplicate']): that
+    //     is also true for a FAILED send (send_idempotent() only sets 'duplicate' on the
+    //     already-sent skip path, not on failure), which would let a total-failure call falsely
+    //     claim "broadcast sent". Only $r['sent']===true proves a real delivery happened.
+    // (2) this incident+kind has never already been truthfully audited. Without this, a later
+    //     retry that mops up one previously-failed destination (while other destinations are
+    //     correctly skipped as already-sent duplicates) would log a second, misleading
+    //     *_broadcast_sent event for the SAME canonical ACK/Resolve/close - the broadcast
+    //     obligation was already fulfilled and recorded the first time real delivery occurred.
+    // Per-destination attempt/failure/retry detail remains fully tracked in
+    // broth_log_outbound_deliveries regardless, unaffected by this summary event's own dedup.
+    $anySentThisCall = count(array_filter($results, fn($r) => !empty($r['sent']))) > 0;
+    if ($anySentThisCall) {
+        db()->exec('BEGIN IMMEDIATE');
+        $alreadyAudited = (int)(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type=?", [$incidentId, $eventType])['c'] ?? 0) > 0;
+        if (!$alreadyAudited) {
+            broth_log_copilot_audit($incidentId, $eventType, null, ['destinations' => count($results)]);
+        }
+        db()->exec('COMMIT');
+    }
     return $results;
 }
 

@@ -1140,7 +1140,10 @@ function broth_log_copilot_missing_shift_message(array $incident, string $kind):
         return "\u{2705} You acknowledged this issue\n\n{$branch} \u{00B7} {$shift} Broth Log\n\nYou are now responsible for follow-up.\n\nStatus: WAITING FOR LOG\nReminders stopped for everyone.";
     }
     if ($kind === 'details') {
-        return "\u{1F4CB} {$branch} \u{00B7} {$shift} Broth Log\n\nNo log recorded by {$deadline}.\nRef: #" . (string)($incident['incident_id'] ?? '');
+        // Manager-facing Details is operational information only - no incident id, no internal
+        // reference number, no reason codes. The canonical incident_id remains fully available
+        // for callback routing (menu:attn_item:<id>) and audit, just never rendered as text.
+        return "\u{1F4CB} {$branch} \u{00B7} {$shift} Broth Log\n\nNo log recorded by {$deadline}.\n\nStatus: " . broth_log_copilot_incident_status_label($incident);
     }
     return "\u{26A0}\u{FE0F} {$branch} \u{2014} {$shift} Broth Log Missing\n\nNo log recorded by {$deadline}.";
 }
@@ -1542,10 +1545,23 @@ function broth_log_copilot_incident_status_label(array $incident): string {
     $state = (string)($incident['state'] ?? '');
     if ($state === 'resolved') return 'RESOLVED';
     if ($state === 'closed') return 'CLOSED';
-    if ($state === 'acknowledged' || $state === 'auto_stopped') return $isMissingShift ? 'WAITING FOR LOG' : 'STILL OPEN';
-    return 'OPEN';
+    // A missing_shift incident is conceptually "waiting for the log" from the moment it exists,
+    // whether or not a manager has ACKed it yet - unlike a temperature incident's OPEN, which
+    // specifically means "needs an owner". ACK never changes what a missing_shift is waiting for,
+    // only who is responsible for following up on it.
+    if ($isMissingShift) return 'WAITING FOR LOG';
+    return $state === 'acknowledged' || $state === 'auto_stopped' ? 'STILL OPEN' : 'OPEN';
 }
 
+// The only remaining reachable caller of this function is the manager-facing 'details' view
+// (broth_log_copilot_callback_response()'s 'details' action) - 'ack_confirm'/'resolve_confirm' are
+// intercepted earlier in broth_log_copilot_incident_message(), and every escalation-sweep kind
+// other than 'reminder'/'escalation' (which use the concise renderer) is unreachable in practice
+// (broth_log_copilot_apply_escalation_action() never actually returns action='fallback' literally).
+// Deliberately operational information only - no incident id/ref number, no internal escalation
+// level, no routing/reason-code metadata; the canonical station_key -> BROTH_LOG_SOP range (never
+// the incident's own raw stored sop_target text, which for a real alert is unlabeled "minF - maxF"
+// text) matches every other renderer.
 function broth_log_copilot_verbose_incident_message(array $incident, string $kind, string $lang = 'en'): string {
     $l = broth_log_copilot_incident_message_labels($lang);
     $label = $l['kind'][$kind] ?? $l['kind']['default'];
@@ -1557,31 +1573,50 @@ function broth_log_copilot_verbose_incident_message(array $incident, string $kin
         $l['employee'] . ': ' . ((string)($incident['employee_name'] ?? '') !== '' ? (string)$incident['employee_name'] : 'Unassigned'),
         $l['item'] . ': ' . (string)$incident['station_label'],
         $l['recorded'] . ': ' . (($incident['temperature_f'] ?? null) === null ? $l['missing'] : broth_log_copilot_format_number((float)$incident['temperature_f']) . 'F'),
-        $l['sop'] . ': ' . (string)$incident['sop_target'],
+        $l['sop'] . ': ' . (broth_log_copilot_incident_sop_range_text($incident) ?? (string)$incident['sop_target']),
         $l['severity'] . ': ' . (string)$incident['severity'],
         $l['action'] . ': ' . (string)$incident['corrective_action'],
-        $l['ref'] . ': #' . (string)$incident['incident_id'],
-        $l['level'] . ': ' . (string)($incident['current_level'] ?? 1),
     ];
     return implode("\n", array_map(fn($line) => substr($line, 0, 180), $lines));
 }
 
-// Direction of violation, derived from the incident's own sop_target string (e.g. "<= 0F" or
-// ">= 100F", stored verbatim from the real SOP comparison at detection time - never re-derived
-// from the temperature itself, so this can never guess wrong). Returns null when the operator
-// cannot be determined (e.g. an unconfigured/unknown station), in which case the message falls
-// back to a generic "out of range" phrasing rather than fabricating a direction.
+// Single canonical SOP lookup for temperature-incident rendering: the incident's own station_key
+// column into the SAME BROTH_LOG_SOP config broth_log_normalize_row() (detection) and
+// broth_log_copilot_resolve()/broth_log_is_safe_recheck() (Resolve validation) already use -
+// never a copy, never a re-parse of a previously-rendered string. The incident's stored
+// sop_target text (e.g. "45F - 105F" or a legacy operator string on very old rows) is audit/
+// display history only and is deliberately never read here. Returns null only for a genuinely
+// unconfigured/unknown station_key - including the handful of pre-rename legacy rows
+// (e.g. "walk_in_cooler"/"walk_in_freezer" snake_case keys that predate the current camelCase
+// station keys) - never for any of the current known stations.
+function broth_log_copilot_incident_sop(array $incident): ?array {
+    $sop = BROTH_LOG_SOP[(string)($incident['station_key'] ?? '')] ?? null;
+    return ($sop && isset($sop['min'], $sop['max'])) ? $sop : null;
+}
+
+// Direction of violation, derived from the canonical SOP range vs. the incident's own recorded
+// temperature - never guessed from a rendered string. Returns null when the station has no
+// canonical SOP config, or no temperature was recorded, or the temperature is actually within
+// range (should not occur for a real critical incident, but never mislabeled either way); the
+// message then falls back to a generic "out of range" phrasing rather than fabricating a
+// direction.
 function broth_log_copilot_incident_direction(array $incident): ?string {
-    $sopTarget = trim((string)($incident['sop_target'] ?? ''));
-    if (str_starts_with($sopTarget, '<=')) return 'max';
-    if (str_starts_with($sopTarget, '>=')) return 'min';
+    $sop = broth_log_copilot_incident_sop($incident);
+    $temp = $incident['temperature_f'] ?? null;
+    if ($sop === null || $temp === null) return null;
+    $temp = (float)$temp;
+    if ($temp > (float)$sop['max']) return 'max';
+    if ($temp < (float)$sop['min']) return 'min';
     return null;
 }
 
-function broth_log_copilot_sop_target_number(array $incident): ?float {
-    $sopTarget = (string)($incident['sop_target'] ?? '');
-    if (preg_match('/(-?\d+(?:\.\d+)?)/', $sopTarget, $m)) return (float)$m[1];
-    return null;
+// Manager-facing "min-max" range text from the canonical SOP, e.g. "95-105F". Null only for a
+// genuinely unconfigured/unknown station_key, in which case callers must show an explicit
+// configuration-issue message rather than fabricate a range.
+function broth_log_copilot_incident_sop_range_text(array $incident): ?string {
+    $sop = broth_log_copilot_incident_sop($incident);
+    if ($sop === null) return null;
+    return broth_log_copilot_format_number((float)$sop['min']) . "\u{2013}" . broth_log_copilot_format_number((float)$sop['max']) . "\u{00B0}F";
 }
 
 // Controlled-test incidents are marked via the same free-text convention used throughout manual
@@ -1626,7 +1661,7 @@ function broth_log_copilot_concise_incident_message(array $incident, string $kin
     $tempF = $incident['temperature_f'] ?? null;
     $tempText = $tempF === null ? $l['not_recorded'] : broth_log_copilot_format_number((float)$tempF) . '°F';
     $direction = broth_log_copilot_incident_direction($incident);
-    $targetNum = broth_log_copilot_sop_target_number($incident);
+    $rangeText = broth_log_copilot_incident_sop_range_text($incident);
     $isTest = broth_log_copilot_incident_is_controlled_test($incident);
     $isUrgent = (int)($incident['current_level'] ?? 1) >= 3;
 
@@ -1649,13 +1684,9 @@ function broth_log_copilot_concise_incident_message(array $incident, string $kin
     }
     $statusLine = $station . ': ' . $tempText . ' — ' . $statusWord;
 
-    if ($direction === 'max' && $targetNum !== null) {
-        $requiredLine = $l['required'] . ': ≤ ' . broth_log_copilot_format_number($targetNum) . '°F';
-    } elseif ($direction === 'min' && $targetNum !== null) {
-        $requiredLine = $l['required'] . ': ≥ ' . broth_log_copilot_format_number($targetNum) . '°F';
-    } else {
-        $requiredLine = $l['required'] . ': ' . $l['sop_not_configured'];
-    }
+    $requiredLine = $rangeText !== null
+        ? $l['required'] . ': ' . $rangeText
+        : $l['required'] . ': ' . $l['sop_not_configured'];
 
     $footer = $isTest ? $l['test_only'] : ($isUrgent ? $l['manager_action'] : $l['please_check']);
 
@@ -2620,7 +2651,12 @@ function broth_log_copilot_menu_issue_block(array $incident, int $index, bool $h
         $lines = ["{$index}. " . broth_log_copilot_incident_display_label($incident) . ' Missing', "No log recorded by {$deadline}.", ''];
     } else {
         $temp = broth_log_copilot_temp_text($incident['temperature_f'] !== null ? (float)$incident['temperature_f'] : null, $lang);
-        $lines = ["{$index}. {$incident['station_label']}", "{$temp} \u{2014} " . broth_log_copilot_menu_issue_direction_word($incident), 'Required: ' . (string)$incident['sop_target'], ''];
+        // Same canonical station_key -> BROTH_LOG_SOP lookup the concise push alert uses, so the
+        // menu view and the proactive alert always agree on the required range for a known
+        // station. Falls back to the incident's own stored sop_target text only for the rare
+        // legacy row whose station_key predates the current canonical set (never fabricated).
+        $rangeText = broth_log_copilot_incident_sop_range_text($incident) ?? (string)$incident['sop_target'];
+        $lines = ["{$index}. {$incident['station_label']}", "{$temp} \u{2014} " . broth_log_copilot_menu_issue_direction_word($incident), 'Required: ' . $rangeText, ''];
     }
     $handler = broth_log_copilot_incident_handler_summary($incident);
     if ($handler['status'] === 'resolved') {
@@ -2766,7 +2802,16 @@ function broth_log_copilot_menu_open_incidents_for(string $branch, string $date)
 // second parallel status column. Priority: any never-acknowledged open incident (unacknowledged
 // temperature issue OR an overdue Missing Shift, both surface as the same open, un-acked incident
 // row) outranks an already-owned-but-unresolved one, which in turn outranks a fully clear day.
-function broth_log_copilot_daily_overall_status(array $openIncidents): string {
+// $amStatus/$pmStatus are broth_log_shift_daily_status()'s own return value - read DIRECTLY, never
+// re-derived from whether a missing_shift incident row happens to exist yet. This closes a real
+// race: broth_log_copilot_process_missing_shifts() only creates the incident row on its next
+// worker tick (every 5 minutes) after a shift's deadline passes, so an incident-only classifier
+// could show ALL GOOD for up to 5 minutes after a shift has genuinely gone MISSING. Reusing the
+// SAME canonical broth_log_shift_daily_status() the dashboard and the missing-shift detector both
+// already call - never a second shift-compliance engine - MISSING is always ACTION REQUIRED and
+// LATE is always at least ATTENTION NEEDED, independent of incident-row timing. NOT_YET_DUE/EARLY/
+// ON_TIME never affect the result on their own.
+function broth_log_copilot_daily_overall_status(array $openIncidents, ?array $amStatus = null, ?array $pmStatus = null): string {
     $hasUnacknowledged = false;
     $hasOwnedButOpen = false;
     foreach ($openIncidents as $incident) {
@@ -2777,8 +2822,10 @@ function broth_log_copilot_daily_overall_status(array $openIncidents): string {
             $hasOwnedButOpen = true;
         }
     }
-    if ($hasUnacknowledged) return 'ACTION REQUIRED';
-    if ($hasOwnedButOpen) return 'ATTENTION NEEDED';
+    $shiftMissing = ($amStatus['status'] ?? '') === 'MISSING' || ($pmStatus['status'] ?? '') === 'MISSING';
+    $shiftLate = ($amStatus['status'] ?? '') === 'LATE' || ($pmStatus['status'] ?? '') === 'LATE';
+    if ($hasUnacknowledged || $shiftMissing) return 'ACTION REQUIRED';
+    if ($hasOwnedButOpen || $shiftLate) return 'ATTENTION NEEDED';
     return 'ALL GOOD';
 }
 
@@ -2803,36 +2850,68 @@ function broth_log_copilot_menu_daily_summary_view(array $user, string $branch, 
     $am = broth_log_shift_daily_status('AM', $records, $date, $now);
     $pm = broth_log_shift_daily_status('PM', $records, $date, $now);
     $openIncidents = broth_log_copilot_menu_open_incidents_for($branch, $date);
-    $status = broth_log_copilot_daily_overall_status($openIncidents);
-    $unacked = 0; $owned = 0;
-    foreach ($openIncidents as $incident) {
-        if (in_array((string)($incident['state'] ?? ''), ['detected', 'notified_level_1', 'escalated_level_2', 'escalated_level_3'], true)) $unacked++;
-        else $owned++;
-    }
 
     $headerIcon = $reviewMode ? "\u{1F4C5}" : "\u{1F9ED}";
     $headerLabel = $reviewMode ? "Review" : ($isToday ? 'Daily Check' : 'Review');
     $lines = ["{$headerIcon} {$branch} \u{2014} {$headerLabel}", $isToday && !$reviewMode ? 'Today' : $date, '',
         'Broth Log', broth_log_copilot_menu_shift_line('AM', $am), broth_log_copilot_menu_shift_line('PM', $pm), ''];
-    if ($openIncidents) {
-        $lines[] = 'Issues';
-        if ($unacked > 0) $lines[] = "\u{1F534} Open: {$unacked}";
-        if ($owned > 0) $lines[] = "\u{1F7E1} Being handled: {$owned}";
+
+    if ($reviewMode) {
+        // Review Date is a HISTORICAL summary, never a claim about current health re-derived from
+        // whether that date's incidents happen to be resolved by now - "detected" vs "resolved
+        // later" vs "still unresolved" are reported separately so a fully-resolved bad day is never
+        // silently repainted as if nothing happened, and a day with something still open today is
+        // never confused with "that day is currently fine".
+        $allForDate = broth_log_copilot_menu_incidents_for($branch, $date);
+        $detected = count($allForDate);
+        $stillUnresolved = count(array_filter($allForDate, fn($i) => !in_array((string)($i['state'] ?? ''), ['resolved', 'closed'], true)));
+        $resolvedLater = $detected - $stillUnresolved;
+        $lines[] = "Issues detected: {$detected}";
+        if ($detected > 0) {
+            $lines[] = "Resolved later: {$resolvedLater}";
+            $lines[] = "Still unresolved: {$stillUnresolved}";
+        }
         $lines[] = '';
-        $top = $openIncidents[0];
-        $handler = broth_log_copilot_incident_handler_summary($top);
-        $lines[] = 'Current attention';
-        $lines[] = broth_log_copilot_incident_display_label($top);
-        $lines[] = $handler['status'] === 'unacknowledged' ? 'No one yet' : 'Handled by ' . $handler['display'];
-        $lines[] = '';
+        $shiftGapThatDay = ($am['status'] ?? '') === 'MISSING' || ($pm['status'] ?? '') === 'MISSING' || ($am['status'] ?? '') === 'LATE' || ($pm['status'] ?? '') === 'LATE';
+        if ($stillUnresolved > 0 || $shiftGapThatDay) {
+            $outcome = "\u{26A0}\u{FE0F} Follow-up required";
+        } elseif ($detected > 0) {
+            $outcome = "\u{2705} Resolved";
+        } else {
+            $outcome = "\u{2705} ALL GOOD";
+        }
+        $lines[] = "Outcome: {$outcome}";
     } else {
-        $lines[] = 'Temperature issues: None';
-        $lines[] = 'Missing logs: None';
-        $lines[] = 'Open issues: None';
-        $lines[] = '';
+        $status = broth_log_copilot_daily_overall_status($openIncidents, $am, $pm);
+        $unacked = 0; $owned = 0;
+        foreach ($openIncidents as $incident) {
+            if (in_array((string)($incident['state'] ?? ''), ['detected', 'notified_level_1', 'escalated_level_2', 'escalated_level_3'], true)) $unacked++;
+            else $owned++;
+        }
+        if ($openIncidents) {
+            $lines[] = 'Issues';
+            if ($unacked > 0) $lines[] = "\u{1F534} Open: {$unacked}";
+            if ($owned > 0) $lines[] = "\u{1F7E1} Being handled: {$owned}";
+            $lines[] = '';
+            $top = $openIncidents[0];
+            $handler = broth_log_copilot_incident_handler_summary($top);
+            $lines[] = 'Current attention';
+            $lines[] = broth_log_copilot_incident_display_label($top);
+            if ((string)($top['state'] ?? '') === 'auto_stopped') {
+                $lines[] = "AUTO-STOPPED \u{2014} " . broth_log_copilot_incident_status_label($top);
+            } else {
+                $lines[] = $handler['status'] === 'unacknowledged' ? 'No one yet' : 'Handled by ' . $handler['display'];
+            }
+            $lines[] = '';
+        } else {
+            $lines[] = 'Temperature issues: None';
+            $lines[] = 'Missing logs: None';
+            $lines[] = 'Open issues: None';
+            $lines[] = '';
+        }
+        $lines[] = 'Overall: ' . broth_log_copilot_daily_overall_status_emoji($status) . ' ' . $status;
+        if ($status === 'ALL GOOD') $lines[] = 'No action needed.';
     }
-    $lines[] = 'Overall: ' . broth_log_copilot_daily_overall_status_emoji($status) . ' ' . $status;
-    if ($status === 'ALL GOOD') $lines[] = 'No action needed.';
 
     $keyboardTop = [];
     if ($openIncidents) $keyboardTop[] = ['text' => "\u{26A0}\u{FE0F} View Attention", 'callback_data' => "menu:attention_branch:{$branch}"];
@@ -2876,31 +2955,45 @@ function broth_log_copilot_menu_needs_attention_view(array $user, ?string $onlyB
     if (!broth_log_copilot_user_can_branch($user, $branch)) {
         return ['message' => "You don't have access to this store.", 'reply_markup' => broth_log_copilot_menu_main_keyboard(broth_log_copilot_role_class($user)), 'intent' => 'menu_forbidden'];
     }
+    // Today's items always come first (unowned-urgent, then owned-unresolved, then auto_stopped),
+    // and only within that same priority does an older, still-unresolved backlog item follow - a
+    // manager must see today's operational picture before being asked to scroll through history.
+    $today = broth_log_business_date($now);
     $rows = q("SELECT * FROM broth_log_incidents WHERE branch=? AND state NOT IN ('resolved','closed') ORDER BY
+        CASE WHEN business_date=? THEN 0 ELSE 1 END,
         CASE WHEN severity='critical' AND state NOT IN ('acknowledged','auto_stopped') THEN 0
              WHEN state NOT IN ('acknowledged','auto_stopped') THEN 1
-             ELSE 2 END, created_at ASC", [$branch]);
+             WHEN state='auto_stopped' THEN 2
+             ELSE 3 END, created_at ASC", [$branch, $today]);
     if (!$rows) {
         $keyboard = [[['text' => "\u{1F9ED} Daily Check", 'callback_data' => "menu:daily:{$branch}"]], broth_log_copilot_menu_back_row()];
         return ['message' => "\u{2705} {$branch} \u{2014} Nothing Needs Attention\n\nNo open operational issues require action right now.", 'reply_markup' => ['inline_keyboard' => $keyboard], 'intent' => 'menu_attention_empty'];
     }
+    $displayCap = 8;
+    $shown = array_slice($rows, 0, $displayCap);
+    $remaining = count($rows) - count($shown);
     $lines = ["\u{26A0}\u{FE0F} {$branch} \u{2014} Needs Attention", '', count($rows) . ' item' . (count($rows) === 1 ? '' : 's'), ''];
     $itemButtons = [];
     $i = 1;
-    foreach (array_slice($rows, 0, 8) as $incident) {
+    foreach ($shown as $incident) {
         $handler = broth_log_copilot_incident_handler_summary($incident);
-        $marker = $handler['status'] === 'unacknowledged' ? "\u{1F534}" : "\u{1F7E1}";
+        $isAutoStopped = (string)($incident['state'] ?? '') === 'auto_stopped';
+        $isOlder = (string)($incident['business_date'] ?? '') !== $today;
+        $marker = $isAutoStopped ? "\u{23F9}" : ($handler['status'] === 'unacknowledged' ? "\u{1F534}" : "\u{1F7E1}");
         $label = broth_log_copilot_incident_display_label($incident);
-        $lines[] = "{$i}. {$marker} {$label}";
+        $lines[] = "{$i}. {$marker} {$label}" . ($isOlder ? ' (older)' : '');
         if (($incident['incident_type'] ?? 'temperature') !== 'missing_shift' && $incident['temperature_f'] !== null) {
             $lines[] = broth_log_copilot_temp_text((float)$incident['temperature_f'], 'en') . ' \u{2014} ' . broth_log_copilot_menu_issue_direction_word($incident);
         }
-        $lines[] = 'Status: ' . broth_log_copilot_incident_status_label($incident);
+        // AUTO-STOPPED is called out explicitly, never just the same yellow "acknowledged" marker/
+        // status - it means automated escalation gave up, NOT that an owner is actively handling it.
+        $lines[] = $isAutoStopped ? "AUTO-STOPPED \u{2014} " . broth_log_copilot_incident_status_label($incident) : 'Status: ' . broth_log_copilot_incident_status_label($incident);
         if ($handler['status'] !== 'unacknowledged') $lines[] = 'Handler: ' . $handler['display'];
         $lines[] = '';
         $itemButtons[] = [['text' => "{$marker} {$label}", 'callback_data' => "menu:attn_item:{$incident['incident_id']}"]];
         $i++;
     }
+    if ($remaining > 0) $lines[] = "+ {$remaining} older item" . ($remaining === 1 ? '' : 's') . " not shown here - nothing is lost, refine by date via Review Date.";
     $keyboard = array_merge($itemButtons, [
         [['text' => "\u{1F504} Refresh", 'callback_data' => "menu:attention_branch:{$branch}"]],
         broth_log_copilot_menu_back_row(),
@@ -2931,7 +3024,12 @@ function broth_log_copilot_menu_issue_detail_view(array $user, string $incidentI
         $lines[] = broth_log_copilot_temp_text((float)$incident['temperature_f'], 'en');
         $lines[] = '';
         $lines[] = 'Required:';
-        $lines[] = (string)$incident['sop_target'];
+        // Same canonical station_key -> BROTH_LOG_SOP lookup every other renderer uses (the
+        // concise push alert, the Needs Attention issue block) - never the incident's own stored
+        // sop_target text, which for a real alert is a "minF - maxF" range string with no
+        // "<="/">=" prefix to parse and would otherwise render as a raw, unlabeled string here.
+        // Falls back to the stored text only for a legacy/unrecognized station_key.
+        $lines[] = broth_log_copilot_incident_sop_range_text($incident) ?? (string)$incident['sop_target'];
         $lines[] = '';
     }
     if ($handler['status'] !== 'unacknowledged') {
@@ -2939,9 +3037,16 @@ function broth_log_copilot_menu_issue_detail_view(array $user, string $incidentI
         $lines[] = $handler['display'];
         $lines[] = '';
     }
+    $isAutoStoppedIncident = (string)($incident['state'] ?? '') === 'auto_stopped';
     $lines[] = 'Status:';
-    $lines[] = $status === 'OPEN' ? 'NEEDS OWNER' : $status;
-    if ($status === 'STILL OPEN' || $status === 'WAITING FOR LOG') { $lines[] = ''; $lines[] = 'Reminders: Stopped'; }
+    // AUTO-STOPPED is a distinct label, never presented merely as the same "STILL OPEN"/"WAITING
+    // FOR LOG" an ordinary acknowledged owner would show - automated escalation gave up, nobody
+    // has actually taken ownership.
+    $lines[] = $isAutoStoppedIncident ? "AUTO-STOPPED \u{2014} {$status}" : ($status === 'OPEN' ? 'NEEDS OWNER' : $status);
+    // Reminders have only actually stopped once someone has ACKed or the incident has auto-stopped
+    // - a brand-new, never-acked missing_shift incident is "WAITING FOR LOG" from the start but is
+    // still actively reminding, so this must key off real state, never the status label text alone.
+    if (in_array((string)($incident['state'] ?? ''), ['acknowledged', 'auto_stopped'], true)) { $lines[] = ''; $lines[] = 'Reminders: Stopped'; }
 
     $state = (string)($incident['state'] ?? '');
     if (in_array($state, ['resolved', 'closed'], true)) {

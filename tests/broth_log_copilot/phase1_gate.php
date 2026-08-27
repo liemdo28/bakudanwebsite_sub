@@ -284,8 +284,8 @@ try {
     expect_true(str_contains($notification['text'], 'B1'), 'incident notification includes the store label');
     expect_true(str_contains($notification['text'], 'Prep Area Cooler'), 'incident notification includes station');
     expect_true(str_contains($notification['text'], '120°F'), 'incident notification shows the correct recorded temperature (regression: was truncated to 12F)');
-    expect_true(str_contains($notification['text'], 'too high'), 'a max-violation (<=) incident is worded as "too high", not guessed or generic, since the direction is deterministically known');
-    expect_true(str_contains($notification['text'], 'Required: ≤ 40°F'), 'the required limit is shown using the correct operator and value');
+    expect_true(str_contains($notification['text'], 'too high'), 'a max-violation incident is worded as "too high", derived from the canonical station_key -> BROTH_LOG_SOP lookup vs. the recorded temperature, never from the stored sop_target text');
+    expect_true(str_contains($notification['text'], 'Required: 30–45°F'), 'the required line shows the real canonical range (prepAreaCooler: 30-45F) from BROTH_LOG_SOP by station_key, not a value parsed out of the fixture\'s own (unrealistic) target string');
     expect_true(!str_contains($notification['text'], 'Level:'), 'the concise Telegram body never displays the internal escalation level number');
     expect_true(!str_contains($notification['text'], 'Employee'), 'the concise Telegram body never displays the employee name');
     expect_true(!str_contains($notification['text'], 'Business:'), 'the concise Telegram body never displays business date/time');
@@ -310,8 +310,8 @@ try {
     $minIncidentId = broth_log_copilot_create_incident($minAlert);
     broth_log_copilot_notify_incident($minIncidentId);
     $minNotifyText = $sentMessages[count($sentMessages) - 1]['payload']['text'];
-    expect_true(str_contains($minNotifyText, 'too low'), 'a min-violation (>=) incident notify is worded as "too low"');
-    expect_true(str_contains($minNotifyText, 'Required: ≥ 100°F'), 'a min-violation required line uses the >= operator symbol and correct value');
+    expect_true(str_contains($minNotifyText, 'too low'), 'a min-violation incident notify is worded as "too low", derived from the canonical SOP lookup vs. temperature');
+    expect_true(str_contains($minNotifyText, 'Required: 100–125°F'), 'a min-violation required line shows the real canonical range (bowlWarmer: 100-125F), not a value parsed out of the fixture\'s own target string');
     expect_true(str_contains($minNotifyText, '0°F'), 'a min-violation shows the correct recorded temperature, including a genuine zero value');
 
     run("UPDATE broth_log_incidents SET last_reminder_at=NULL, reminder_count=0 WHERE incident_id=?", [$minIncidentId]);
@@ -3471,6 +3471,228 @@ try {
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$nuMgr, $nuGm]);
     unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($nuPlaceholders)", $nuIncidentIds)['c'] ?? -1), 0, 'manager daily operations UX: no leftover fixture incidents remain');
+
+    // ========================================================================================
+    // MANAGER DAILY UX FINAL HARDENING: shift-compliance race, NOT_YET_DUE boundary, Needs
+    // Attention prioritization, Review Date historical semantics, auto-stopped distinct labeling.
+    // ========================================================================================
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = fn(string $branch): array => [];
+    run("DELETE FROM broth_log_incidents WHERE branch IN ('B1','B2') AND state NOT IN ('resolved','closed')");
+    $hgMgr = '960';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$hgMgr, 'Hardening Manager', 'manager', json_encode(['B1'])]);
+    $hgUser = broth_log_copilot_authorized_user($hgMgr);
+    $hgDate = '2026-08-25';
+
+    // --- 3: race condition - PM display-status is MISSING immediately at window close (17:00
+    // Chicago), but the missing_shift INCIDENT row is not created until the alert deadline+grace
+    // (17:10) - Daily Check must report ACTION REQUIRED from broth_log_shift_daily_status()
+    // directly at 17:05, well before any incident worker tick would have run. ---
+    $hgJustPastClose = (new DateTimeImmutable("$hgDate 17:05:00", new DateTimeZone('America/Chicago')))->setTimezone(new DateTimeZone('UTC'));
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch='B1' AND business_date=? AND incident_type='missing_shift'", [$hgDate])['c'] ?? -1), 0, 'race sanity: no missing_shift incident exists yet for this date/branch (the incident worker has not ticked since the window closed)');
+    $hgPmStatusAtClose = broth_log_shift_daily_status('PM', [], $hgDate, $hgJustPastClose);
+    expect_eq($hgPmStatusAtClose['status'], 'MISSING', 'sanity: broth_log_shift_daily_status() itself already reports PM as MISSING at 17:05, before the alert grace period elapses');
+    expect_true(!broth_log_shift_alert_deadline_passed('PM', $hgJustPastClose), 'sanity: the alert/incident-creation deadline+grace (17:10) has NOT elapsed yet at 17:05 - this is genuinely the race window');
+    $hgRaceDaily = broth_log_copilot_menu_callback_response('menu:daily', $hgUser, 'private', $hgJustPastClose);
+    expect_true(str_contains($hgRaceDaily['message'], 'ACTION REQUIRED'), '3: Daily Check reports ACTION REQUIRED purely from live shift-compliance status, even though no missing_shift incident row exists yet (closes the race the incident-only classifier had)');
+
+    // --- 4: before the PM window closes, NOT_YET_DUE must remain healthy - never ACTION REQUIRED
+    // merely because the day still has a shift ahead of it. AM is given a real on-time submission
+    // here so this test isolates PM's own not-yet-due status, rather than being confounded by AM
+    // also being MISSING under the empty-records provider used elsewhere in this section. ---
+    $hgBeforeClose = (new DateTimeImmutable("$hgDate 16:55:00", new DateTimeZone('America/Chicago')))->setTimezone(new DateTimeZone('UTC'));
+    // The raw sheet's submittedAt text is parsed in Asia/Ho_Chi_Minh (BROTH_LOG_SHEET_TIMESTAMP_TIMEZONE),
+    // never the America/Chicago business timezone - converting explicitly here, rather than
+    // hand-picking an offset, so this stays correct regardless of DST on either side.
+    $hgAmSubmittedAt = (new DateTimeImmutable("$hgDate 10:30:00", new DateTimeZone('America/Chicago')))
+        ->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh'))->format('n/j/Y G:i:s');
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($hgDate, $hgAmSubmittedAt): array {
+        if ($branch !== 'B1') return [];
+        return [['id' => 'hg-am', 'branch' => 'B1', 'businessDate' => $hgDate, 'submittedAt' => $hgAmSubmittedAt, 'employeeName' => 'Tester', 'readings' => [], 'issues' => []]];
+    };
+    $hgPmStatusBeforeClose = broth_log_shift_daily_status('PM', [], $hgDate, $hgBeforeClose);
+    expect_eq($hgPmStatusBeforeClose['status'], 'NOT_YET_DUE', 'sanity: PM is NOT_YET_DUE one minute before its window closes (17:00 Chicago)');
+    $hgHealthyDaily = broth_log_copilot_menu_callback_response('menu:daily', $hgUser, 'private', $hgBeforeClose);
+    expect_true(!str_contains($hgHealthyDaily['message'], 'ACTION REQUIRED'), '4: a not-yet-due PM shift never triggers ACTION REQUIRED on its own');
+    expect_true(str_contains($hgHealthyDaily['message'], 'ALL GOOD'), '4: with no incidents, AM submitted on time, and PM merely not yet due, Daily Check correctly reports ALL GOOD');
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = fn(string $branch): array => [];
+
+    // --- 5: Needs Attention shows today's items before an older backlog item, even though the
+    // older item was created first (created_at ASC would otherwise put it first). ---
+    $hgTodayIssueId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-today', 'businessDate' => $hgDate]));
+    run("UPDATE broth_log_incidents SET business_date=?, created_at='2026-08-25 12:00:00' WHERE incident_id=?", [$hgDate, $hgTodayIssueId]);
+    $hgOlderIssueId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-older', 'businessDate' => '2020-01-01']));
+    run("UPDATE broth_log_incidents SET business_date='2020-01-01', created_at='2020-01-01 08:00:00' WHERE incident_id=?", [$hgOlderIssueId]);
+    $hgAttentionOrdered = broth_log_copilot_menu_callback_response('menu:attention_branch:B1', $hgUser, 'private', $hgJustPastClose);
+    $hgOlderPos = strpos($hgAttentionOrdered['message'], '(older)');
+    expect_true($hgOlderPos !== false, '5: an older, unrelated-date backlog item is included (nothing is silently lost) and explicitly labeled "(older)"');
+    // The message lists items in order - the "(older)" marker must appear strictly after the
+    // first (today's, unlabeled) occurrence of the shared station label, proving today sorts first.
+    $hgFirstStationPos = strpos($hgAttentionOrdered['message'], 'Prep Area Cooler');
+    expect_true($hgFirstStationPos !== false && $hgFirstStationPos < $hgOlderPos, "5: today's item is listed before the older backlog item, not merely ordered by creation time");
+
+    // --- 8: auto_stopped is labeled distinctly - never presented as an ordinary yellow
+    // "acknowledged/being handled" item, in Needs Attention, Daily Check, and Issue Detail alike. ---
+    run("UPDATE broth_log_incidents SET state='auto_stopped', active_key=NULL WHERE incident_id=?", [$hgTodayIssueId]);
+    $hgAttentionAutoStopped = broth_log_copilot_menu_callback_response('menu:attention_branch:B1', $hgUser, 'private', $hgJustPastClose);
+    expect_true(str_contains($hgAttentionAutoStopped['message'], 'AUTO-STOPPED'), '8: Needs Attention explicitly labels an auto_stopped item as AUTO-STOPPED, not just a plain yellow "being handled" status');
+    $hgDailyAutoStopped = broth_log_copilot_menu_callback_response('menu:daily', $hgUser, 'private', $hgJustPastClose);
+    expect_true(str_contains($hgDailyAutoStopped['message'], 'AUTO-STOPPED'), '8: Daily Check\'s current-attention line also explicitly labels an auto_stopped top item as AUTO-STOPPED');
+    $hgDetailAutoStopped = broth_log_copilot_menu_callback_response('menu:attn_item:' . $hgTodayIssueId, $hgUser, 'private', $hgJustPastClose);
+    expect_true(str_contains($hgDetailAutoStopped['message'], 'AUTO-STOPPED'), '8: Issue Detail explicitly labels an auto_stopped incident as AUTO-STOPPED, distinct from STILL OPEN alone');
+    run("UPDATE broth_log_incidents SET state='resolved' WHERE incident_id=?", [$hgTodayIssueId]);
+    run("UPDATE broth_log_incidents SET state='resolved' WHERE incident_id=?", [$hgOlderIssueId]);
+
+    // --- 6: Review Date is a historical outcome summary, never silently re-painted as "ALL GOOD"
+    // merely because that date's incident has since been resolved, and never silently hidden if it
+    // is still unresolved today. ---
+    $hgReviewResolvedId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-review-resolved', 'businessDate' => '2020-06-01']));
+    run("UPDATE broth_log_incidents SET business_date='2020-06-01' WHERE incident_id=?", [$hgReviewResolvedId]);
+    broth_log_copilot_resolve($hgReviewResolvedId, $hgUser, 38.0, 'fixed that day', $ownNow);
+    $hgReviewResolvedView = broth_log_copilot_menu_callback_response('menu:review_nav:B1:2020-06-01', $hgUser, 'private', $ownNow);
+    expect_true(str_contains($hgReviewResolvedView['message'], 'Issues detected: 1'), '6: Review Date reports the real historical detection count for that date');
+    expect_true(str_contains($hgReviewResolvedView['message'], 'Resolved later: 1'), '6: Review Date distinguishes "resolved later" from the day\'s own live condition');
+    expect_true(str_contains($hgReviewResolvedView['message'], 'Outcome: ') && str_contains($hgReviewResolvedView['message'], 'Resolved'), '6: a fully-resolved historical day reports outcome Resolved, worded as a final outcome, not conflated with a live ALL GOOD health check');
+
+    $hgReviewUnresolvedId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-review-unresolved', 'businessDate' => '2020-06-02']));
+    run("UPDATE broth_log_incidents SET business_date='2020-06-02' WHERE incident_id=?", [$hgReviewUnresolvedId]);
+    $hgReviewUnresolvedView = broth_log_copilot_menu_callback_response('menu:review_nav:B1:2020-06-02', $hgUser, 'private', $ownNow);
+    expect_true(str_contains($hgReviewUnresolvedView['message'], 'Still unresolved: 1'), '6: Review Date shows a still-unresolved historical issue explicitly, never dropped');
+    expect_true(str_contains($hgReviewUnresolvedView['message'], 'Follow-up required'), '6: a historical day with something still unresolved today reports "Follow-up required", never ALL GOOD');
+    run("UPDATE broth_log_incidents SET state='resolved' WHERE incident_id=?", [$hgReviewUnresolvedId]);
+
+    // --- 1: manager-facing Details never leaks the internal incident id/ref, for either incident
+    // type - only operational information. ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $hgIdLeakTempId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-idleak-temp']));
+    $hgIdLeakTempDetails = broth_log_copilot_incident_message(q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$hgIdLeakTempId]), 'details');
+    expect_true(!str_contains($hgIdLeakTempDetails, $hgIdLeakTempId), '1: temperature Details text never contains the raw incident id');
+    expect_true(!str_contains($hgIdLeakTempDetails, 'Ref'), '1: temperature Details text never contains a "Ref" line at all');
+    $hgIdLeakMsId = broth_log_copilot_create_missing_shift_incident('B1', $hgDate, 'PM');
+    $hgIdLeakMsDetails = broth_log_copilot_incident_message(q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$hgIdLeakMsId]), 'details');
+    expect_true(!str_contains($hgIdLeakMsDetails, $hgIdLeakMsId), '1: missing_shift Details text never contains the raw incident id');
+    expect_true(!str_contains($hgIdLeakMsDetails, 'Ref'), '1: missing_shift Details text never contains a "Ref" line at all');
+    expect_true(str_contains($hgIdLeakMsDetails, 'Status: WAITING FOR LOG'), '1: missing_shift Details still shows an explicit operational status despite removing the ref line');
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?)", [$hgIdLeakTempId, $hgIdLeakMsId]);
+
+    // Cleanup
+    $hgIncidentIds = [$hgTodayIssueId, $hgOlderIssueId, $hgReviewResolvedId, $hgReviewUnresolvedId];
+    $hgPlaceholders = implode(',', array_fill(0, count($hgIncidentIds), '?'));
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($hgPlaceholders)", $hgIncidentIds);
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($hgPlaceholders)", $hgIncidentIds);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN ($hgPlaceholders)", $hgIncidentIds);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$hgMgr]);
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($hgPlaceholders)", $hgIncidentIds)['c'] ?? -1), 0, 'manager daily UX final hardening: no leftover fixture incidents remain');
+
+    // ========================================================================================
+    // B1 SOP mapping regression (root-cause fix): every real critical alert used to render
+    // "SOP target not configured" regardless of station, because the concise Telegram renderer
+    // derived direction/required-range by parsing a "<="/">=" prefix out of the incident's OWN
+    // stored sop_target text - but the real alert-intake path (broth-log-telegram-cron.php ->
+    // broth_log_critical_alerts_for_branch() -> broth_log_sop_label()) always stores a "minF -
+    // maxF" range string, which never has that prefix. BROTH_LOG_SOP itself was never missing any
+    // station - the bug was purely in how the renderer re-derived direction/range from a rendered
+    // string instead of the canonical station_key -> BROTH_LOG_SOP lookup Resolve already used.
+    // ========================================================================================
+    $sopUser = ['telegram_user_id' => '101', 'allowed_branch_list' => ['B1'], 'preferred_language' => 'en'];
+
+    // --- 19-station matrix: every canonical B1 station must resolve via station_key lookup,
+    // never fabricate a range, never render "not configured", and boundary temperatures at exact
+    // min/max are SAFE while one degree outside either bound is not. ---
+    expect_eq(count(BROTH_LOG_SOP), 19, 'B1 has exactly 19 canonical SOP-configured stations');
+    $sopMatrixIncidentIds = [];
+    foreach (BROTH_LOG_SOP as $sopKey => $sopCfg) {
+        expect_eq(broth_log_severity_for($sopCfg, (float)$sopCfg['min']), 'safe', "boundary: $sopKey at exact min ({$sopCfg['min']}F) is SAFE");
+        expect_eq(broth_log_severity_for($sopCfg, (float)$sopCfg['max']), 'safe', "boundary: $sopKey at exact max ({$sopCfg['max']}F) is SAFE");
+        expect_true(broth_log_severity_for($sopCfg, (float)$sopCfg['min'] - 1) !== 'safe', "boundary: $sopKey one degree below min is NOT safe");
+        expect_true(broth_log_severity_for($sopCfg, (float)$sopCfg['max'] + 1) !== 'safe', "boundary: $sopKey one degree above max is NOT safe");
+
+        $sopMatrixAlert = array_replace($alert, [
+            'branch' => 'B1',
+            'stationKey' => $sopKey,
+            'station' => $sopKey,
+            'responseId' => 'resp-sop-matrix-' . $sopKey,
+            // Deliberately a legacy-shaped, mismatched target string on the fixture itself - the
+            // renderer must never read it. If the old string-parsing bug regressed, this specific
+            // value would leak into the required-range line instead of the real canonical range.
+            'target' => '<= -999F',
+            'temperature' => broth_log_copilot_format_number((float)$sopCfg['max'] + 10) . 'F',
+        ]);
+        $sopMatrixId = broth_log_copilot_create_incident($sopMatrixAlert);
+        $sopMatrixIncidentIds[] = $sopMatrixId;
+        $sopMatrixRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$sopMatrixId]);
+        $sopMatrixText = broth_log_copilot_incident_message($sopMatrixRow, 'notify');
+        $sopExpectedRange = broth_log_copilot_format_number((float)$sopCfg['min']) . "\u{2013}" . broth_log_copilot_format_number((float)$sopCfg['max']) . "\u{00B0}F";
+        expect_true(!str_contains($sopMatrixText, 'not configured'), "19-station matrix: $sopKey lookup never renders \"SOP target not configured\"");
+        expect_true(str_contains($sopMatrixText, "Required: $sopExpectedRange"), "19-station matrix: $sopKey Telegram render shows the real canonical range ($sopExpectedRange), not the fixture's own mismatched target text");
+        expect_true(str_contains($sopMatrixText, 'too high'), "19-station matrix: $sopKey above-max reading is worded \"too high\"");
+        expect_eq(broth_log_copilot_incident_direction($sopMatrixRow), 'max', "19-station matrix: $sopKey direction lookup PASS (max)");
+        expect_true(broth_log_is_safe_recheck($sopKey, (float)$sopCfg['min']), "19-station matrix: $sopKey Resolve lookup PASS - min bound accepted as a safe recheck");
+        expect_true(broth_log_is_safe_recheck($sopKey, (float)$sopCfg['max']), "19-station matrix: $sopKey Resolve lookup PASS - max bound accepted as a safe recheck");
+        expect_true(!broth_log_is_safe_recheck($sopKey, (float)$sopCfg['max'] + 10), "19-station matrix: $sopKey Resolve lookup correctly rejects the same still-critical reading used for the alert above");
+    }
+
+    // --- Exact real screenshot regression cases (Section 11): the specific station/reading pairs
+    // reported as broken in production, each independently reproduced end-to-end. ---
+    $slicedPorkAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'slicedPorkHot', 'station' => 'Sliced Pork Hot', 'responseId' => 'resp-screenshot-sliced-pork', 'temperature' => '158F', 'target' => '<= -999F']);
+    $slicedPorkId = broth_log_copilot_create_incident($slicedPorkAlert);
+    $slicedPorkRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$slicedPorkId]);
+    $slicedPorkText = broth_log_copilot_incident_message($slicedPorkRow, 'notify');
+    expect_true(str_contains($slicedPorkText, 'too high') && str_contains($slicedPorkText, 'Required: 95–105°F'), 'screenshot regression: Sliced Pork Hot 158F -> HIGH, Required 95-105F, not "SOP target not configured"');
+
+    $dicedPorkAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'dicedPorkHot', 'station' => 'Diced Pork Hot', 'responseId' => 'resp-screenshot-diced-pork', 'temperature' => '165F', 'target' => '<= -999F']);
+    $dicedPorkId = broth_log_copilot_create_incident($dicedPorkAlert);
+    $dicedPorkRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$dicedPorkId]);
+    $dicedPorkText = broth_log_copilot_incident_message($dicedPorkRow, 'notify');
+    expect_true(str_contains($dicedPorkText, 'too high') && str_contains($dicedPorkText, 'Required: 95–105°F'), 'screenshot regression: Diced Pork Hot 165F -> HIGH, Required 95-105F, not "SOP target not configured"');
+
+    $bowlWarmerAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'bowlWarmer', 'station' => 'Bowl Warmer', 'responseId' => 'resp-screenshot-bowl-warmer', 'temperature' => '0F', 'target' => '<= -999F']);
+    $bowlWarmerId = broth_log_copilot_create_incident($bowlWarmerAlert);
+    $bowlWarmerRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$bowlWarmerId]);
+    $bowlWarmerText = broth_log_copilot_incident_message($bowlWarmerRow, 'notify');
+    expect_true(str_contains($bowlWarmerText, 'too low') && str_contains($bowlWarmerText, 'Required: 100–125°F'), 'screenshot regression: Bowl Warmer 0F -> LOW, Required 100-125F, not "SOP target not configured"');
+
+    $lineFreezerAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'lineFreezer', 'station' => 'Line Freezer', 'responseId' => 'resp-screenshot-line-freezer', 'temperature' => '8F', 'target' => '<= -999F']);
+    $lineFreezerId = broth_log_copilot_create_incident($lineFreezerAlert);
+    $lineFreezerRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$lineFreezerId]);
+    $lineFreezerText = broth_log_copilot_incident_message($lineFreezerRow, 'notify');
+    expect_true(str_contains($lineFreezerText, 'too high') && str_contains($lineFreezerText, 'Required: -20–0°F'), 'screenshot regression: Line Freezer 8F -> HIGH, Required -20-0F, not "SOP target not configured"');
+
+    // --- Resolve safety cross-check (Section 8): Resolve was already using the canonical SOP via
+    // station_key (broth_log_is_safe_recheck()), unaffected by the rendering bug - this proves it
+    // stays correct and matches the same canonical source the fixed renderer now also uses. ---
+    expect_eq(broth_log_copilot_resolve($slicedPorkId, $sopUser, 158.0, 'attempted resolve while still critical')['reason'], 'recheck_still_unsafe', 'Resolve safety: Sliced Pork Hot at 158F must fail (outside 95-105F)');
+    expect_true(broth_log_copilot_resolve($slicedPorkId, $sopUser, 100.0, 'reheated and re-checked')['ok'], 'Resolve safety: Sliced Pork Hot at 100F may pass (inside 95-105F)');
+    expect_eq(broth_log_copilot_resolve($lineFreezerId, $sopUser, 8.0, 'attempted resolve while still critical')['reason'], 'recheck_still_unsafe', 'Resolve safety: Line Freezer at 8F must fail (outside -20-0F)');
+    expect_true(broth_log_copilot_resolve($lineFreezerId, $sopUser, -2.0, 'door closed and re-checked')['ok'], 'Resolve safety: Line Freezer at -2F may pass (inside -20-0F)');
+    expect_eq(broth_log_copilot_resolve($bowlWarmerId, $sopUser, 0.0, 'attempted resolve while still critical')['reason'], 'recheck_still_unsafe', 'Resolve safety: Bowl Warmer at 0F must fail (outside 100-125F)');
+    expect_true(broth_log_copilot_resolve($bowlWarmerId, $sopUser, 110.0, 'warmer adjusted and re-checked')['ok'], 'Resolve safety: Bowl Warmer at 110F may pass (inside 100-125F)');
+
+    // --- Dashboard/Telegram parity (Section 12): the "Today's Issues" menu view and the proactive
+    // push alert must agree on the required range for the same incident. ---
+    $dicedPorkIssueBlock = broth_log_copilot_menu_issue_block($dicedPorkRow, 1, false);
+    expect_true(str_contains($dicedPorkIssueBlock, 'Required: 95–105°F'), 'dashboard/Telegram parity: the Today\'s Issues menu block shows the same canonical range as the push alert');
+
+    // --- Historical/legacy station_key safety (Section 13): a pre-existing incident carrying a
+    // station_key that predates the current canonical set (confirmed in production: 2 real rows
+    // using "walk_in_cooler"/"walk_in_freezer" snake_case keys, never migrated, never mutated by
+    // this fix) must never crash and must never fabricate a range - it falls back to its own
+    // already-stored sop_target text exactly as it did before this fix. ---
+    $legacyKeyAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'walk_in_cooler', 'station' => 'Walk-In Cooler (legacy key)', 'responseId' => 'resp-legacy-station-key', 'temperature' => '50F', 'target' => '<= 45F']);
+    $legacyKeyId = broth_log_copilot_create_incident($legacyKeyAlert);
+    $legacyKeyRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$legacyKeyId]);
+    expect_eq(broth_log_copilot_incident_sop_range_text($legacyKeyRow), null, 'legacy station_key safety: an unrecognized/pre-rename station_key correctly has no canonical range (never fabricated)');
+    $legacyKeyIssueBlock = broth_log_copilot_menu_issue_block($legacyKeyRow, 1, false);
+    expect_true(str_contains($legacyKeyIssueBlock, 'Required: <= 45F'), 'legacy station_key safety: the menu view falls back to the incident\'s own already-stored sop_target text rather than crashing or fabricating a range');
+
+    // Cleanup
+    $sopAllIds = array_merge($sopMatrixIncidentIds, [$slicedPorkId, $dicedPorkId, $bowlWarmerId, $lineFreezerId, $legacyKeyId]);
+    $sopPlaceholders = implode(',', array_fill(0, count($sopAllIds), '?'));
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($sopPlaceholders)", $sopAllIds);
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($sopPlaceholders)", $sopAllIds);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN ($sopPlaceholders)", $sopAllIds);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($sopPlaceholders)", $sopAllIds)['c'] ?? -1), 0, 'B1 SOP mapping regression: no leftover fixture incidents remain');
 
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {

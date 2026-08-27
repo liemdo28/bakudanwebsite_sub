@@ -1532,22 +1532,43 @@ function broth_log_copilot_verbose_incident_message(array $incident, string $kin
     return implode("\n", array_map(fn($line) => substr($line, 0, 180), $lines));
 }
 
-// Direction of violation, derived from the incident's own sop_target string (e.g. "<= 0F" or
-// ">= 100F", stored verbatim from the real SOP comparison at detection time - never re-derived
-// from the temperature itself, so this can never guess wrong). Returns null when the operator
-// cannot be determined (e.g. an unconfigured/unknown station), in which case the message falls
-// back to a generic "out of range" phrasing rather than fabricating a direction.
+// Single canonical SOP lookup for temperature-incident rendering: the incident's own station_key
+// column into the SAME BROTH_LOG_SOP config broth_log_normalize_row() (detection) and
+// broth_log_copilot_resolve()/broth_log_is_safe_recheck() (Resolve validation) already use -
+// never a copy, never a re-parse of a previously-rendered string. The incident's stored
+// sop_target text (e.g. "45F - 105F" or a legacy operator string on very old rows) is audit/
+// display history only and is deliberately never read here. Returns null only for a genuinely
+// unconfigured/unknown station_key - including the handful of pre-rename legacy rows
+// (e.g. "walk_in_cooler"/"walk_in_freezer" snake_case keys that predate the current camelCase
+// station keys) - never for any of the current known stations.
+function broth_log_copilot_incident_sop(array $incident): ?array {
+    $sop = BROTH_LOG_SOP[(string)($incident['station_key'] ?? '')] ?? null;
+    return ($sop && isset($sop['min'], $sop['max'])) ? $sop : null;
+}
+
+// Direction of violation, derived from the canonical SOP range vs. the incident's own recorded
+// temperature - never guessed from a rendered string. Returns null when the station has no
+// canonical SOP config, or no temperature was recorded, or the temperature is actually within
+// range (should not occur for a real critical incident, but never mislabeled either way); the
+// message then falls back to a generic "out of range" phrasing rather than fabricating a
+// direction.
 function broth_log_copilot_incident_direction(array $incident): ?string {
-    $sopTarget = trim((string)($incident['sop_target'] ?? ''));
-    if (str_starts_with($sopTarget, '<=')) return 'max';
-    if (str_starts_with($sopTarget, '>=')) return 'min';
+    $sop = broth_log_copilot_incident_sop($incident);
+    $temp = $incident['temperature_f'] ?? null;
+    if ($sop === null || $temp === null) return null;
+    $temp = (float)$temp;
+    if ($temp > (float)$sop['max']) return 'max';
+    if ($temp < (float)$sop['min']) return 'min';
     return null;
 }
 
-function broth_log_copilot_sop_target_number(array $incident): ?float {
-    $sopTarget = (string)($incident['sop_target'] ?? '');
-    if (preg_match('/(-?\d+(?:\.\d+)?)/', $sopTarget, $m)) return (float)$m[1];
-    return null;
+// Manager-facing "min-max" range text from the canonical SOP, e.g. "95-105F". Null only for a
+// genuinely unconfigured/unknown station_key, in which case callers must show an explicit
+// configuration-issue message rather than fabricate a range.
+function broth_log_copilot_incident_sop_range_text(array $incident): ?string {
+    $sop = broth_log_copilot_incident_sop($incident);
+    if ($sop === null) return null;
+    return broth_log_copilot_format_number((float)$sop['min']) . "\u{2013}" . broth_log_copilot_format_number((float)$sop['max']) . "\u{00B0}F";
 }
 
 // Controlled-test incidents are marked via the same free-text convention used throughout manual
@@ -1592,7 +1613,7 @@ function broth_log_copilot_concise_incident_message(array $incident, string $kin
     $tempF = $incident['temperature_f'] ?? null;
     $tempText = $tempF === null ? $l['not_recorded'] : broth_log_copilot_format_number((float)$tempF) . '°F';
     $direction = broth_log_copilot_incident_direction($incident);
-    $targetNum = broth_log_copilot_sop_target_number($incident);
+    $rangeText = broth_log_copilot_incident_sop_range_text($incident);
     $isTest = broth_log_copilot_incident_is_controlled_test($incident);
     $isUrgent = (int)($incident['current_level'] ?? 1) >= 3;
 
@@ -1615,13 +1636,9 @@ function broth_log_copilot_concise_incident_message(array $incident, string $kin
     }
     $statusLine = $station . ': ' . $tempText . ' — ' . $statusWord;
 
-    if ($direction === 'max' && $targetNum !== null) {
-        $requiredLine = $l['required'] . ': ≤ ' . broth_log_copilot_format_number($targetNum) . '°F';
-    } elseif ($direction === 'min' && $targetNum !== null) {
-        $requiredLine = $l['required'] . ': ≥ ' . broth_log_copilot_format_number($targetNum) . '°F';
-    } else {
-        $requiredLine = $l['required'] . ': ' . $l['sop_not_configured'];
-    }
+    $requiredLine = $rangeText !== null
+        ? $l['required'] . ': ' . $rangeText
+        : $l['required'] . ': ' . $l['sop_not_configured'];
 
     $footer = $isTest ? $l['test_only'] : ($isUrgent ? $l['manager_action'] : $l['please_check']);
 
@@ -2528,7 +2545,12 @@ function broth_log_copilot_menu_issue_block(array $incident, int $index, bool $h
         $lines = ["{$index}. " . broth_log_copilot_incident_display_label($incident) . ' Missing', "No log recorded by {$deadline}.", ''];
     } else {
         $temp = broth_log_copilot_temp_text($incident['temperature_f'] !== null ? (float)$incident['temperature_f'] : null, $lang);
-        $lines = ["{$index}. {$incident['station_label']}", "{$temp} \u{2014} " . broth_log_copilot_menu_issue_direction_word($incident), 'Required: ' . (string)$incident['sop_target'], ''];
+        // Same canonical station_key -> BROTH_LOG_SOP lookup the concise push alert uses, so the
+        // menu view and the proactive alert always agree on the required range for a known
+        // station. Falls back to the incident's own stored sop_target text only for the rare
+        // legacy row whose station_key predates the current canonical set (never fabricated).
+        $rangeText = broth_log_copilot_incident_sop_range_text($incident) ?? (string)$incident['sop_target'];
+        $lines = ["{$index}. {$incident['station_label']}", "{$temp} \u{2014} " . broth_log_copilot_menu_issue_direction_word($incident), 'Required: ' . $rangeText, ''];
     }
     $handler = broth_log_copilot_incident_handler_summary($incident);
     if ($handler['status'] === 'resolved') {

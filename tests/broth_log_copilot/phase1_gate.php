@@ -284,8 +284,8 @@ try {
     expect_true(str_contains($notification['text'], 'B1'), 'incident notification includes the store label');
     expect_true(str_contains($notification['text'], 'Prep Area Cooler'), 'incident notification includes station');
     expect_true(str_contains($notification['text'], '120°F'), 'incident notification shows the correct recorded temperature (regression: was truncated to 12F)');
-    expect_true(str_contains($notification['text'], 'too high'), 'a max-violation (<=) incident is worded as "too high", not guessed or generic, since the direction is deterministically known');
-    expect_true(str_contains($notification['text'], 'Required: ≤ 40°F'), 'the required limit is shown using the correct operator and value');
+    expect_true(str_contains($notification['text'], 'too high'), 'a max-violation incident is worded as "too high", derived from the canonical station_key -> BROTH_LOG_SOP lookup vs. the recorded temperature, never from the stored sop_target text');
+    expect_true(str_contains($notification['text'], 'Required: 30–45°F'), 'the required line shows the real canonical range (prepAreaCooler: 30-45F) from BROTH_LOG_SOP by station_key, not a value parsed out of the fixture\'s own (unrealistic) target string');
     expect_true(!str_contains($notification['text'], 'Level:'), 'the concise Telegram body never displays the internal escalation level number');
     expect_true(!str_contains($notification['text'], 'Employee'), 'the concise Telegram body never displays the employee name');
     expect_true(!str_contains($notification['text'], 'Business:'), 'the concise Telegram body never displays business date/time');
@@ -310,8 +310,8 @@ try {
     $minIncidentId = broth_log_copilot_create_incident($minAlert);
     broth_log_copilot_notify_incident($minIncidentId);
     $minNotifyText = $sentMessages[count($sentMessages) - 1]['payload']['text'];
-    expect_true(str_contains($minNotifyText, 'too low'), 'a min-violation (>=) incident notify is worded as "too low"');
-    expect_true(str_contains($minNotifyText, 'Required: ≥ 100°F'), 'a min-violation required line uses the >= operator symbol and correct value');
+    expect_true(str_contains($minNotifyText, 'too low'), 'a min-violation incident notify is worded as "too low", derived from the canonical SOP lookup vs. temperature');
+    expect_true(str_contains($minNotifyText, 'Required: 100–125°F'), 'a min-violation required line shows the real canonical range (bowlWarmer: 100-125F), not a value parsed out of the fixture\'s own target string');
     expect_true(str_contains($minNotifyText, '0°F'), 'a min-violation shows the correct recorded temperature, including a genuine zero value');
 
     run("UPDATE broth_log_incidents SET last_reminder_at=NULL, reminder_count=0 WHERE incident_id=?", [$minIncidentId]);
@@ -3330,6 +3330,115 @@ try {
     run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id IN (?,?)", [$asEarlyMgr, $asLateMgr]);
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$asEarlyMgr, $asLateMgr]);
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($asPlaceholders)", $asIncidentIds)['c'] ?? -1), 0, 'auto-stop: no leftover fixture incidents remain');
+
+    // ========================================================================================
+    // B1 SOP mapping regression (root-cause fix): every real critical alert used to render
+    // "SOP target not configured" regardless of station, because the concise Telegram renderer
+    // derived direction/required-range by parsing a "<="/">=" prefix out of the incident's OWN
+    // stored sop_target text - but the real alert-intake path (broth-log-telegram-cron.php ->
+    // broth_log_critical_alerts_for_branch() -> broth_log_sop_label()) always stores a "minF -
+    // maxF" range string, which never has that prefix. BROTH_LOG_SOP itself was never missing any
+    // station - the bug was purely in how the renderer re-derived direction/range from a rendered
+    // string instead of the canonical station_key -> BROTH_LOG_SOP lookup Resolve already used.
+    // ========================================================================================
+    $sopUser = ['telegram_user_id' => '101', 'allowed_branch_list' => ['B1'], 'preferred_language' => 'en'];
+
+    // --- 19-station matrix: every canonical B1 station must resolve via station_key lookup,
+    // never fabricate a range, never render "not configured", and boundary temperatures at exact
+    // min/max are SAFE while one degree outside either bound is not. ---
+    expect_eq(count(BROTH_LOG_SOP), 19, 'B1 has exactly 19 canonical SOP-configured stations');
+    $sopMatrixIncidentIds = [];
+    foreach (BROTH_LOG_SOP as $sopKey => $sopCfg) {
+        expect_eq(broth_log_severity_for($sopCfg, (float)$sopCfg['min']), 'safe', "boundary: $sopKey at exact min ({$sopCfg['min']}F) is SAFE");
+        expect_eq(broth_log_severity_for($sopCfg, (float)$sopCfg['max']), 'safe', "boundary: $sopKey at exact max ({$sopCfg['max']}F) is SAFE");
+        expect_true(broth_log_severity_for($sopCfg, (float)$sopCfg['min'] - 1) !== 'safe', "boundary: $sopKey one degree below min is NOT safe");
+        expect_true(broth_log_severity_for($sopCfg, (float)$sopCfg['max'] + 1) !== 'safe', "boundary: $sopKey one degree above max is NOT safe");
+
+        $sopMatrixAlert = array_replace($alert, [
+            'branch' => 'B1',
+            'stationKey' => $sopKey,
+            'station' => $sopKey,
+            'responseId' => 'resp-sop-matrix-' . $sopKey,
+            // Deliberately a legacy-shaped, mismatched target string on the fixture itself - the
+            // renderer must never read it. If the old string-parsing bug regressed, this specific
+            // value would leak into the required-range line instead of the real canonical range.
+            'target' => '<= -999F',
+            'temperature' => broth_log_copilot_format_number((float)$sopCfg['max'] + 10) . 'F',
+        ]);
+        $sopMatrixId = broth_log_copilot_create_incident($sopMatrixAlert);
+        $sopMatrixIncidentIds[] = $sopMatrixId;
+        $sopMatrixRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$sopMatrixId]);
+        $sopMatrixText = broth_log_copilot_incident_message($sopMatrixRow, 'notify');
+        $sopExpectedRange = broth_log_copilot_format_number((float)$sopCfg['min']) . "\u{2013}" . broth_log_copilot_format_number((float)$sopCfg['max']) . "\u{00B0}F";
+        expect_true(!str_contains($sopMatrixText, 'not configured'), "19-station matrix: $sopKey lookup never renders \"SOP target not configured\"");
+        expect_true(str_contains($sopMatrixText, "Required: $sopExpectedRange"), "19-station matrix: $sopKey Telegram render shows the real canonical range ($sopExpectedRange), not the fixture's own mismatched target text");
+        expect_true(str_contains($sopMatrixText, 'too high'), "19-station matrix: $sopKey above-max reading is worded \"too high\"");
+        expect_eq(broth_log_copilot_incident_direction($sopMatrixRow), 'max', "19-station matrix: $sopKey direction lookup PASS (max)");
+        expect_true(broth_log_is_safe_recheck($sopKey, (float)$sopCfg['min']), "19-station matrix: $sopKey Resolve lookup PASS - min bound accepted as a safe recheck");
+        expect_true(broth_log_is_safe_recheck($sopKey, (float)$sopCfg['max']), "19-station matrix: $sopKey Resolve lookup PASS - max bound accepted as a safe recheck");
+        expect_true(!broth_log_is_safe_recheck($sopKey, (float)$sopCfg['max'] + 10), "19-station matrix: $sopKey Resolve lookup correctly rejects the same still-critical reading used for the alert above");
+    }
+
+    // --- Exact real screenshot regression cases (Section 11): the specific station/reading pairs
+    // reported as broken in production, each independently reproduced end-to-end. ---
+    $slicedPorkAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'slicedPorkHot', 'station' => 'Sliced Pork Hot', 'responseId' => 'resp-screenshot-sliced-pork', 'temperature' => '158F', 'target' => '<= -999F']);
+    $slicedPorkId = broth_log_copilot_create_incident($slicedPorkAlert);
+    $slicedPorkRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$slicedPorkId]);
+    $slicedPorkText = broth_log_copilot_incident_message($slicedPorkRow, 'notify');
+    expect_true(str_contains($slicedPorkText, 'too high') && str_contains($slicedPorkText, 'Required: 95–105°F'), 'screenshot regression: Sliced Pork Hot 158F -> HIGH, Required 95-105F, not "SOP target not configured"');
+
+    $dicedPorkAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'dicedPorkHot', 'station' => 'Diced Pork Hot', 'responseId' => 'resp-screenshot-diced-pork', 'temperature' => '165F', 'target' => '<= -999F']);
+    $dicedPorkId = broth_log_copilot_create_incident($dicedPorkAlert);
+    $dicedPorkRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$dicedPorkId]);
+    $dicedPorkText = broth_log_copilot_incident_message($dicedPorkRow, 'notify');
+    expect_true(str_contains($dicedPorkText, 'too high') && str_contains($dicedPorkText, 'Required: 95–105°F'), 'screenshot regression: Diced Pork Hot 165F -> HIGH, Required 95-105F, not "SOP target not configured"');
+
+    $bowlWarmerAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'bowlWarmer', 'station' => 'Bowl Warmer', 'responseId' => 'resp-screenshot-bowl-warmer', 'temperature' => '0F', 'target' => '<= -999F']);
+    $bowlWarmerId = broth_log_copilot_create_incident($bowlWarmerAlert);
+    $bowlWarmerRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$bowlWarmerId]);
+    $bowlWarmerText = broth_log_copilot_incident_message($bowlWarmerRow, 'notify');
+    expect_true(str_contains($bowlWarmerText, 'too low') && str_contains($bowlWarmerText, 'Required: 100–125°F'), 'screenshot regression: Bowl Warmer 0F -> LOW, Required 100-125F, not "SOP target not configured"');
+
+    $lineFreezerAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'lineFreezer', 'station' => 'Line Freezer', 'responseId' => 'resp-screenshot-line-freezer', 'temperature' => '8F', 'target' => '<= -999F']);
+    $lineFreezerId = broth_log_copilot_create_incident($lineFreezerAlert);
+    $lineFreezerRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$lineFreezerId]);
+    $lineFreezerText = broth_log_copilot_incident_message($lineFreezerRow, 'notify');
+    expect_true(str_contains($lineFreezerText, 'too high') && str_contains($lineFreezerText, 'Required: -20–0°F'), 'screenshot regression: Line Freezer 8F -> HIGH, Required -20-0F, not "SOP target not configured"');
+
+    // --- Resolve safety cross-check (Section 8): Resolve was already using the canonical SOP via
+    // station_key (broth_log_is_safe_recheck()), unaffected by the rendering bug - this proves it
+    // stays correct and matches the same canonical source the fixed renderer now also uses. ---
+    expect_eq(broth_log_copilot_resolve($slicedPorkId, $sopUser, 158.0, 'attempted resolve while still critical')['reason'], 'recheck_still_unsafe', 'Resolve safety: Sliced Pork Hot at 158F must fail (outside 95-105F)');
+    expect_true(broth_log_copilot_resolve($slicedPorkId, $sopUser, 100.0, 'reheated and re-checked')['ok'], 'Resolve safety: Sliced Pork Hot at 100F may pass (inside 95-105F)');
+    expect_eq(broth_log_copilot_resolve($lineFreezerId, $sopUser, 8.0, 'attempted resolve while still critical')['reason'], 'recheck_still_unsafe', 'Resolve safety: Line Freezer at 8F must fail (outside -20-0F)');
+    expect_true(broth_log_copilot_resolve($lineFreezerId, $sopUser, -2.0, 'door closed and re-checked')['ok'], 'Resolve safety: Line Freezer at -2F may pass (inside -20-0F)');
+    expect_eq(broth_log_copilot_resolve($bowlWarmerId, $sopUser, 0.0, 'attempted resolve while still critical')['reason'], 'recheck_still_unsafe', 'Resolve safety: Bowl Warmer at 0F must fail (outside 100-125F)');
+    expect_true(broth_log_copilot_resolve($bowlWarmerId, $sopUser, 110.0, 'warmer adjusted and re-checked')['ok'], 'Resolve safety: Bowl Warmer at 110F may pass (inside 100-125F)');
+
+    // --- Dashboard/Telegram parity (Section 12): the "Today's Issues" menu view and the proactive
+    // push alert must agree on the required range for the same incident. ---
+    $dicedPorkIssueBlock = broth_log_copilot_menu_issue_block($dicedPorkRow, 1, false);
+    expect_true(str_contains($dicedPorkIssueBlock, 'Required: 95–105°F'), 'dashboard/Telegram parity: the Today\'s Issues menu block shows the same canonical range as the push alert');
+
+    // --- Historical/legacy station_key safety (Section 13): a pre-existing incident carrying a
+    // station_key that predates the current canonical set (confirmed in production: 2 real rows
+    // using "walk_in_cooler"/"walk_in_freezer" snake_case keys, never migrated, never mutated by
+    // this fix) must never crash and must never fabricate a range - it falls back to its own
+    // already-stored sop_target text exactly as it did before this fix. ---
+    $legacyKeyAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'walk_in_cooler', 'station' => 'Walk-In Cooler (legacy key)', 'responseId' => 'resp-legacy-station-key', 'temperature' => '50F', 'target' => '<= 45F']);
+    $legacyKeyId = broth_log_copilot_create_incident($legacyKeyAlert);
+    $legacyKeyRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$legacyKeyId]);
+    expect_eq(broth_log_copilot_incident_sop_range_text($legacyKeyRow), null, 'legacy station_key safety: an unrecognized/pre-rename station_key correctly has no canonical range (never fabricated)');
+    $legacyKeyIssueBlock = broth_log_copilot_menu_issue_block($legacyKeyRow, 1, false);
+    expect_true(str_contains($legacyKeyIssueBlock, 'Required: <= 45F'), 'legacy station_key safety: the menu view falls back to the incident\'s own already-stored sop_target text rather than crashing or fabricating a range');
+
+    // Cleanup
+    $sopAllIds = array_merge($sopMatrixIncidentIds, [$slicedPorkId, $dicedPorkId, $bowlWarmerId, $lineFreezerId, $legacyKeyId]);
+    $sopPlaceholders = implode(',', array_fill(0, count($sopAllIds), '?'));
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($sopPlaceholders)", $sopAllIds);
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($sopPlaceholders)", $sopAllIds);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN ($sopPlaceholders)", $sopAllIds);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($sopPlaceholders)", $sopAllIds)['c'] ?? -1), 0, 'B1 SOP mapping regression: no leftover fixture incidents remain');
 
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {

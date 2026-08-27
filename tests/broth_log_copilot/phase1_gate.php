@@ -371,7 +371,7 @@ try {
     $ackProcessed = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:01:00 UTC')), '1020');
     expect_eq($ackProcessed['intent'] ?? '', 'ack', 'ACK callback mutates incident');
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['state'] ?? '', 'acknowledged', 'ACK callback records acknowledged state');
-    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Incident acknowledged'), 'ACK callback sends confirmation');
+    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'You acknowledged this issue'), 'ACK callback sends confirmation');
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1021,
         'callback_query' => [
@@ -382,7 +382,7 @@ try {
     ])['queued'], 'ACK callback replay enqueues as separate Telegram retry');
     $replayProcessed = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:02:00 UTC')), '1021');
     expect_eq($replayProcessed['intent'] ?? '', 'callback_rejected', 'ACK replay is rejected');
-    expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Incident acknowledged'), 'ACK replay does not send second ACK confirmation');
+    expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'You acknowledged this issue'), 'ACK replay does not send second ACK confirmation');
 
     // Regression: a reminder message mints its own independently-signed ACK token for the same
     // incident. Tapping that token after the incident is already acknowledged must not re-fire
@@ -399,7 +399,7 @@ try {
     $secondTokenProcessed = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:02:30 UTC')), '1025');
     expect_eq($secondTokenProcessed['intent'] ?? '', 'ack_rejected', 'a second valid-but-distinct ACK token is rejected once already acknowledged (regression: duplicate ack via reminder-message button)');
     expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_incident_events WHERE incident_id=? AND event_type='acknowledged'", [$incidentId])['c'] ?? -1, 1, 'exactly one acknowledged audit event even after a second valid token is consumed');
-    expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Incident acknowledged'), 'second valid-token ACK attempt does not send a duplicate confirmation');
+    expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'You acknowledged this issue'), 'second valid-token ACK attempt does not send a duplicate confirmation');
 
     // Regression: ack()/resolve()/apply_escalation_action() used to collapse every Throwable in
     // their BEGIN IMMEDIATE / COMMIT block into 'lock_failed', even when the exception was not
@@ -469,7 +469,7 @@ try {
     $validResolve = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:04:00 UTC')), '1023');
     expect_eq($validResolve['intent'] ?? '', 'resolve', 'valid resolve message succeeds');
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['state'] ?? '', 'resolved', 'resolve message records resolved state');
-    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Incident resolved'), 'resolve message sends confirmation');
+    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'You resolved this issue'), 'resolve message sends confirmation');
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1024,
         'callback_query' => [
@@ -1458,8 +1458,8 @@ try {
     // parity gap.
     $parityOpsButtonLabels = array_column($parityOpsMsg['payload']['reply_markup']['inline_keyboard'][0] ?? [], 'text');
     $parityDmButtonLabels = array_column($parityDmMsg['payload']['reply_markup']['inline_keyboard'][0] ?? [], 'text');
-    expect_eq($parityOpsButtonLabels, ['ACK', 'Resolve'], 'button parity: Ops sees exactly ACK and Resolve, in order, for this temperature incident');
-    expect_eq($parityDmButtonLabels, ['ACK', 'Resolve'], 'button parity: the manager DM sees exactly ACK and Resolve, in order, for the SAME temperature incident');
+    expect_eq($parityOpsButtonLabels, ['ACK', "\u{1F4CB} Details"], 'button parity: Ops sees exactly ACK and Details, in order, for this temperature incident');
+    expect_eq($parityDmButtonLabels, ['ACK', "\u{1F4CB} Details"], 'button parity: the manager DM sees exactly ACK and Details, in order, for the SAME temperature incident');
 
     // --- Actor-based authorization: seeing the button in the Ops group does NOT authorize the
     // presser. Authorization is resolved from callback.from.id, never from which chat the button
@@ -1718,15 +1718,17 @@ try {
     $mgrHelp = broth_log_copilot_help_response($menuManagerUser, 'private');
     expect_eq($mgrHelp['intent'], 'help_menu', 'Manager /help returns the manager-action menu');
     $mgrKb = $mgrHelp['reply_markup']['inline_keyboard'];
-    expect_eq(count($mgrKb), 3, 'Manager menu has exactly 3 rows');
-    expect_eq([$mgrKb[0][0]['text'], $mgrKb[0][1]['text']], ["\u{1F4CB} Today's Log", "\u{1F6A8} Today's Issues"], "Manager menu row 1: Today's Log | Today's Issues");
-    expect_eq([$mgrKb[1][0]['text'], $mgrKb[1][1]['text']], ["\u{1F4C5} Select Date", "\u{1F514} Open Issues"], 'Manager menu row 2: Select Date | Open Issues');
-    expect_eq($mgrKb[2][0]['text'], "\u{2753} Help", 'Manager menu row 3: Help');
+    expect_eq(count($mgrKb), 4, 'Manager menu has exactly 4 rows');
+    expect_eq($mgrKb[0][0]['text'], "\u{1F9ED} Daily Check", 'Manager menu row 1: Daily Check');
+    expect_eq($mgrKb[1][0]['text'], "\u{26A0}\u{FE0F} Needs Attention", 'Manager menu row 2: Needs Attention');
+    expect_eq([$mgrKb[2][0]['text'], $mgrKb[2][1]['text']], ["\u{1F4C5} Review Date", "\u{1F514} Open Issues"], 'Manager menu row 3: Review Date | Open Issues');
+    expect_eq($mgrKb[3][0]['text'], "\u{2753} Help", 'Manager menu row 4: Help');
     $mgrMenuText = json_encode($mgrKb, JSON_UNESCAPED_UNICODE);
     expect_true(!str_contains($mgrMenuText, 'Exceptions'), 'Main menu does not expose Exceptions');
     expect_true(!str_contains($mgrMenuText, 'Stores'), 'Main menu does not expose Stores as a top-level action');
     expect_true(!str_contains($mgrMenuText, 'Historical'), 'Main menu does not expose Historical');
     expect_true(!str_contains($mgrMenuText, 'Commands'), 'Main menu does not expose Commands');
+    expect_true(!str_contains($mgrMenuText, "Today's Log") && !str_contains($mgrMenuText, "Today's Issues"), "technical Today's Log/Issues navigation is no longer a top-level main-menu action (still reachable via Daily Check's own View Log button)");
 
     $gmHelp = broth_log_copilot_help_response($menuGmUser, 'private');
     $gmKb = $gmHelp['reply_markup']['inline_keyboard'];
@@ -1763,9 +1765,9 @@ try {
         foreach ($row as $btn) $ownerButtonMatrix[$btn['text']] = $btn['callback_data'];
     }
     foreach ([
-        "\u{1F4CB} Today's Log" => 'menu_branchpick',
-        "\u{1F6A8} Today's Issues" => 'menu_branchpick',
-        "\u{1F4C5} Select Date" => 'menu_date_type',
+        "\u{1F9ED} Daily Check" => 'menu_branchpick',
+        "\u{26A0}\u{FE0F} Needs Attention" => 'menu_attention_branchpick',
+        "\u{1F4C5} Review Date" => 'menu_branchpick',
         "\u{1F514} Open Issues" => 'menu_open_overview',
         "\u{2753} Help" => 'menu_help',
     ] as $label => $intent) {
@@ -2084,9 +2086,9 @@ try {
     expect_eq($msHandlerAfterAck['display'], 'MS Ack Manager', 'I: after ACK, handler display is the real approved display name');
     expect_eq($msHandlerAfterAck['status'], 'acknowledged', 'I: handler status is acknowledged, never fabricated as resolved/closed');
     $msMarkup = broth_log_copilot_incident_reply_markup($msModelId);
-    expect_eq(count($msMarkup['inline_keyboard'][0]), 1, 'K: missing_shift reply markup has exactly one button');
-    expect_eq($msMarkup['inline_keyboard'][0][0]['text'], 'ACK', 'K: the one button is ACK');
-    expect_true(!isset($msMarkup['inline_keyboard'][0][1]), 'K: there is no Resolve button for a missing_shift incident');
+    expect_eq(count($msMarkup['inline_keyboard'][0]), 2, 'K: missing_shift reply markup has exactly two buttons (ACK + Details)');
+    expect_eq($msMarkup['inline_keyboard'][0][0]['text'], 'ACK', 'K: the first button is ACK');
+    expect_eq($msMarkup['inline_keyboard'][0][1]['text'], "\u{1F4CB} Details", 'K: the second button is Details, never Resolve for a missing_shift incident');
 
     // --- Explicit Resolve guard (Item 2, A-F): a deterministic, incident-type check, not a
     // coincidental side effect of an empty station_key. ---
@@ -2140,8 +2142,8 @@ try {
     expect_true(!str_contains($msNotifyMessage, $msModelId), 'message never includes the internal incident id');
     expect_true(!str_contains($msNotifyMessage, 'Level') && !str_contains($msNotifyMessage, 'level'), 'message never mentions escalation level');
     $msAckConfirmMessage = broth_log_copilot_incident_message($msFreshAfterAck, 'ack_confirm');
-    expect_true(str_contains($msAckConfirmMessage, 'Acknowledged'), 'ACK confirmation message says Acknowledged');
-    expect_true(str_contains($msAckConfirmMessage, 'Waiting for the log'), 'ACK confirmation tells the manager the log is still needed, not that the issue is resolved');
+    expect_true(str_contains($msAckConfirmMessage, 'You acknowledged this issue'), 'ACK confirmation message frames ACK as ownership, not resolution');
+    expect_true(str_contains($msAckConfirmMessage, 'Status: WAITING FOR LOG'), 'ACK confirmation explicitly states WAITING FOR LOG, never implying the issue is resolved');
 
     // --- Late submission: auto-close, timing stays LATE, audit history preserved ---
     $msLateIncidentId = broth_log_copilot_create_missing_shift_incident('B3', '2026-08-24', 'AM');
@@ -2487,7 +2489,7 @@ try {
     }
     expect_true($ownABroadcastToOps !== null, 'A: the Ops group receives the ownership broadcast, even though David pressed the button from within that same group - other members have not seen anything yet');
     expect_true($ownABroadcastToGrace !== null, 'A: Manager (Grace) receives "Acknowledged by David"');
-    expect_true(str_contains((string)($ownABroadcastToGrace['payload']['text'] ?? ''), 'Acknowledged by David'), 'A: broadcast text correctly names the actor by display name');
+    expect_true(str_contains((string)($ownABroadcastToGrace['payload']['text'] ?? ''), 'Acknowledged — David'), 'A: broadcast text correctly names the actor by display name');
     expect_true($ownABroadcastToDavid === null, 'A: David\'s own private DM does NOT receive a redundant ownership broadcast - he already has his callback confirmation');
     expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncA])['c'], 1, 'A: exactly one ownership_broadcast_sent audit event, not one per destination');
     run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncA]);
@@ -2570,8 +2572,7 @@ try {
         if (($m['payload']['chat_id'] ?? '') === $opsGroupChatId) $ownFBroadcastToOps = $m;
     }
     expect_true($ownFBroadcastToOps !== null, 'F: sanity - Ops received the ownership broadcast');
-    expect_eq(count($ownFBroadcastToOps['payload']['reply_markup']['inline_keyboard'][0] ?? []), 1, 'F: the ACK broadcast for a still-open temperature incident carries exactly one button');
-    expect_eq($ownFBroadcastToOps['payload']['reply_markup']['inline_keyboard'][0][0]['text'] ?? '', 'Resolve', 'F: Solve/Resolve remains actionable directly from the broadcast message');
+    expect_true(!isset($ownFBroadcastToOps['payload']['reply_markup']), 'F: the ACK broadcast to other recipients carries NO buttons - purely informational, so nobody is invited to compete for ownership the acting manager already claimed. The owner resolves it themselves via their own ack_confirm Enter Recheck button instead.');
 
     // --- G: valid temperature Solve - resolved, all recipients informed, reminders remain stopped ---
     $ownGResolveActor = broth_log_copilot_authorized_user($ownGmA);
@@ -2585,7 +2586,7 @@ try {
         if (($m['payload']['chat_id'] ?? '') === $ownGmBChat) $ownGBroadcastToGrace = $m;
     }
     expect_true($ownGBroadcastToOps !== null && $ownGBroadcastToGrace !== null, 'G: both Ops and Grace are informed of the resolution');
-    expect_true(str_contains((string)($ownGBroadcastToGrace['payload']['text'] ?? ''), 'Resolved by David'), 'G: resolution broadcast names the resolver');
+    expect_true(str_contains((string)($ownGBroadcastToGrace['payload']['text'] ?? ''), 'Resolved — David'), 'G: resolution broadcast names the resolver');
     expect_true(!isset($ownGBroadcastToGrace['payload']['reply_markup']), 'G: the resolution broadcast carries no buttons - nothing further is actionable once resolved');
     expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncF])['c'], 1, 'G: exactly one resolution_broadcast_sent audit event');
     $ownGStillDue = array_values(array_filter(broth_log_copilot_due_escalations($ownNow->modify('+1 hour')), fn($d) => $d['incident']['incident_id'] === $ownIncF));
@@ -2621,7 +2622,7 @@ try {
     }
     expect_true($ownMsBroadcastToOps !== null, 'I: sanity - Ops received the missing_shift ownership broadcast');
     expect_true(!isset($ownMsBroadcastToOps['payload']['reply_markup']), 'I: no Resolve button appears anywhere for missing_shift, even in the ACK broadcast');
-    expect_true(str_contains((string)($ownMsBroadcastToOps['payload']['text'] ?? ''), 'Waiting for the log'), 'I: broadcast text matches the missing_shift-specific wording');
+    expect_true(str_contains((string)($ownMsBroadcastToOps['payload']['text'] ?? ''), 'Status: WAITING FOR LOG'), 'I: broadcast text matches the missing_shift-specific wording');
     run("UPDATE broth_log_incidents SET level_entered_at=? WHERE incident_id=?", [$ownNow->format('Y-m-d H:i:s'), $ownMsInc]);
     $ownMsDue = array_values(array_filter(broth_log_copilot_due_escalations($ownNow->modify('+1 hour')), fn($d) => $d['incident']['incident_id'] === $ownMsInc));
     expect_true(empty($ownMsDue), 'I: reminders stop for the acknowledged missing_shift incident');
@@ -3330,6 +3331,259 @@ try {
     run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id IN (?,?)", [$asEarlyMgr, $asLateMgr]);
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$asEarlyMgr, $asLateMgr]);
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($asPlaceholders)", $asIncidentIds)['c'] ?? -1), 0, 'auto-stop: no leftover fixture incidents remain');
+
+    // ============================================================================
+    // MANAGER DAILY OPERATIONS UX: Daily Check, Needs Attention, Review Date, Issue Detail.
+    // Composition tests only - broth_log_copilot_daily_overall_status() and the view functions
+    // read the SAME canonical incident/log data every other menu view already reads; no second
+    // severity engine, no new persistence.
+    // ============================================================================
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = fn(string $branch): array => [];
+    $nuMgr = '950'; $nuGm = '951';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$nuMgr, 'NU Manager', 'manager', json_encode(['B1'])]);
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$nuGm, 'NU GM', 'manager', json_encode(['B1', 'B2'])]);
+    $nuUser = broth_log_copilot_authorized_user($nuMgr);
+    $nuGmUser = broth_log_copilot_authorized_user($nuGm);
+    $nuToday = broth_log_business_date($ownNow);
+    // broth_log_copilot_menu_needs_attention_view() is deliberately cross-date (matches the
+    // existing, already-tested broth_log_copilot_menu_open_issues_view() behavior) - by this point
+    // in the file, many earlier sections have left their own B1/B2 fixture incidents behind
+    // (several intentionally, e.g. the frozen-historical-incident tests). Clearing them here is
+    // purely test-hygiene for a clean baseline; every earlier section already made its own
+    // assertions before this point, so removing its leftover rows now cannot affect them.
+    run("DELETE FROM broth_log_incidents WHERE branch IN ('B1','B2') AND state NOT IN ('resolved','closed')");
+
+    // --- 1: daily_overall_status() unit coverage - the single deterministic classifier ---
+    expect_eq(broth_log_copilot_daily_overall_status([]), 'ALL GOOD', 'status: no open incidents -> ALL GOOD');
+    expect_eq(broth_log_copilot_daily_overall_status([['state' => 'detected']]), 'ACTION REQUIRED', 'status: an unacknowledged open incident -> ACTION REQUIRED');
+    expect_eq(broth_log_copilot_daily_overall_status([['state' => 'escalated_level_3']]), 'ACTION REQUIRED', 'status: unacknowledged at L3 -> still ACTION REQUIRED, same classification regardless of level');
+    expect_eq(broth_log_copilot_daily_overall_status([['state' => 'acknowledged']]), 'ATTENTION NEEDED', 'status: acknowledged-but-unresolved -> ATTENTION NEEDED');
+    expect_eq(broth_log_copilot_daily_overall_status([['state' => 'auto_stopped']]), 'ATTENTION NEEDED', 'status: auto_stopped-unresolved -> ATTENTION NEEDED, never resolved-shaped');
+    expect_eq(broth_log_copilot_daily_overall_status([['state' => 'acknowledged'], ['state' => 'detected']]), 'ACTION REQUIRED', 'status: any unacknowledged item outranks an already-owned one');
+    expect_eq(broth_log_copilot_daily_overall_status([['state' => 'resolved'], ['state' => 'closed']]), 'ALL GOOD', 'status: resolved/closed incidents never count as open - a fully-cleared day is ALL GOOD');
+
+    // --- 2/8: single-branch manager auto-resolves to their own store for Daily Check/Needs Attention - never prompted to pick a store ---
+    $nuDailyDirect = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
+    expect_eq($nuDailyDirect['intent'], 'menu_daily_check', 'single-branch manager: menu:daily resolves directly to their own store, no branch picker');
+    expect_true(str_contains($nuDailyDirect['message'], 'B1'), 'Daily Check shows the correct branch');
+    expect_true(str_contains($nuDailyDirect['message'], 'Overall:'), 'Daily Check always states an explicit overall status');
+    expect_true(str_contains($nuDailyDirect['message'], 'ALL GOOD'), 'a clean day with no incidents reports ALL GOOD');
+    expect_true(str_contains($nuDailyDirect['message'], 'No action needed'), 'ALL GOOD Daily Check tells the manager no action is needed');
+    $nuAttentionDirect = broth_log_copilot_menu_callback_response('menu:attention', $nuUser, 'private', $ownNow);
+    expect_eq($nuAttentionDirect['intent'], 'menu_attention_empty', 'single-branch manager: menu:attention resolves directly, no branch picker, and a clean day shows the empty state');
+    expect_true(str_contains($nuAttentionDirect['message'], 'Nothing Needs Attention'), 'empty Needs Attention says so explicitly');
+
+    // --- 9: multi-branch manager (GM) must choose a store first for both Daily Check and Needs Attention ---
+    $nuGmDaily = broth_log_copilot_menu_callback_response('menu:daily', $nuGmUser, 'private', $ownNow);
+    expect_eq($nuGmDaily['intent'], 'menu_branchpick', 'multi-branch manager sees a store picker for Daily Check');
+    $nuGmAttention = broth_log_copilot_menu_callback_response('menu:attention', $nuGmUser, 'private', $ownNow);
+    expect_eq($nuGmAttention['intent'], 'menu_attention_branchpick', 'multi-branch manager sees a store picker for Needs Attention');
+    // --- 10: unauthorized branch cannot be reached through Needs Attention's branch-scoped route ---
+    $nuGmWrongBranch = broth_log_copilot_menu_callback_response('menu:attention_branch:B3', $nuGmUser, 'private', $ownNow);
+    expect_eq($nuGmWrongBranch['intent'], 'menu_forbidden', 'a manager cannot reach a Needs Attention view for a branch they are not authorized for');
+
+    // --- Now create real incidents and prove the aggregation reflects them correctly ---
+    $nuUnackedId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-nu-unacked', 'businessDate' => $nuToday]));
+    run("UPDATE broth_log_incidents SET business_date=? WHERE incident_id=?", [$nuToday, $nuUnackedId]);
+    $nuDailyActionRequired = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
+    expect_true(str_contains($nuDailyActionRequired['message'], 'ACTION REQUIRED'), 'an unacknowledged open incident makes Daily Check report ACTION REQUIRED');
+    expect_true(!str_contains($nuDailyActionRequired['message'], $nuUnackedId), '22: Daily Check never exposes the internal incident id');
+    expect_true(!str_contains($nuDailyActionRequired['message'], 'reason'), '23: Daily Check never exposes internal reason codes');
+
+    $nuAttentionWithItem = broth_log_copilot_menu_callback_response('menu:attention', $nuUser, 'private', $ownNow);
+    expect_eq($nuAttentionWithItem['intent'], 'menu_attention', 'Needs Attention shows the actionable list once an open incident exists');
+    expect_true(str_contains($nuAttentionWithItem['message'], 'Prep Area Cooler'), '25: an unowned open temperature incident appears in Needs Attention');
+
+    // --- 15: acknowledged-but-unresolved -> ATTENTION NEEDED, and it stays visible in Needs Attention (26) ---
+    $nuAckActor = broth_log_copilot_authorized_user($nuMgr);
+    broth_log_copilot_ack($nuUnackedId, $nuAckActor, $ownNow);
+    $nuDailyAttentionNeeded = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
+    expect_true(str_contains($nuDailyAttentionNeeded['message'], 'ATTENTION NEEDED'), 'an acknowledged-but-unresolved incident makes Daily Check report ATTENTION NEEDED, not ALL GOOD and not ACTION REQUIRED');
+    $nuAttentionAfterAck = broth_log_copilot_menu_callback_response('menu:attention', $nuUser, 'private', $ownNow);
+    expect_true(str_contains($nuAttentionAfterAck['message'], 'NU Manager'), '26: an owned-but-open incident stays in Needs Attention, showing its handler');
+
+    // --- Issue detail view: state-aware buttons, per section 9/12 ---
+    $nuDetailAcked = broth_log_copilot_menu_callback_response('menu:attn_item:' . $nuUnackedId, $nuUser, 'private', $ownNow);
+    expect_eq($nuDetailAcked['intent'], 'menu_issue_detail', 'selecting an item from Needs Attention opens its issue detail');
+    expect_true(str_contains($nuDetailAcked['message'], 'NU Manager'), 'issue detail shows the current handler');
+    expect_true(str_contains($nuDetailAcked['message'], 'STILL OPEN'), 'issue detail never implies ACK means resolved - status is explicitly STILL OPEN');
+    $nuDetailAckedButtons = array_column($nuDetailAcked['reply_markup']['inline_keyboard'][0], 'text');
+    expect_eq($nuDetailAckedButtons, ["\u{1F321} Enter Recheck", "\u{1F4CB} Details"], 'acknowledged temperature issue detail offers Enter Recheck + Details, never a normal ACK button');
+
+    // --- 30/31: resolved/closed incidents never appear in Needs Attention or count toward status ---
+    broth_log_copilot_resolve($nuUnackedId, $nuAckActor, 38.0, 'fixed', $ownNow);
+    $nuDailyAfterResolve = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
+    expect_true(str_contains($nuDailyAfterResolve['message'], 'ALL GOOD'), 'once the only open incident is resolved, Daily Check returns to ALL GOOD');
+    $nuAttentionAfterResolve = broth_log_copilot_menu_callback_response('menu:attention', $nuUser, 'private', $ownNow);
+    expect_eq($nuAttentionAfterResolve['intent'], 'menu_attention_empty', '30: a resolved incident is excluded from Needs Attention - the empty state returns');
+
+    // --- 21/29: an unresolved auto_stopped incident remains visible and drives ATTENTION NEEDED ---
+    $nuAutoStoppedId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-nu-autostop', 'businessDate' => $nuToday]));
+    run("UPDATE broth_log_incidents SET state='auto_stopped', active_key=NULL, business_date=? WHERE incident_id=?", [$nuToday, $nuAutoStoppedId]);
+    $nuDailyAutoStopped = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
+    expect_true(str_contains($nuDailyAutoStopped['message'], 'ATTENTION NEEDED'), '21: an unresolved auto_stopped incident keeps Daily Check at ATTENTION NEEDED, never ALL GOOD');
+    $nuAttentionAutoStopped = broth_log_copilot_menu_callback_response('menu:attention', $nuUser, 'private', $ownNow);
+    expect_true(str_contains($nuAttentionAutoStopped['message'], 'Prep Area Cooler'), '29: the auto_stopped issue remains visible in Needs Attention');
+    $nuAutoStopDetail = broth_log_copilot_menu_callback_response('menu:attn_item:' . $nuAutoStoppedId, $nuUser, 'private', $ownNow);
+    $nuAutoStopButtons = array_column($nuAutoStopDetail['reply_markup']['inline_keyboard'][0], 'text');
+    expect_eq($nuAutoStopButtons, ["\u{1F321} Enter Recheck", "\u{1F4CB} Details"], '28: auto_stopped temperature issue detail offers Enter Recheck + Details, matching the acknowledged state\'s button set (never a normal ACK)');
+    run("UPDATE broth_log_incidents SET state='resolved' WHERE incident_id=?", [$nuAutoStoppedId]);
+
+    // --- 32: historical/wrong-branch incidents never leak into today's attention or another store's ---
+    $nuHistoricalId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-nu-historical', 'businessDate' => '2020-01-01']));
+    run("UPDATE broth_log_incidents SET business_date='2020-01-01' WHERE incident_id=?", [$nuHistoricalId]);
+    $nuDailyStillClean = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
+    expect_true(str_contains($nuDailyStillClean['message'], 'ALL GOOD'), '33: an incident from an unrelated historical business_date is out of scope for a same-date query and does not affect today\'s Daily Check (menu_incidents_for() is scoped by business_date, exactly like every other date-scoped menu view)');
+
+    // --- Review Date: entry point, Previous/Next Day navigation, no raw log dump by default ---
+    $nuReviewEntry = broth_log_copilot_menu_callback_response('menu:review', $nuUser, 'private', $ownNow);
+    expect_eq($nuReviewEntry['intent'], 'menu_review_datepick', 'single-branch manager: Review Date resolves directly to a quick-date picker for their own store');
+    $nuReviewToday = broth_log_copilot_menu_callback_response("menu:qdate:review:B1:today", $nuUser, 'private', $ownNow);
+    expect_eq($nuReviewToday['intent'], 'menu_review', 'picking a quick date for review renders the combined daily-summary view');
+    expect_true(!str_contains($nuReviewToday['message'], 'AM 25F') , 'Review Date does not dump raw individual readings by default (progressive disclosure - detail is one more tap away via View Log)');
+    $nuReviewButtonTexts = array_map(fn($row) => array_column($row, 'text'), $nuReviewToday['reply_markup']['inline_keyboard']);
+    $nuReviewFlat = array_merge(...$nuReviewButtonTexts);
+    expect_true(in_array("\u{25C0}\u{FE0F} Previous Day", $nuReviewFlat, true), 'Review Date offers Previous Day navigation');
+    $nuYesterday = (new DateTimeImmutable($nuToday))->modify('-1 day')->format('Y-m-d');
+    $nuReviewPrev = broth_log_copilot_menu_callback_response("menu:review_nav:B1:{$nuYesterday}", $nuUser, 'private', $ownNow);
+    expect_eq($nuReviewPrev['intent'], 'menu_review', 'Previous Day navigation re-renders the same combined summary for the prior date');
+    expect_true(str_contains($nuReviewPrev['message'], $nuYesterday), 'Previous Day view is dated correctly');
+    // Next Day should never be offered beyond today (no future-date navigation).
+    $nuReviewTodayButtons = array_merge(...array_map(fn($row) => array_column($row, 'text'), $nuReviewToday['reply_markup']['inline_keyboard']));
+    expect_true(!in_array("\u{25B6}\u{FE0F} Next Day", $nuReviewTodayButtons, true), '48: Review Date never offers Next Day navigation past today - future dates are handled safely, never silently rendered');
+    // --- branch authorization is preserved through Review Date's navigation too ---
+    $nuReviewWrongBranch = broth_log_copilot_menu_callback_response("menu:review_nav:B2:{$nuYesterday}", $nuUser, 'private', $ownNow);
+    expect_eq($nuReviewWrongBranch['intent'], 'menu_forbidden', '49: Review Date navigation cannot be used to cross into an unauthorized branch');
+
+    // --- 11/12: callback spinner remains immediate and duplicate callbacks stay idempotent - the
+    // menu: dispatcher is a pure read/compose layer with zero DB writes of its own (other than the
+    // pre-existing conversation-context bookkeeping), so this is unaffected by this whole UX layer -
+    // proven directly: calling the SAME menu: callback twice produces byte-identical output. ---
+    $nuDailyAgain = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
+    expect_eq($nuDailyAgain['message'], $nuDailyStillClean['message'], 'a repeated menu: callback is naturally idempotent - it recomputes from canonical state fresh every time, never a cached/stale Telegram message');
+
+    // Cleanup
+    $nuIncidentIds = [$nuUnackedId, $nuAutoStoppedId, $nuHistoricalId];
+    $nuPlaceholders = implode(',', array_fill(0, count($nuIncidentIds), '?'));
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($nuPlaceholders)", $nuIncidentIds);
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($nuPlaceholders)", $nuIncidentIds);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN ($nuPlaceholders)", $nuIncidentIds);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$nuMgr, $nuGm]);
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($nuPlaceholders)", $nuIncidentIds)['c'] ?? -1), 0, 'manager daily operations UX: no leftover fixture incidents remain');
+
+    // ========================================================================================
+    // MANAGER DAILY UX FINAL HARDENING: shift-compliance race, NOT_YET_DUE boundary, Needs
+    // Attention prioritization, Review Date historical semantics, auto-stopped distinct labeling.
+    // ========================================================================================
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = fn(string $branch): array => [];
+    run("DELETE FROM broth_log_incidents WHERE branch IN ('B1','B2') AND state NOT IN ('resolved','closed')");
+    $hgMgr = '960';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$hgMgr, 'Hardening Manager', 'manager', json_encode(['B1'])]);
+    $hgUser = broth_log_copilot_authorized_user($hgMgr);
+    $hgDate = '2026-08-25';
+
+    // --- 3: race condition - PM display-status is MISSING immediately at window close (17:00
+    // Chicago), but the missing_shift INCIDENT row is not created until the alert deadline+grace
+    // (17:10) - Daily Check must report ACTION REQUIRED from broth_log_shift_daily_status()
+    // directly at 17:05, well before any incident worker tick would have run. ---
+    $hgJustPastClose = (new DateTimeImmutable("$hgDate 17:05:00", new DateTimeZone('America/Chicago')))->setTimezone(new DateTimeZone('UTC'));
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch='B1' AND business_date=? AND incident_type='missing_shift'", [$hgDate])['c'] ?? -1), 0, 'race sanity: no missing_shift incident exists yet for this date/branch (the incident worker has not ticked since the window closed)');
+    $hgPmStatusAtClose = broth_log_shift_daily_status('PM', [], $hgDate, $hgJustPastClose);
+    expect_eq($hgPmStatusAtClose['status'], 'MISSING', 'sanity: broth_log_shift_daily_status() itself already reports PM as MISSING at 17:05, before the alert grace period elapses');
+    expect_true(!broth_log_shift_alert_deadline_passed('PM', $hgJustPastClose), 'sanity: the alert/incident-creation deadline+grace (17:10) has NOT elapsed yet at 17:05 - this is genuinely the race window');
+    $hgRaceDaily = broth_log_copilot_menu_callback_response('menu:daily', $hgUser, 'private', $hgJustPastClose);
+    expect_true(str_contains($hgRaceDaily['message'], 'ACTION REQUIRED'), '3: Daily Check reports ACTION REQUIRED purely from live shift-compliance status, even though no missing_shift incident row exists yet (closes the race the incident-only classifier had)');
+
+    // --- 4: before the PM window closes, NOT_YET_DUE must remain healthy - never ACTION REQUIRED
+    // merely because the day still has a shift ahead of it. AM is given a real on-time submission
+    // here so this test isolates PM's own not-yet-due status, rather than being confounded by AM
+    // also being MISSING under the empty-records provider used elsewhere in this section. ---
+    $hgBeforeClose = (new DateTimeImmutable("$hgDate 16:55:00", new DateTimeZone('America/Chicago')))->setTimezone(new DateTimeZone('UTC'));
+    // The raw sheet's submittedAt text is parsed in Asia/Ho_Chi_Minh (BROTH_LOG_SHEET_TIMESTAMP_TIMEZONE),
+    // never the America/Chicago business timezone - converting explicitly here, rather than
+    // hand-picking an offset, so this stays correct regardless of DST on either side.
+    $hgAmSubmittedAt = (new DateTimeImmutable("$hgDate 10:30:00", new DateTimeZone('America/Chicago')))
+        ->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh'))->format('n/j/Y G:i:s');
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($hgDate, $hgAmSubmittedAt): array {
+        if ($branch !== 'B1') return [];
+        return [['id' => 'hg-am', 'branch' => 'B1', 'businessDate' => $hgDate, 'submittedAt' => $hgAmSubmittedAt, 'employeeName' => 'Tester', 'readings' => [], 'issues' => []]];
+    };
+    $hgPmStatusBeforeClose = broth_log_shift_daily_status('PM', [], $hgDate, $hgBeforeClose);
+    expect_eq($hgPmStatusBeforeClose['status'], 'NOT_YET_DUE', 'sanity: PM is NOT_YET_DUE one minute before its window closes (17:00 Chicago)');
+    $hgHealthyDaily = broth_log_copilot_menu_callback_response('menu:daily', $hgUser, 'private', $hgBeforeClose);
+    expect_true(!str_contains($hgHealthyDaily['message'], 'ACTION REQUIRED'), '4: a not-yet-due PM shift never triggers ACTION REQUIRED on its own');
+    expect_true(str_contains($hgHealthyDaily['message'], 'ALL GOOD'), '4: with no incidents, AM submitted on time, and PM merely not yet due, Daily Check correctly reports ALL GOOD');
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = fn(string $branch): array => [];
+
+    // --- 5: Needs Attention shows today's items before an older backlog item, even though the
+    // older item was created first (created_at ASC would otherwise put it first). ---
+    $hgTodayIssueId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-today', 'businessDate' => $hgDate]));
+    run("UPDATE broth_log_incidents SET business_date=?, created_at='2026-08-25 12:00:00' WHERE incident_id=?", [$hgDate, $hgTodayIssueId]);
+    $hgOlderIssueId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-older', 'businessDate' => '2020-01-01']));
+    run("UPDATE broth_log_incidents SET business_date='2020-01-01', created_at='2020-01-01 08:00:00' WHERE incident_id=?", [$hgOlderIssueId]);
+    $hgAttentionOrdered = broth_log_copilot_menu_callback_response('menu:attention_branch:B1', $hgUser, 'private', $hgJustPastClose);
+    $hgOlderPos = strpos($hgAttentionOrdered['message'], '(older)');
+    expect_true($hgOlderPos !== false, '5: an older, unrelated-date backlog item is included (nothing is silently lost) and explicitly labeled "(older)"');
+    // The message lists items in order - the "(older)" marker must appear strictly after the
+    // first (today's, unlabeled) occurrence of the shared station label, proving today sorts first.
+    $hgFirstStationPos = strpos($hgAttentionOrdered['message'], 'Prep Area Cooler');
+    expect_true($hgFirstStationPos !== false && $hgFirstStationPos < $hgOlderPos, "5: today's item is listed before the older backlog item, not merely ordered by creation time");
+
+    // --- 8: auto_stopped is labeled distinctly - never presented as an ordinary yellow
+    // "acknowledged/being handled" item, in Needs Attention, Daily Check, and Issue Detail alike. ---
+    run("UPDATE broth_log_incidents SET state='auto_stopped', active_key=NULL WHERE incident_id=?", [$hgTodayIssueId]);
+    $hgAttentionAutoStopped = broth_log_copilot_menu_callback_response('menu:attention_branch:B1', $hgUser, 'private', $hgJustPastClose);
+    expect_true(str_contains($hgAttentionAutoStopped['message'], 'AUTO-STOPPED'), '8: Needs Attention explicitly labels an auto_stopped item as AUTO-STOPPED, not just a plain yellow "being handled" status');
+    $hgDailyAutoStopped = broth_log_copilot_menu_callback_response('menu:daily', $hgUser, 'private', $hgJustPastClose);
+    expect_true(str_contains($hgDailyAutoStopped['message'], 'AUTO-STOPPED'), '8: Daily Check\'s current-attention line also explicitly labels an auto_stopped top item as AUTO-STOPPED');
+    $hgDetailAutoStopped = broth_log_copilot_menu_callback_response('menu:attn_item:' . $hgTodayIssueId, $hgUser, 'private', $hgJustPastClose);
+    expect_true(str_contains($hgDetailAutoStopped['message'], 'AUTO-STOPPED'), '8: Issue Detail explicitly labels an auto_stopped incident as AUTO-STOPPED, distinct from STILL OPEN alone');
+    run("UPDATE broth_log_incidents SET state='resolved' WHERE incident_id=?", [$hgTodayIssueId]);
+    run("UPDATE broth_log_incidents SET state='resolved' WHERE incident_id=?", [$hgOlderIssueId]);
+
+    // --- 6: Review Date is a historical outcome summary, never silently re-painted as "ALL GOOD"
+    // merely because that date's incident has since been resolved, and never silently hidden if it
+    // is still unresolved today. ---
+    $hgReviewResolvedId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-review-resolved', 'businessDate' => '2020-06-01']));
+    run("UPDATE broth_log_incidents SET business_date='2020-06-01' WHERE incident_id=?", [$hgReviewResolvedId]);
+    broth_log_copilot_resolve($hgReviewResolvedId, $hgUser, 38.0, 'fixed that day', $ownNow);
+    $hgReviewResolvedView = broth_log_copilot_menu_callback_response('menu:review_nav:B1:2020-06-01', $hgUser, 'private', $ownNow);
+    expect_true(str_contains($hgReviewResolvedView['message'], 'Issues detected: 1'), '6: Review Date reports the real historical detection count for that date');
+    expect_true(str_contains($hgReviewResolvedView['message'], 'Resolved later: 1'), '6: Review Date distinguishes "resolved later" from the day\'s own live condition');
+    expect_true(str_contains($hgReviewResolvedView['message'], 'Outcome: ') && str_contains($hgReviewResolvedView['message'], 'Resolved'), '6: a fully-resolved historical day reports outcome Resolved, worded as a final outcome, not conflated with a live ALL GOOD health check');
+
+    $hgReviewUnresolvedId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-review-unresolved', 'businessDate' => '2020-06-02']));
+    run("UPDATE broth_log_incidents SET business_date='2020-06-02' WHERE incident_id=?", [$hgReviewUnresolvedId]);
+    $hgReviewUnresolvedView = broth_log_copilot_menu_callback_response('menu:review_nav:B1:2020-06-02', $hgUser, 'private', $ownNow);
+    expect_true(str_contains($hgReviewUnresolvedView['message'], 'Still unresolved: 1'), '6: Review Date shows a still-unresolved historical issue explicitly, never dropped');
+    expect_true(str_contains($hgReviewUnresolvedView['message'], 'Follow-up required'), '6: a historical day with something still unresolved today reports "Follow-up required", never ALL GOOD');
+    run("UPDATE broth_log_incidents SET state='resolved' WHERE incident_id=?", [$hgReviewUnresolvedId]);
+
+    // --- 1: manager-facing Details never leaks the internal incident id/ref, for either incident
+    // type - only operational information. ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $hgIdLeakTempId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-idleak-temp']));
+    $hgIdLeakTempDetails = broth_log_copilot_incident_message(q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$hgIdLeakTempId]), 'details');
+    expect_true(!str_contains($hgIdLeakTempDetails, $hgIdLeakTempId), '1: temperature Details text never contains the raw incident id');
+    expect_true(!str_contains($hgIdLeakTempDetails, 'Ref'), '1: temperature Details text never contains a "Ref" line at all');
+    $hgIdLeakMsId = broth_log_copilot_create_missing_shift_incident('B1', $hgDate, 'PM');
+    $hgIdLeakMsDetails = broth_log_copilot_incident_message(q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$hgIdLeakMsId]), 'details');
+    expect_true(!str_contains($hgIdLeakMsDetails, $hgIdLeakMsId), '1: missing_shift Details text never contains the raw incident id');
+    expect_true(!str_contains($hgIdLeakMsDetails, 'Ref'), '1: missing_shift Details text never contains a "Ref" line at all');
+    expect_true(str_contains($hgIdLeakMsDetails, 'Status: WAITING FOR LOG'), '1: missing_shift Details still shows an explicit operational status despite removing the ref line');
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=');
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?)", [$hgIdLeakTempId, $hgIdLeakMsId]);
+
+    // Cleanup
+    $hgIncidentIds = [$hgTodayIssueId, $hgOlderIssueId, $hgReviewResolvedId, $hgReviewUnresolvedId];
+    $hgPlaceholders = implode(',', array_fill(0, count($hgIncidentIds), '?'));
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($hgPlaceholders)", $hgIncidentIds);
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($hgPlaceholders)", $hgIncidentIds);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN ($hgPlaceholders)", $hgIncidentIds);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$hgMgr]);
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($hgPlaceholders)", $hgIncidentIds)['c'] ?? -1), 0, 'manager daily UX final hardening: no leftover fixture incidents remain');
 
     // ========================================================================================
     // B1 SOP mapping regression (root-cause fix): every real critical alert used to render

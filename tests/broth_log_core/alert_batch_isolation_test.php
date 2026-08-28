@@ -84,12 +84,18 @@ expect_true(str_contains($batchFnBody, 'broth_log_validate_telegram_alert_safe('
 expect_true(!str_contains($batchFnBody, 'exit'), 'the batch processor itself never calls exit');
 expect_true(str_contains($batchFnBody, 'record_telegram_alert_intake_error('), 'a rejected alert is recorded for diagnosis');
 expect_true(str_contains($batchFnBody, 'continue;'), 'a rejected alert is skipped via continue, not by aborting the loop');
+expect_true(str_contains($batchFnBody, '$hadValidationErrors = true;'), 'the batch processor tracks validation failures');
+expect_true(str_contains($batchFnBody, '$hadValidationErrors ? 0 : mark_resolved_telegram_alerts($active)'), 'a malformed batch does not mark existing open alerts resolved');
+expect_true(str_contains($batchFnBody, "'resolution_skipped' => \$hadValidationErrors"), 'the batch response reports when resolution was skipped for safety');
 // The continue must appear inside the validation-failure branch, immediately after recording the
 // error - not gated behind any later branch condition that could be skipped.
 $failureBranchPos = strpos($batchFnBody, "if (!\$validation['ok'])");
 $continuePos = strpos($batchFnBody, 'continue;', $failureBranchPos);
 $nextBranchPos = strpos($batchFnBody, '$validated = ', $failureBranchPos);
 expect_true($continuePos !== false && $continuePos < $nextBranchPos, 'the skip-and-continue happens before any subsequent alert would be reached, for every rejected item');
+$validationFailureFlagPos = strpos($batchFnBody, '$hadValidationErrors = true;', $failureBranchPos);
+$markResolvedPos = strpos($batchFnBody, 'mark_resolved_telegram_alerts($active)');
+expect_true($validationFailureFlagPos !== false && $validationFailureFlagPos < $continuePos && $markResolvedPos > $nextBranchPos, 'validation-failure tracking happens before skip, and resolution happens only after the full batch loop');
 
 // --- 3. Verify the failure log records only redacted, minimal fields ---
 expect_true(str_contains($indexSource, 'CREATE TABLE IF NOT EXISTS broth_log_telegram_alert_intake_errors'), 'a durable table exists for validation failures');

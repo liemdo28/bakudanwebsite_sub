@@ -699,6 +699,10 @@ function broth_log_copilot_is_private_start_text(string $text): bool {
     return (bool)preg_match('#^/start(@\w+)?\s*$#i', trim($text));
 }
 
+function broth_log_copilot_is_group_help_redirect_text(string $text): bool {
+    return (bool)preg_match('#^/(help|start)(@\w+)?\s*$#i', trim($text));
+}
+
 function broth_log_copilot_is_private_alerts_status_text(string $text): bool {
     return (bool)preg_match('#^/alerts(@\w+)?\s*$#i', trim($text));
 }
@@ -923,7 +927,8 @@ function broth_log_copilot_consume_callback(string $data, ?int $now = null): ?ar
     if (!$validated) return null;
     $parts = explode('|', $data);
     $expiresAt = (int)$parts[2];
-    run("DELETE FROM broth_log_callback_replays WHERE expires_at < datetime('now')");
+    $nowTs = gmdate('Y-m-d H:i:s', $now ?? time());
+    run("DELETE FROM broth_log_callback_replays WHERE expires_at < ?", [$nowTs]);
     run("INSERT OR IGNORE INTO broth_log_callback_replays (callback_hash,expires_at) VALUES (?,?)", [
         hash('sha256', $data),
         gmdate('Y-m-d H:i:s', $expiresAt),
@@ -964,7 +969,8 @@ function broth_log_copilot_consume_compact_callback(string $data, ?int $now = nu
     $hash = hash('sha256', $data);
     $row = q1("SELECT action,incident_id,expires_at FROM broth_log_callback_actions WHERE token_hash=?", [$hash]);
     if (!$row) return null;
-    run("DELETE FROM broth_log_callback_replays WHERE expires_at < datetime('now')");
+    $nowTs = gmdate('Y-m-d H:i:s', $now ?? time());
+    run("DELETE FROM broth_log_callback_replays WHERE expires_at < ?", [$nowTs]);
     run("INSERT OR IGNORE INTO broth_log_callback_replays (callback_hash,expires_at) VALUES (?,?)", [$hash, $row['expires_at']]);
     return db()->changes() > 0 ? ['action' => $row['action'], 'incident_id' => $row['incident_id']] : null;
 }
@@ -3111,7 +3117,11 @@ function broth_log_copilot_menu_date_entry_response(string $text, array $user, ?
 // keyboard that could route into protected views.
 function broth_log_copilot_help_response(array $user, string $chatType): array {
     if ($chatType !== '' && $chatType !== 'private') {
-        return ['message' => '', 'reply_markup' => null, 'intent' => 'help_group_denied', 'silent' => true];
+        return [
+            'message' => "Broth Log Bot\n\nManager actions are available in private chat.\nPlease open a private chat with this bot and send /help.",
+            'reply_markup' => null,
+            'intent' => 'help_group_redirect',
+        ];
     }
     return ['message' => broth_log_copilot_help_text(), 'reply_markup' => broth_log_copilot_menu_main_keyboard(broth_log_copilot_role_class($user)), 'intent' => 'help_menu'];
 }
@@ -3343,6 +3353,26 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
                     run("INSERT OR REPLACE INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id, registered_at, updated_at) VALUES (?,?,datetime('now'),datetime('now'))", [$telegramUserId, (string)$row['chat_id']]);
                 }
                 $response = broth_log_copilot_private_registration_response($user, $lang, $isStatusCommand);
+                $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $response['message']);
+                if (!empty($send['sent'])) {
+                    run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+                    $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $response['intent'], 'outbound' => 'sent'];
+                    continue;
+                }
+                $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
+                run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $response['intent'], 'outbound' => 'failed', 'reason' => $reason];
+                continue;
+            }
+
+            // Group /help and /start should not expose any manager surface, but staying silent
+            // makes the bot look broken in Ops. This carve-out sits before the authorization gate
+            // so every non-private chat gets the same static redirect and nothing else.
+            if ((string)($row['update_type'] ?? '') === 'message'
+                && (string)($row['chat_type'] ?? '') !== ''
+                && (string)($row['chat_type'] ?? '') !== 'private'
+                && broth_log_copilot_is_group_help_redirect_text((string)$row['message_text'])) {
+                $response = broth_log_copilot_help_response($user ?: [], (string)($row['chat_type'] ?? ''));
                 $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], $response['message']);
                 if (!empty($send['sent'])) {
                     run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);

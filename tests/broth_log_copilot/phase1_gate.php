@@ -1752,10 +1752,20 @@ try {
 
     // --- 18/19: group isolation - onboarding / Alert-Fallback groups get no protected /help or menu data ---
     $groupHelp = broth_log_copilot_help_response($menuManagerUser, 'group');
-    expect_eq($groupHelp['intent'], 'help_group_denied', '/help from a non-private chat is consumed without opening the assistant');
-    expect_true(!empty($groupHelp['silent']), 'group /help is silent in Ops/alert destinations');
+    expect_eq($groupHelp['intent'], 'help_group_redirect', '/help from a non-private chat returns only the safe private-chat redirect');
+    expect_eq($groupHelp['message'], "Broth Log Bot\n\nManager actions are available in private chat.\nPlease open a private chat with this bot and send /help.", 'Ops group /help returns the exact safe redirect text');
     expect_true($groupHelp['reply_markup'] === null, 'group /help reply carries no keyboard');
-    expect_true(!str_contains($groupHelp['message'], 'B1') && !str_contains($groupHelp['message'], 'Broth Log Assistant'), 'group /help reply contains no store/menu content');
+    expect_true(!str_contains($groupHelp['message'], 'B1') && !str_contains($groupHelp['message'], 'B2') && !str_contains($groupHelp['message'], 'B3'), 'group /help reply contains no branch/store data');
+    expect_true(!str_contains($groupHelp['message'], 'Owner Test') && !str_contains($groupHelp['message'], 'GM Test') && !str_contains($groupHelp['message'], 'Maria'), 'group /help reply contains no manager identity data');
+    expect_true(!str_contains($groupHelp['message'], 'authorized') && !str_contains($groupHelp['message'], 'routing') && !str_contains($groupHelp['message'], 'debug'), 'group /help reply contains no authorization/routing/debug data');
+    expect_true(!str_contains($groupHelp['message'], 'Daily Check') && !str_contains($groupHelp['message'], 'Needs Attention') && !str_contains($groupHelp['message'], 'Open Issues'), 'group /help reply contains no manager menu text');
+    $otherGroupHelp = broth_log_copilot_help_response($menuManagerUser, 'supergroup');
+    expect_eq($otherGroupHelp['message'], $groupHelp['message'], 'other group /help returns the same safe redirect text');
+    expect_true($otherGroupHelp['reply_markup'] === null, 'other group /help also carries no keyboard');
+    expect_true(broth_log_copilot_is_group_help_redirect_text('/help'), 'group redirect recognizes /help');
+    expect_true(broth_log_copilot_is_group_help_redirect_text('/start@brothlog_bot'), 'group redirect recognizes bot-suffixed /start');
+    expect_true(!broth_log_copilot_is_group_help_redirect_text('/alerts'), 'group redirect does not intercept unrelated commands');
+    expect_true(!broth_log_copilot_is_group_help_redirect_text('/help please'), 'group redirect only accepts anchored /help or /start');
     $groupMenuCb = broth_log_copilot_menu_callback_response('menu:today', $menuManagerUser, 'group', $now25);
     expect_eq($groupMenuCb['intent'], 'menu_group_denied', 'a menu: callback tapped from a non-private chat is denied, never rendered');
     expect_true(!empty($groupMenuCb['silent']), 'a menu: callback from a group is consumed silently without cluttering Ops');
@@ -1964,13 +1974,21 @@ try {
     $helpSentPayload = end($sentMessages);
     expect_true(isset($helpSentPayload['payload']['reply_markup']['inline_keyboard']), 'private DM /help actually sends a Telegram inline keyboard, not just plain text');
 
-    $beforeGroupSilence = count($sentMessages);
+    $beforeGroupRedirect = count($sentMessages);
     broth_log_copilot_enqueue_webhook(['update_id' => 9901, 'message' => ['text' => '/help', 'from' => ['id' => (int)$menuOwnerId], 'chat' => ['id' => 'menu-ops-group', 'type' => 'group'], 'message_id' => 9901]]);
     broth_log_copilot_enqueue_webhook(['update_id' => 9902, 'callback_query' => ['id' => 'cb-menu-9902', 'data' => 'menu:ceo_summary', 'from' => ['id' => (int)$menuOwnerId], 'message' => ['chat' => ['id' => 'menu-ops-group', 'type' => 'group'], 'message_id' => 9902]]]);
-    $groupSilentProcessed = broth_log_copilot_process_inbox(10, $now25);
-    expect_eq(find_processed($groupSilentProcessed, '9901')['outbound'] ?? '', 'silent', 'Ops/group /help is processed silently without assistant output');
-    expect_eq(find_processed($groupSilentProcessed, '9902')['outbound'] ?? '', 'silent', 'Ops/group menu callback is processed silently without assistant output');
-    expect_eq(count($sentMessages), $beforeGroupSilence, 'Ops/group assistant inputs create zero Telegram sendMessage calls');
+    broth_log_copilot_enqueue_webhook(['update_id' => 9903, 'message' => ['text' => '/start', 'from' => ['id' => 999888778], 'chat' => ['id' => 'menu-other-group', 'type' => 'supergroup'], 'message_id' => 9903]]);
+    $groupRedirectProcessed = broth_log_copilot_process_inbox(10, $now25);
+    expect_eq(find_processed($groupRedirectProcessed, '9901')['intent'] ?? '', 'help_group_redirect', 'Ops/group /help is processed as the safe redirect');
+    expect_eq(find_processed($groupRedirectProcessed, '9901')['outbound'] ?? '', 'sent', 'Ops/group /help sends exactly the safe redirect output');
+    expect_eq(find_processed($groupRedirectProcessed, '9903')['status'] ?? '', 'processed', 'other group /start is processed even for an unauthorized sender');
+    expect_eq(find_processed($groupRedirectProcessed, '9903')['intent'] ?? '', 'help_group_redirect', 'other group /start returns the same safe redirect intent');
+    expect_eq(find_processed($groupRedirectProcessed, '9903')['outbound'] ?? '', 'sent', 'other group /start sends only the safe redirect output');
+    $groupHelpPayload = end($sentMessages)['payload'] ?? [];
+    expect_eq($groupHelpPayload['text'] ?? '', 'TEST - ' . $groupHelp['message'], 'latest group redirect outbound text is the staging-labeled safe redirect only');
+    expect_true(!isset($groupHelpPayload['reply_markup']), 'group redirect outbound has no menu buttons');
+    expect_eq(find_processed($groupRedirectProcessed, '9902')['outbound'] ?? '', 'silent', 'Ops/group menu callback is processed silently without assistant output');
+    expect_eq(count($sentMessages), $beforeGroupRedirect + 2, 'group /help and /start create exactly one safe redirect send each; group menu callback stays silent');
 
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?,?,?)", [$menuOwnerId, $menuGmId, $menuManagerId, $menuManagerNamedId]);
     run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?,?,?,?)", [$menuIncUnack, $menuIncAck, $menuIncResolved, $menuIncAckNoName, $ackProbeId]);

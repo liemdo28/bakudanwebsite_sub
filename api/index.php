@@ -929,10 +929,12 @@ function record_telegram_alert_intake_error(?string $branch, ?string $station, s
 function broth_log_process_telegram_alert_batch(array $alerts, string $batchContext = ''): array {
     $results = [];
     $active = [];
+    $hadValidationErrors = false;
     foreach ($alerts as $alert) {
         if (!is_array($alert)) continue;
         $validation = broth_log_validate_telegram_alert_safe($alert);
         if (!$validation['ok']) {
+            $hadValidationErrors = true;
             record_telegram_alert_intake_error($validation['branch'] ?? null, $validation['station'] ?? null, $validation['reason'], $batchContext);
             $results[] = ['sent' => false, 'skipped' => 'invalid', 'reason' => $validation['reason']];
             continue;
@@ -948,8 +950,8 @@ function broth_log_process_telegram_alert_batch(array $alerts, string $batchCont
         }
         $results[] = $result;
     }
-    $resolved = mark_resolved_telegram_alerts($active);
-    return ['processed' => count($results), 'resolved' => $resolved, 'results' => $results];
+    $resolved = $hadValidationErrors ? 0 : mark_resolved_telegram_alerts($active);
+    return ['processed' => count($results), 'resolved' => $resolved, 'resolution_skipped' => $hadValidationErrors, 'results' => $results];
 }
 
 function telegram_dashboard_link(array $alert): string {

@@ -489,8 +489,31 @@
       ]
     },
     "campaign-2026-09-08-ramen-and-karaage": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-09-02T16:59:10.858977+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-09-02T16:59:13.617560+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260902-165910-ramen-and-karaage-fried-chicken"
+        },
+        {
+          "event": "published",
+          "at": "2026-09-02T16:59:14.182511+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-09-10-takeout-friendly-bowls": {
       "status": "approved",

@@ -624,8 +624,31 @@
       ]
     },
     "campaign-2026-09-18-vegetarian-at-bakudan": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-09-12T16:11:28.569615+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-09-12T16:11:36.970915+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260912-161128-vegetarian-at-bakudan-beyond-the-vegetarian-ramen"
+        },
+        {
+          "event": "published",
+          "at": "2026-09-12T16:11:37.677256+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-09-20-the-bakudan-difference-broth": {
       "status": "approved",

@@ -678,8 +678,31 @@
       ]
     },
     "campaign-2026-09-22-ramen-topping-glossary": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-09-16T20:21:27.333904+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-09-16T20:21:28.870881+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260916-202127-ramen-topping-glossary-for-first-timers"
+        },
+        {
+          "event": "published",
+          "at": "2026-09-16T20:21:29.116119+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-09-24-weekend-timing-tips": {
       "status": "approved",

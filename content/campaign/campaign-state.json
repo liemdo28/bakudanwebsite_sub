@@ -705,8 +705,31 @@
       ]
     },
     "campaign-2026-09-24-weekend-timing-tips": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-09-18T15:48:38.244468+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-09-18T15:48:42.654779+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260918-154838-weekend-timing-tips-beat-the-rush"
+        },
+        {
+          "event": "published",
+          "at": "2026-09-18T15:48:43.459678+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-09-26-hosting-out-of-town-family": {
       "status": "approved",

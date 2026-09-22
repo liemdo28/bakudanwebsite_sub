@@ -759,8 +759,31 @@
       ]
     },
     "campaign-2026-09-28-ordering-for-a-mixed-group": {
-      "status": "approved",
-      "history": []
+      "status": "published",
+      "history": [
+        {
+          "event": "publishing_started",
+          "at": "2026-09-22T17:57:31.496987+00:00"
+        },
+        {
+          "event": "deployed",
+          "at": "2026-09-22T17:57:36.299242+00:00",
+          "backup_dir": "/home/runner/work/bakudanwebsite_sub/bakudanwebsite_sub/scripts/_deploy_backups/20260922-175731-ordering-for-a-mixed-group"
+        },
+        {
+          "event": "published",
+          "at": "2026-09-22T17:57:37.240792+00:00",
+          "checks": {
+            "http_200": true,
+            "title_match": true,
+            "canonical_match": true,
+            "body_marker": true,
+            "image_200": true,
+            "sitemap_once": true,
+            "all_passed": true
+          }
+        }
+      ]
     },
     "campaign-2026-09-30-a-locals-faq": {
       "status": "approved",

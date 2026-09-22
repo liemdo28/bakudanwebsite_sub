@@ -197,4 +197,9 @@
 <changefreq>monthly</changefreq>
 <priority>0.6</priority>
 </url>
+<url>
+<loc>https://www.bakudanramen.com/ordering-for-a-mixed-group.html</loc>
+<changefreq>monthly</changefreq>
+<priority>0.6</priority>
+</url>
 </urlset>

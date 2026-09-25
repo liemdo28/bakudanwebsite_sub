@@ -3712,6 +3712,63 @@ try {
     run("DELETE FROM broth_log_incidents WHERE incident_id IN ($sopPlaceholders)", $sopAllIds);
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($sopPlaceholders)", $sopAllIds)['c'] ?? -1), 0, 'B1 SOP mapping regression: no leftover fixture incidents remain');
 
+    // ============================================================================
+    // PER-BRANCH MANAGER AUTHORIZATION: a manager already authorized for one branch can be granted
+    // an ADDITIONAL branch later, with its own cutover moment - never retroactively backdated to
+    // their original authorized_users.created_at. broth_log_manager_branch_authorizations is
+    // additive/optional: absence of a row means "use created_at", exactly as before this existed.
+    // ============================================================================
+    $pbaMgr = '970'; $pbaChat = '910970001';
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pbaMgr, 'PBA Manager', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
+    run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pbaMgr, $pbaChat]);
+
+    // --- 1: default/backward-compatible behavior - no override row exists yet, so B1 eligibility
+    // still uses the manager's own created_at exactly as before this table existed. ---
+    expect_true(in_array($pbaChat, broth_log_copilot_manager_dm_chat_ids('B1', '2026-01-01 00:00:00'), true), '1: with no per-branch override, B1 eligibility uses the manager\'s own created_at (2020) - eligible for a 2026 incident, unchanged prior behavior');
+    expect_true(!in_array($pbaChat, broth_log_copilot_manager_dm_chat_ids('B2', '2026-01-01 00:00:00'), true), 'sanity: not yet authorized for B2 at all (not in allowed_branches)');
+
+    // --- 2: grant B2 today, with its OWN authorization moment - the manager's allowed_branches is
+    // updated to include B2, and a per-branch override row is inserted for (manager, B2) only. ---
+    run("UPDATE broth_log_authorized_users SET allowed_branches=? WHERE telegram_user_id=?", [json_encode(['B1', 'B2']), $pbaMgr]);
+    run("INSERT INTO broth_log_manager_branch_authorizations (telegram_user_id, branch, authorized_at) VALUES (?,?,?)", [$pbaMgr, 'B2', '2026-09-25 00:00:00']);
+
+    // --- 3: an OLD B2 incident (created before the grant) does NOT include this manager, even
+    // though their base created_at (2020) predates it - the per-branch override takes precedence. ---
+    expect_true(!in_array($pbaChat, broth_log_copilot_manager_dm_chat_ids('B2', '2026-09-01 00:00:00'), true), '3: a B2 incident created BEFORE the branch grant excludes the manager, despite their much-earlier base created_at - no backlog contamination');
+    // --- 4: a NEW B2 incident (created at or after the grant moment) DOES include them - inclusive boundary, matching the existing created_at<=incident.created_at convention. ---
+    expect_true(in_array($pbaChat, broth_log_copilot_manager_dm_chat_ids('B2', '2026-09-25 00:00:00'), true), '4: a B2 incident created EXACTLY at the grant moment includes the manager (inclusive boundary)');
+    expect_true(in_array($pbaChat, broth_log_copilot_manager_dm_chat_ids('B2', '2026-09-25 00:00:01'), true), '4: a B2 incident created just after the grant moment includes the manager');
+    expect_true(!in_array($pbaChat, broth_log_copilot_manager_dm_chat_ids('B2', '2026-09-24 23:59:59'), true), '4: a B2 incident created one second before the grant moment excludes the manager');
+
+    // --- 5: the ORIGINAL branch (B1) is completely unaffected by the new B2 override - still uses
+    // the manager's own created_at (2020), never the B2 grant date. ---
+    expect_true(in_array($pbaChat, broth_log_copilot_manager_dm_chat_ids('B1', '2020-06-01 00:00:00'), true), '5: B1 eligibility is untouched by the B2 grant - still eligible for a mid-2020 B1 incident via the original created_at');
+
+    // --- 6: broth_log_copilot_incident_known_destinations() (shared-ownership broadcast recipient
+    // safety) automatically respects the same per-branch cutover, since it calls
+    // manager_dm_chat_ids() internally - no separate fix needed there. ---
+    $pbaOldB2Incident = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B2', 'responseId' => 'resp-pba-old-b2']));
+    run("UPDATE broth_log_incidents SET created_at='2026-09-01 00:00:00' WHERE incident_id=?", [$pbaOldB2Incident]);
+    run("INSERT INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,status,sent_at) VALUES (?,?,?,?,?, 'sent', ?)",
+        ['pba-contaminated-old-b2', $pbaOldB2Incident, $pbaChat, 'reminder', 'contaminated pre-grant reminder', '2026-09-01 01:00:00']);
+    $pbaOldB2Known = broth_log_copilot_incident_known_destinations($pbaOldB2Incident);
+    expect_true(!in_array($pbaChat, $pbaOldB2Known, true), '6: known_destinations() also excludes the manager from an old, pre-grant B2 incident despite a real historical (contaminated) delivery row - the per-branch cutover applies to broadcast eligibility too');
+
+    $pbaNewB2Incident = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B2', 'responseId' => 'resp-pba-new-b2']));
+    run("UPDATE broth_log_incidents SET created_at='2026-09-26 00:00:00' WHERE incident_id=?", [$pbaNewB2Incident]);
+    run("INSERT INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,status,sent_at) VALUES (?,?,?,?,?, 'sent', ?)",
+        ['pba-legit-new-b2', $pbaNewB2Incident, $pbaChat, 'incident_notification', 'legit post-grant notification', '2026-09-26 00:00:05']);
+    $pbaNewB2Known = broth_log_copilot_incident_known_destinations($pbaNewB2Incident);
+    expect_true(in_array($pbaChat, $pbaNewB2Known, true), '6: known_destinations() correctly includes the manager for a genuinely new, post-grant B2 incident they actually received');
+
+    // Cleanup
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN (?,?)", [$pbaOldB2Incident, $pbaNewB2Incident]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?)", [$pbaOldB2Incident, $pbaNewB2Incident]);
+    run("DELETE FROM broth_log_manager_branch_authorizations WHERE telegram_user_id=?", [$pbaMgr]);
+    run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$pbaMgr]);
+    run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$pbaMgr]);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN (?,?)", [$pbaOldB2Incident, $pbaNewB2Incident])['c'] ?? -1), 0, 'per-branch manager authorization: no leftover fixture incidents remain');
+
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {
     @unlink(TEST_DB_PATH);

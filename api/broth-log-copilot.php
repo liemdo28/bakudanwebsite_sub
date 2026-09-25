@@ -200,6 +200,20 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    -- Per-branch authorization override, for the case broth_log_authorized_users.created_at alone
+    -- cannot represent: a manager already authorized for one branch is LATER granted an ADDITIONAL
+    -- branch (e.g. a B1-only manager gaining B2/B3), and that new branch must have its own cutover
+    -- moment - never retroactively backdated to the manager's original created_at, which would
+    -- immediately make them eligible for every pre-existing incident on the newly-added branch.
+    -- Additive and optional: a (telegram_user_id, branch) pair with no row here simply falls back to
+    -- the manager's own created_at, exactly as before this table existed - zero behavior change for
+    -- every manager/branch combination that has never had a branch granted this way.
+    CREATE TABLE IF NOT EXISTS broth_log_manager_branch_authorizations (
+        telegram_user_id TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        authorized_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (telegram_user_id, branch)
+    );
     CREATE TABLE IF NOT EXISTS broth_log_routing_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         branch TEXT NOT NULL,
@@ -740,34 +754,43 @@ function broth_log_copilot_private_registration_response(?array $user, string $l
 // broth_log_private_chat_registrations). Deliberately separate from broth_log_copilot_route_chat_ids()
 // (the group-routing lookup /pilotid's Ops-chat gate also depends on) so that adding a manager's
 // private chat here can never widen what counts as the production Ops group.
-// $incidentCreatedAt (optional): when provided, a manager is only eligible if
-// broth_log_authorized_users.created_at <= $incidentCreatedAt - i.e. they were already
-// authorized at or before the moment this specific incident was created. A manager authorized
-// AFTER an incident already existed never inherits its reminders/escalations/re-deliveries, but
-// remains fully eligible for any incident created from their own authorization moment onward.
-// created_at is the right anchor: it is set exactly once at row-INSERT time and never written to
-// again by any application code (verified - zero UPDATE statements touch this table anywhere in
-// this file), so it reliably represents "when this manager became authorized," not something that
-// could silently drift. Omitting the parameter (the default) preserves the exact prior behavior -
-// every existing caller of this function outside broth_log_copilot_deliver_proactive_alert() (test
-// fixtures checking raw eligibility, for example) is unaffected.
+// $incidentCreatedAt (optional): when provided, a manager is only eligible if their EFFECTIVE
+// authorization moment for THIS SPECIFIC branch (broth_log_copilot_manager_branch_authorized_at() -
+// a per-branch override if one exists, otherwise broth_log_authorized_users.created_at) is at or
+// before the moment this specific incident was created. A manager authorized for a branch AFTER an
+// incident on that branch already existed never inherits its reminders/escalations/re-deliveries,
+// but remains fully eligible for any incident created from their own authorization moment onward.
+// broth_log_authorized_users.created_at is never written to again by any application code (verified
+// - zero UPDATE statements touch it anywhere in this file), and neither is a per-branch override row
+// once inserted, so this anchor reliably represents "when this manager became authorized for this
+// branch," never something that could silently drift. Omitting the parameter (the default)
+// preserves the exact prior behavior - every existing caller of this function outside
+// broth_log_copilot_deliver_proactive_alert() (test fixtures checking raw eligibility, for example)
+// is unaffected.
+// Effective "authorized since" moment for one specific manager/branch pair: the per-branch override
+// in broth_log_manager_branch_authorizations if one exists (a branch granted after the manager's
+// original authorization), otherwise the manager's own authorized_users.created_at - exactly the
+// same single value every manager/branch pair has always used before this override table existed.
+function broth_log_copilot_manager_branch_authorized_at(string $telegramUserId, string $branch, string $fallback): string {
+    $override = q1("SELECT authorized_at FROM broth_log_manager_branch_authorizations WHERE telegram_user_id=? AND branch=?", [$telegramUserId, strtoupper($branch)]);
+    return $override !== null ? (string)$override['authorized_at'] : $fallback;
+}
+
 function broth_log_copilot_manager_dm_chat_ids(string $branch, ?string $incidentCreatedAt = null): array {
     $branchUpper = strtoupper($branch);
     $chatIds = [];
-    $sql = "SELECT au.allowed_branches, pcr.private_chat_id
+    $rows = q("SELECT au.telegram_user_id, au.allowed_branches, au.created_at, pcr.private_chat_id
             FROM broth_log_authorized_users au
             INNER JOIN broth_log_private_chat_registrations pcr ON pcr.telegram_user_id = au.telegram_user_id
-            WHERE au.role='manager' AND au.active=1";
-    $params = [];
-    if ($incidentCreatedAt !== null) {
-        $sql .= " AND au.created_at <= ?";
-        $params[] = $incidentCreatedAt;
-    }
-    foreach (q($sql, $params) as $row) {
+            WHERE au.role='manager' AND au.active=1");
+    foreach ($rows as $row) {
         $branches = json_decode((string)$row['allowed_branches'], true) ?: [];
-        if (in_array($branchUpper, array_map('strtoupper', $branches), true) && (string)$row['private_chat_id'] !== '') {
-            $chatIds[] = (string)$row['private_chat_id'];
+        if (!in_array($branchUpper, array_map('strtoupper', $branches), true) || (string)$row['private_chat_id'] === '') continue;
+        if ($incidentCreatedAt !== null) {
+            $effectiveAuthorizedAt = broth_log_copilot_manager_branch_authorized_at((string)$row['telegram_user_id'], $branchUpper, (string)$row['created_at']);
+            if ($effectiveAuthorizedAt > $incidentCreatedAt) continue;
         }
+        $chatIds[] = (string)$row['private_chat_id'];
     }
     return array_values(array_unique($chatIds));
 }

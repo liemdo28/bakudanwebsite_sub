@@ -299,7 +299,9 @@ try {
     broth_log_copilot_notify_incident($incidentId);
     expect_eq(count($sentMessages), $sentBeforeIncident + 1, 'duplicate incident notification is suppressed');
 
-    $employeeIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-with-employee', 'employee' => 'Jordan Rivera']));
+    // A distinct station (not prepAreaCooler, already an open unresolved problem above under the
+    // station-level suppression policy) so this gets its own genuinely independent incident.
+    $employeeIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-with-employee', 'stationKey' => 'ramenReachInTop', 'station' => 'Ramen Reach-In Top', 'employee' => 'Jordan Rivera']));
     broth_log_copilot_notify_incident($employeeIncidentId);
     expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Jordan Rivera'), 'a known employee name is still never shown in the concise Telegram body');
     expect_eq(q1("SELECT employee_name FROM broth_log_incidents WHERE incident_id=?", [$employeeIncidentId])['employee_name'] ?? '', 'Jordan Rivera', 'the real employee name is still stored on the incident row - hidden from Telegram only, not removed from the record');
@@ -490,11 +492,15 @@ try {
     // A genuinely NEW submission - its own distinct responseId, exactly as a real re-measurement in
     // the Google Sheet would have - legitimately opens its own new incident. This is "critical-safe-
     // critical": the station was fixed, then a real new critical reading came in later.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $recurrenceId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-1-recurrence']));
     expect_true($recurrenceId !== $incidentId && $recurrenceId !== '', 'critical-safe-critical: a genuinely new submission (new responseId) creates a new incident after the prior one resolved');
 
     // --- Approved balanced cadence: T+0 alert, T+5 reminder, T+10 -> L2, T+15 -> L3 (URGENT),
     // then a level-3 reminder every 15 minutes indefinitely until ACK. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $raceId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-race']));
     run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:00:00', last_reminder_at=NULL, reminder_count=0, state='detected', current_level=1 WHERE incident_id=?", [$raceId]);
 
@@ -582,6 +588,8 @@ try {
     expect_true(empty($dueAfterLevel3Ack), 'ACK stops all future level-3 reminders immediately - the next scheduled reminder never fires');
 
     // Resolve also prevents all subsequent sends, independently of ACK.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $resolveRaceId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-resolve-race']));
     run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-20 00:00:00', last_reminder_at='2026-08-20 00:15:00', reminder_count=1 WHERE incident_id=?", [$resolveRaceId]);
     $resolveResult = broth_log_copilot_resolve($resolveRaceId, $user, 38, 'closed door and moved product', new DateTimeImmutable('2026-08-20 00:16:00 UTC'));
@@ -591,6 +599,8 @@ try {
 
     // Duplicate-worker protection: two workers evaluating the same due reminder must not create
     // two Telegram deliveries.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $dupRaceId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-dup-race']));
     run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:00:00', last_reminder_at=NULL, reminder_count=0, state='detected', current_level=1 WHERE incident_id=?", [$dupRaceId]);
     $dupDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 00:05:00 UTC')), fn($d) => $d['incident']['incident_id'] === $dupRaceId))[0];
@@ -604,6 +614,8 @@ try {
     // Backward compatibility: an incident already at level 3 under the OLD (3-minute) cadence
     // before this deploy - like the real currently-open incidents - must adopt the new 15-minute
     // interval automatically from its existing last_reminder_at, with no DB reset or migration.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $legacyL3Id = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-legacy-l3']));
     run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-20 00:00:00', last_reminder_at='2026-08-20 05:57:00', reminder_count=70 WHERE incident_id=?", [$legacyL3Id]);
     $dueAt5MinAfterOldReminder = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 06:02:00 UTC')), fn($d) => $d['incident']['incident_id'] === $legacyL3Id));
@@ -929,6 +941,8 @@ try {
     // Seed a real due Level-3 incident, exactly mirroring the worker script's own sequence
     // ($due computed, then process_inbox(), then the due actions are applied) to prove the
     // escalation phase still runs after a poison row in the same batch.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $poisonIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-poison-escalation']));
     run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$poisonIncidentId]);
     $poisonNow = new DateTimeImmutable('2026-08-22 01:00:00 UTC');
@@ -970,6 +984,8 @@ try {
 
     // No open transaction / no stale lock survives a poison row: a completely unrelated real
     // mutation (ACK on a freshly seeded incident) must still succeed immediately afterward.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $poisonLockProbeId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-poison-lock-probe']));
     run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$poisonLockProbeId]);
     $poisonAckProbe = broth_log_copilot_ack($poisonLockProbeId, $poisonUser, $poisonNow);
@@ -1050,6 +1066,8 @@ try {
 
     // A/B/C: a real B1 incident notification reaches the Ops group and Alice, never Cara (B2) or
     // the inactive B1 manager.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $dmIncidentB1 = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-dm-b1']));
     expect_true(broth_log_copilot_notify_incident($dmIncidentB1)['sent'] ?? false, 'B1 incident notification sends successfully');
     $dmDeliveredB1 = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$dmIncidentB1]), 'chat_id');
@@ -1070,6 +1088,8 @@ try {
 
     // I/J: one manager's DM fails while the group and the other manager still succeed; retrying
     // only resends to the previously-failed destination, never duplicating an already-sent one.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $dmIncidentFailure = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-dm-failure']));
     $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $dmManagerAChat): array {
         $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
@@ -1102,6 +1122,8 @@ try {
     // K/L/M/N: ACK pressed from a manager's private DM acknowledges the canonical incident
     // globally, denies wrong-branch attempts, and rejects replays - the same actor-based rules
     // already enforced for the Ops group, unaffected by which chat the button was pressed in.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $dmAckIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-dm-ack']));
     run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$dmAckIncidentId]);
     $dmAckNow = new DateTimeImmutable('2026-08-22 01:00:00 UTC');
@@ -1163,6 +1185,8 @@ try {
 
     // T: a poison row must not block private-DM registration processing OR eligible-incident
     // reminders in the same batch (extends the PR #33 isolation guarantee to the new carve-out).
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $poisonDmIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-dm-poison']));
     run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$poisonDmIncidentId]);
     $poisonDmNow = new DateTimeImmutable('2026-08-22 02:00:00 UTC');
@@ -1255,6 +1279,8 @@ try {
     // 1: B1 not cut over (no mode row = default ops_fallback) -> B1 incident still reaches the
     // Ops group, additively with any eligible managers, exactly as before this feature existed.
     expect_eq(broth_log_copilot_branch_alert_mode('B1'), 'ops_fallback', 'a branch with no mode row defaults to ops_fallback - the safe, unchanged behavior');
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $cutIncidentPreCutover = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-pre']));
     broth_log_copilot_notify_incident($cutIncidentPreCutover);
     $cutPreDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$cutIncidentPreCutover]), 'chat_id');
@@ -1276,6 +1302,8 @@ try {
     expect_true(broth_log_copilot_is_manager_onboarding_chat($onboardingGroupChatId), '15: the Manager Onboarding Group is STILL recognized as the trusted onboarding chat after B1 is cut over');
     expect_true(!broth_log_copilot_is_manager_onboarding_chat($opsGroupChatId), '15: the Alert/Fallback group is STILL not the onboarding group after B1 is cut over - cutover mode never affects onboarding identity');
 
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $cutIncidentB1 = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-b1']));
     broth_log_copilot_notify_incident($cutIncidentB1);
     $cutB1Delivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$cutIncidentB1]), 'chat_id');
@@ -1327,6 +1355,8 @@ try {
     // 7: one B1 manager fails, the other succeeds - the successful one is unaffected. The Ops group
     // is delivered independently regardless (it never depended on manager outcome to begin with),
     // and since at least one manager succeeded, there is no coverage-gap audit event.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $cutIncidentPartialFail = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-partial-fail']));
     $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $cutManagerAChat): array {
         $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
@@ -1348,6 +1378,8 @@ try {
     // 8: every eligible manager fails - the Ops group is STILL delivered (it was sent independently
     // from the start, not as a reaction to manager failure), and a coverage-gap audit event records
     // that manager-DM delivery specifically had zero successes for this branch.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $cutIncidentAllFail = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-all-fail']));
     $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $cutManagerAChat, $cutManagerBChat): array {
         $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
@@ -1384,6 +1416,8 @@ try {
     // 12/13: ACK from a manager's DM stops all future reminders GLOBALLY - for the Ops group too,
     // since both destinations reference the same canonical incident/state machine, not separate
     // per-destination ACK state. The Ops group receives every reminder alongside managers now.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $cutAckIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-ack']));
     run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$cutAckIncidentId]);
     $cutAckNow = new DateTimeImmutable('2026-08-22 01:00:00 UTC');
@@ -1415,6 +1449,8 @@ try {
 
     // 20: poison-row isolation is completely unaffected (process_inbox() itself was not modified
     // by this feature) - confirmed directly in a manager_dm-mode context.
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $cutPoisonIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-poison']));
     run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$cutPoisonIncidentId]);
     $cutPoisonNow = new DateTimeImmutable('2026-08-22 02:00:00 UTC');
@@ -1445,6 +1481,8 @@ try {
     run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active) VALUES (?,?,?,?,1)", [$parityGmId, 'Parity GM', 'manager', json_encode(['B1'])]);
     run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$parityGmId, $parityGmChat]);
     run("INSERT INTO broth_log_branch_alert_mode (branch, mode) VALUES ('B1','manager_dm')");
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $parityIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-parity-canonical']));
     broth_log_copilot_notify_incident($parityIncidentId);
     expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id=?", [$parityIncidentId])['c'], 1, 'canonical: exactly one incident row exists for this alert');
@@ -1508,8 +1546,14 @@ try {
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$parityGmId]);
 
     // --- One-time pre-cutover freeze migration: broth_log_copilot_freeze_pre_cutover_incidents() ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $freezePreId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'businessDate' => '2026-08-20', 'responseId' => 'resp-freeze-pre']));
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $freezePostId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'businessDate' => '2026-08-25', 'responseId' => 'resp-freeze-post']));
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $freezeResolvedPreId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'businessDate' => '2026-08-19', 'responseId' => 'resp-freeze-resolved-pre']));
     $freezeResolveResult = broth_log_copilot_resolve($freezeResolvedPreId, broth_log_copilot_authorized_user('101') ?: ['telegram_user_id' => '101', 'allowed_branch_list' => ['B1']], 38.0, 'closed door', new DateTimeImmutable('2026-08-19 12:00:00 UTC'));
     // (best-effort resolve for fixture setup - not asserted here, only used to prove freeze leaves
@@ -1567,6 +1611,8 @@ try {
         expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=?", [$incidentId, $onboardingGroupChatId])['c'] ?? -1, 0, "{$label}: zero delivery attempts of any status exist for the Manager Onboarding Group");
     };
 
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $onboardWalkId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-onboarding-walk']));
     broth_log_copilot_notify_incident($onboardWalkId);
     $noOnboardingLeak($onboardWalkId, '7: initial notification');
@@ -2496,6 +2542,8 @@ try {
     $ownNow = new DateTimeImmutable('2026-08-26 15:00:00 UTC');
 
     // --- A: Ops ACKs first (authorized actor presses ACK from within the Ops group message) ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncA = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-a']));
     broth_log_copilot_notify_incident($ownIncA, $ownNow);
     $ownADeliveredBefore = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$ownIncA]), 'chat_id');
@@ -2525,6 +2573,8 @@ try {
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncA]);
 
     // --- B: Manager ACKs first (from their own private DM this time) ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncB = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-b']));
     broth_log_copilot_notify_incident($ownIncB, $ownNow);
     $ownBAckToken = broth_log_copilot_create_callback_token('ack', $ownIncB, $ownAAckExpires);
@@ -2543,6 +2593,8 @@ try {
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncB]);
 
     // --- C: two authorized actors ACK concurrently - first commit wins, exactly one broadcast ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncC = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-c']));
     broth_log_copilot_notify_incident($ownIncC, $ownNow);
     $ownCTokenA = broth_log_copilot_create_callback_token('ack', $ownIncC, $ownAAckExpires);
@@ -2561,6 +2613,8 @@ try {
 
     // --- D: same actor double-acks via the text-command path (not token-replay-protected the same
     // way callbacks are) - still idempotent, still exactly one broadcast. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncD = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-d']));
     broth_log_copilot_notify_incident($ownIncD, $ownNow);
     $ownDParsed = ['intent' => 'ack', 'incident_id' => $ownIncD, 'language' => 'en'];
@@ -2573,6 +2627,8 @@ try {
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncD]);
 
     // --- E: unauthorized user presses ACK - zero mutation, zero broadcast ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncE = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-e']));
     broth_log_copilot_notify_incident($ownIncE, $ownNow);
     $ownETokenUnauth = broth_log_copilot_create_callback_token('ack', $ownIncE, $ownAAckExpires);
@@ -2587,6 +2643,8 @@ try {
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncE]);
 
     // --- F: temperature ACK stays open, reminders stop, Solve remains available (broadcast includes a Resolve button) ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncF = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-f']));
     broth_log_copilot_notify_incident($ownIncF, $ownNow);
     $ownFAckToken = broth_log_copilot_create_callback_token('ack', $ownIncF, $ownAAckExpires);
@@ -2624,6 +2682,8 @@ try {
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncF]);
 
     // --- H: unsafe temperature Solve is rejected - no false resolution broadcast, ownership preserved ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncH = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-h']));
     broth_log_copilot_notify_incident($ownIncH, $ownNow);
     broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $ownIncH, $ownAAckExpires), $ownAUser, $ownGmAChat, $ownNow);
@@ -2679,6 +2739,8 @@ try {
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownMsInc]);
 
     // --- K: onboarding isolation - the broadcast never reaches the Manager Onboarding Group ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncK = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-k']));
     broth_log_copilot_notify_incident($ownIncK, $ownNow);
     $ownKSentBefore = count($sentMessages);
@@ -2695,6 +2757,8 @@ try {
     // B1-eligible managers registered by earlier, unrelated sections of this same file (same
     // caveat already documented elsewhere in this file). The actual property under test is
     // isolation from B2/B3, not an exact recipient list. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncL = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-l']));
     broth_log_copilot_notify_incident($ownIncL, $ownNow);
     $ownLDestinations = broth_log_copilot_incident_known_destinations($ownIncL);
@@ -2709,6 +2773,8 @@ try {
     // --- M: repeated processing (webhook-retry style) of the identical successful ACK callback
     // never duplicates business state or the broadcast - the single-use replay-protected token
     // already guarantees this (broth_log_callback_replays), verified explicitly here. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncM = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-m']));
     broth_log_copilot_notify_incident($ownIncM, $ownNow);
     $ownMToken = broth_log_copilot_create_callback_token('ack', $ownIncM, $ownAAckExpires);
@@ -2722,6 +2788,8 @@ try {
 
     // --- N: partial Telegram send failure during the broadcast never rolls back the canonical ACK;
     // only the failed destination remains retryable, the succeeded one is not resent. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncN = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-n']));
     broth_log_copilot_notify_incident($ownIncN, $ownNow);
     $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $ownGmBChat): array {
@@ -2750,6 +2818,8 @@ try {
 
     // --- O: a historical/frozen incident is unaffected by this feature - ACKing one (if a human
     // manually reaches it) works normally and it still never resumes automatic reminders. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownOIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'businessDate' => '2026-08-20', 'responseId' => 'resp-own-o']));
     broth_log_copilot_freeze_pre_cutover_incidents($ownNow);
     expect_eq(q1("SELECT escalation_lock_expires_at FROM broth_log_incidents WHERE incident_id=?", [$ownOIncId])['escalation_lock_expires_at'], BROTH_LOG_COPILOT_FROZEN_LOCK_SENTINEL, 'O: sanity - the historical incident is frozen');
@@ -2769,6 +2839,8 @@ try {
     // --- J: manually invoking the broadcast again when every destination is already a duplicate
     // adds zero new events (the underlying send-level idempotency was always correct; this proves
     // the SUMMARY event now matches it). ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $auditJInc = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-audit-j']));
     broth_log_copilot_notify_incident($auditJInc, $ownNow);
     broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $auditJInc, $ownAAckExpires), $ownAUser, $ownGmAChat, $ownNow);
@@ -2782,6 +2854,8 @@ try {
     // --- K: every destination fails on the first attempt - must NOT record a false
     // "broadcast_sent" event, since nothing was actually delivered. A later attempt that finally
     // succeeds records exactly one event, the first time real delivery genuinely happens. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $auditKInc = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-audit-k']));
     broth_log_copilot_notify_incident($auditKInc, $ownNow);
     $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
@@ -2802,6 +2876,8 @@ try {
     // --- L: partial send (one destination succeeds, one fails) on the FIRST attempt - the
     // canonical broadcast genuinely happened (at least partially), so exactly one truthful event
     // is recorded, matching the existing partial-success semantics used throughout this file. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $auditLInc = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-audit-l']));
     broth_log_copilot_notify_incident($auditLInc, $ownNow);
     $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages, $ownGmBChat): array {
@@ -2874,6 +2950,8 @@ try {
     run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$cutEarlyMgr, $cutEarlyChat]);
 
     // --- 1: manager authorized before an incident exists -> receives its initial alert ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $cutOldIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-old']));
     $cutOldCreatedAt = q1("SELECT created_at FROM broth_log_incidents WHERE incident_id=?", [$cutOldIncId])['created_at'];
     broth_log_copilot_notify_incident($cutOldIncId, $ownNow);
@@ -2921,6 +2999,8 @@ try {
     expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id=?", [$cutOldIncId])['c'], 1, '11: still exactly one canonical incident row - no duplicate was created by any of this');
 
     // --- 4: the SAME late manager receives a genuinely NEW incident created after their own authorization ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $cutNewIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-new']));
     // create_incident() always stamps created_at with the real wall-clock time, unaffected by
     // whatever $now is later passed to notify_incident() (that only controls callback-token expiry)
@@ -3008,6 +3088,8 @@ try {
     run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49EarlyMgr, $pr49EarlyChat]);
 
     // --- old incident, created before the late manager's authorization ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pr49OldIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-old']));
     run("UPDATE broth_log_incidents SET created_at=? WHERE incident_id=?", ['2026-08-26 01:00:00', $pr49OldIncId]);
     broth_log_copilot_notify_incident($pr49OldIncId, new DateTimeImmutable('2026-08-26 01:00:00 UTC'));
@@ -3071,6 +3153,8 @@ try {
     run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pr49LateBoundaryMgr, 'PR49 Late Boundary', 'manager', json_encode(['B1']), '2026-08-26 03:00:01']);
     run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49LateBoundaryMgr, $pr49LateBoundaryChat]);
 
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pr49NewIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-new']));
     run("UPDATE broth_log_incidents SET created_at=? WHERE incident_id=?", [$pr49NewCreatedAt, $pr49NewIncId]);
     broth_log_copilot_notify_incident($pr49NewIncId, new DateTimeImmutable($pr49NewCreatedAt . ' UTC'));
@@ -3094,6 +3178,8 @@ try {
 
     // --- 14: B2/B3 unaffected - the same classification logic, applied on a different branch,
     // behaves identically and independently (it never references branch at all). ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pr49B2IncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B2', 'responseId' => 'resp-pr49-b2']));
     broth_log_copilot_notify_incident($pr49B2IncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
     $pr49B2Known = broth_log_copilot_incident_known_destinations($pr49B2IncId);
@@ -3113,6 +3199,8 @@ try {
         $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
         return ['sent' => true, 'mock' => true];
     };
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pr49PartialIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-partial']));
     broth_log_copilot_notify_incident($pr49PartialIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
     $pr49PartialDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49PartialIncId]), 'chat_id');
@@ -3166,6 +3254,8 @@ try {
 
     // --- 19: callback response behavior unchanged - a valid ACK callback press still returns the
     // expected structured response after this change. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pr49CbIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-cb']));
     broth_log_copilot_notify_incident($pr49CbIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
     $pr49CbExpires = (new DateTimeImmutable('2026-08-26 03:00:00 UTC'))->modify('+15 minutes')->getTimestamp();
@@ -3182,6 +3272,8 @@ try {
     $pr49DeactMgr = '935'; $pr49DeactChat = '910935001';
     run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pr49DeactMgr, 'PR49 Deact', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
     run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49DeactMgr, $pr49DeactChat]);
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pr49DeactIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-deact']));
     broth_log_copilot_notify_incident($pr49DeactIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
     $pr49DeactDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49DeactIncId]), 'chat_id');
@@ -3196,6 +3288,8 @@ try {
     $pr49BranchMgr = '936'; $pr49BranchChat = '910936001';
     run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES (?,?,?,?,1,?)", [$pr49BranchMgr, 'PR49 Branch', 'manager', json_encode(['B1']), '2020-01-01 00:00:00']);
     run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$pr49BranchMgr, $pr49BranchChat]);
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pr49BranchIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-branch']));
     broth_log_copilot_notify_incident($pr49BranchIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
     $pr49BranchDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49BranchIncId]), 'chat_id');
@@ -3209,6 +3303,8 @@ try {
     // Ops/routing destination must fail closed (excluded), never be silently assumed to be Ops
     // merely because it isn't a manager. ---
     $pr49UnknownChat = 'pr49-orphaned-unrecognized-chat-id';
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pr49UnknownIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-unknown']));
     broth_log_copilot_notify_incident($pr49UnknownIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
     run("INSERT INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,status,sent_at) VALUES (?,?,?,?,?, 'sent', ?)",
@@ -3222,6 +3318,8 @@ try {
     // trace. Once B1's Ops routing changes, the OLD Ops chat_id no longer positively matches and is
     // excluded from further ownership broadcasts for incidents that were originally alerted under
     // the old routing. This test locks in that decision as intentional, not an accidental regression. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pr49RouteChangeIncId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-pr49-routechange']));
     broth_log_copilot_notify_incident($pr49RouteChangeIncId, new DateTimeImmutable('2026-08-26 03:00:00 UTC'));
     $pr49RouteChangeDelivered = array_column(q("SELECT chat_id FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$pr49RouteChangeIncId]), 'chat_id');
@@ -3261,6 +3359,8 @@ try {
     run("INSERT INTO broth_log_private_chat_registrations (telegram_user_id, private_chat_id) VALUES (?,?)", [$asEarlyMgr, $asEarlyChat]);
 
     // --- boundary: just under 4 hours total age -> NOT auto_stop, normal escalation logic applies ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $asBoundaryUnderId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-under']));
     run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:00:00', last_reminder_at=NULL, current_level=1, state='detected' WHERE incident_id=?", [$asBoundaryUnderId]);
     $asUnderDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 03:59:59 UTC')), fn($d) => $d['incident']['incident_id'] === $asBoundaryUnderId));
@@ -3268,13 +3368,16 @@ try {
     expect_true(($asUnderDue[0]['action'] ?? '') !== 'auto_stop', 'boundary: at 1 second under 4 hours, the action is NOT auto_stop - normal escalation cadence still governs');
 
     // --- boundary: at exactly 4 hours total age -> auto_stop, regardless of current level ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $asBoundaryAtId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-at']));
     run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:05:00', last_reminder_at=NULL, current_level=3, state='escalated_level_3' WHERE incident_id=?", [$asBoundaryAtId]);
     $asAtDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 04:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asBoundaryAtId));
     expect_eq(count($asAtDue), 1, 'boundary: exactly one due action at exactly 4:00:00 elapsed');
     expect_eq($asAtDue[0]['action'] ?? '', 'auto_stop', 'boundary: at exactly 4 hours elapsed, action is auto_stop even though the incident is already at level 3 (would otherwise be due for an L3 reminder)');
 
-    // --- applying auto_stop: state transitions, active_key freed, reminders stop for good ---
+    // --- applying auto_stop: state transitions, active_key stays set (station-level continuity),
+    // reminders stop for good ---
     broth_log_copilot_notify_incident($asBoundaryAtId, new DateTimeImmutable('2026-08-20 00:00:00 UTC'));
     $asBeforeActiveKey = q1("SELECT active_key FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId])['active_key'] ?? null;
     expect_true($asBeforeActiveKey !== null, 'sanity: the incident has an active_key before auto_stop (still open/deduping)');
@@ -3283,7 +3386,7 @@ try {
     expect_eq($asApplyResult['action'] ?? '', 'auto_stopped', 'applying auto_stop reports action=auto_stopped');
     $asRow = q1("SELECT state, active_key FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId]);
     expect_eq($asRow['state'] ?? '', 'auto_stopped', 'incident state becomes auto_stopped, never resolved/closed');
-    expect_true($asRow['active_key'] === null, 'active_key is freed on auto_stop, exactly like resolve()/close_missing_shift_incident() - NOT a claim the problem is fixed, only that a fresh future violation can open a fresh incident');
+    expect_eq($asRow['active_key'], $asBeforeActiveKey, 'Owner policy (2026-09-25): active_key is NOT freed on auto_stop - the station\'s unresolved-problem identity must persist so a later still-unsafe reading for the SAME station does not restart a new 4-hour cycle');
     $asStillDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-21 00:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asBoundaryAtId));
     expect_true(empty($asStillDue), 'once auto_stopped, the incident never appears in due_escalations() again - reminders/escalations stop for good');
 
@@ -3314,21 +3417,39 @@ try {
     expect_true($asResolveResult['ok'] ?? false, 'a formerly auto_stopped, now-acknowledged incident can still be Resolved with recheck evidence');
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId])['state'] ?? '', 'resolved', 'Resolve succeeds normally after auto_stop -> acknowledged');
 
-    // --- active_key freed by auto_stop lets a genuinely new violation at the same station/branch/date
-    // open a fresh, freshly-notified incident rather than silently folding into a silenced one. ---
+    // --- Owner policy (2026-09-25): a genuinely new submission (different responseId) for the SAME
+    // station, still unsafe, does NOT open a new incident once the old one is auto_stopped - it is
+    // the same unresolved problem until a safe reading or a human Resolve clears it. This replaces
+    // the old "active_key freed -> fresh incident" expectation, which was exactly the behavior the
+    // Owner's stricter policy forbids. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $asReopenId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-reopen']));
     run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:00:00', last_reminder_at=NULL WHERE incident_id=?", [$asReopenId]);
     $asReopenDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 04:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asReopenId));
     broth_log_copilot_apply_escalation_action($asReopenDue[0], new DateTimeImmutable('2026-08-20 04:00:00 UTC'));
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asReopenId])['state'] ?? '', 'auto_stopped', 'sanity: second fixture incident is also auto_stopped');
+    // Deliberately NO station-clear here - this is the exact scenario the policy governs: a new
+    // submission (different responseId) arrives for the SAME still-unsafe station with no safe
+    // reading or Resolve in between.
+    $asStillUnsafeId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-still-unsafe']));
+    expect_eq($asStillUnsafeId, $asReopenId, 'a new submission for the same still-unsafe station after auto_stop does NOT open a new incident - it is folded into the existing suppressed one');
+    $asStillUnsafeSentBefore = count($sentMessages);
+    expect_true(empty(broth_log_copilot_notify_incident($asStillUnsafeId, new DateTimeImmutable('2026-08-20 04:01:00 UTC'))['sent']), 'notify_incident() still refuses to send for this incident - a new still-unsafe submission never restarts notifications');
+    expect_eq(count($sentMessages), $asStillUnsafeSentBefore, 'sanity - no notification was sent for the still-unsafe rescan');
+
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $asFreshId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-fresh']));
-    expect_true($asFreshId !== $asReopenId && $asFreshId !== '', 'a brand new violation at the same station/branch/date opens a genuinely NEW incident once the old one is auto_stopped, not silently folded into it');
+    expect_true($asFreshId !== $asReopenId && $asFreshId !== '', 'once the station is genuinely cleared (simulated here the same way a safe reading or Resolve would), a brand new violation opens a genuinely NEW incident');
     $asFreshSentBefore = count($sentMessages);
     expect_true(broth_log_copilot_notify_incident($asFreshId, new DateTimeImmutable('2026-08-20 04:01:00 UTC'))['sent'] ?? false, 'the fresh new incident gets its own real initial notification');
     expect_true(count($sentMessages) > $asFreshSentBefore, 'sanity - the fresh incident notification actually sent');
 
     // --- a frozen (pre-cutover) incident, excluded from due_escalations() via the escalation_lock
     // sentinel, is never auto_stopped either - PR #42's freeze mechanism is completely unaffected. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $asFrozenId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-frozen']));
     run("UPDATE broth_log_incidents SET created_at='2020-01-01 00:00:00', level_entered_at='2020-01-01 00:00:00', last_reminder_at=NULL, escalation_lock_expires_at='9999-12-31 23:59:59' WHERE incident_id=?", [$asFrozenId]);
     $asFrozenDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 04:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asFrozenId));
@@ -3362,19 +3483,23 @@ try {
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($asPlaceholders)", $asIncidentIds)['c'] ?? -1), 0, 'auto-stop: no leftover fixture incidents remain');
 
     // ============================================================================
-    // 4-HOUR HARD-STOP SUPPRESSION (Owner policy, 2026-09-25): the cron that feeds critical alerts
-    // (scripts/broth-log-telegram-cron.php) re-derives EVERY still-critical row from today's Google
-    // Sheet on every 5-minute pass, regardless of what happened to the incident it already produced.
-    // Before this fix, auto_stop/resolve freed active_key, so the very next pass re-created a brand
-    // new incident (and a brand new 4-hour alert cycle) for the exact same unchanged source reading -
-    // confirmed against real production history for Sliced Pork Hot, Diced Pork Hot, and Line Freezer
-    // (two incidents sharing one identical fingerprint, 5 minutes apart, the night of 2026-09-24/25).
-    // The fix: broth_log_copilot_create_incident() and broth_log_copilot_create_missing_shift_incident()
-    // now look up prior existence by fingerprint (permanent) instead of active_key (cleared on
-    // resolve/auto_stop/close), and broth_log_copilot_notify_incident() now also excludes auto_stopped
-    // - so a fingerprint that already produced an incident, in ANY state, is never inserted or notified
-    // a second time. A genuinely different submission always carries its own distinct responseId, so
-    // its fingerprint is different and is never affected by any of this.
+    // 4-HOUR HARD-STOP SUPPRESSION (Owner policy, 2026-09-25, then corrected/strengthened same day):
+    // a STATION, not a single submission, is the unit of an unresolved problem. The cron that feeds
+    // critical alerts (scripts/broth-log-telegram-cron.php) re-derives EVERY still-critical row from
+    // today's Google Sheet on every 5-minute pass, regardless of what happened to the incident it
+    // already produced - confirmed against real production history for Sliced Pork Hot, Diced Pork
+    // Hot, and Line Freezer (two incidents sharing one identical fingerprint, 5 minutes apart, the
+    // night of 2026-09-24/25). The original fix (fingerprint-based dedup) stopped the literal same
+    // row from recreating, but the Owner's policy is stricter: a genuinely NEW submission for the
+    // SAME still-unsafe station - a different day, a different responseId - must ALSO not restart
+    // notifications. broth_log_copilot_create_incident() now checks TWO things in order: (1)
+    // fingerprint (permanent, never cleared) - the exact same submission never produces a second
+    // incident, which is what stops Resolve (which frees active_key) from being immediately undone
+    // by the next cron pass re-reading the same never-updated stale sheet row; (2) active_key, now
+    // keyed by (branch, station) and NOT cleared by auto_stop - a later, different submission for the
+    // same still-unsafe station is folded into the same suppressed incident. Only an actual SAFE
+    // reading (broth_log_copilot_process_station_safe_clears()) or a human Resolve frees active_key
+    // and makes the station eligible for a genuinely new incident again.
     // ============================================================================
     $hsStationA = 'slicedPorkHot';
     $hsStationB = 'dicedPorkHot';
@@ -3401,8 +3526,9 @@ try {
     $hsRowAfterStop = q1("SELECT state, resolved_at, active_key, fingerprint FROM broth_log_incidents WHERE incident_id=?", [$hsIncidentId]);
     expect_eq($hsRowAfterStop['state'] ?? '', 'auto_stopped', '4: incident transitions to auto_stopped');
     expect_true($hsRowAfterStop['resolved_at'] === null, '5: auto-stop != resolved - resolved_at stays empty');
-    expect_true($hsRowAfterStop['active_key'] === null, 'sanity: active_key is freed by auto_stop, exactly as before this fix');
+    expect_true($hsRowAfterStop['active_key'] !== null, 'sanity: active_key is NOT freed by auto_stop (station-level continuity) - a later still-unsafe reading for this station must keep finding this incident');
     $hsFingerprint = $hsRowAfterStop['fingerprint'];
+    $hsActiveKey = $hsRowAfterStop['active_key'];
 
     // --- 6-9: the SAME unchanged source reading (identical responseId, therefore identical
     // fingerprint) is rescanned repeatedly - at the next tick, 5 minutes later, and 1 hour later -
@@ -3419,39 +3545,75 @@ try {
         $rescanNotify = broth_log_copilot_notify_incident($rescanId, new DateTimeImmutable($rescanTime));
         expect_true(empty($rescanNotify['sent']), "$label: notify_incident() refuses to send for the auto_stopped incident");
     }
-    expect_eq(count($sentMessages), $hsSentAfterStop, '22: no duplicate notifications were sent across any of the repeated rescans above');
+    expect_eq(count($sentMessages), $hsSentAfterStop, '22/P: no duplicate notifications were sent across any of the repeated rescans above');
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE fingerprint=?", [$hsFingerprint])['c'] ?? -1), 1, '6-9: exactly one incident row exists for this fingerprint no matter how many times it was rescanned');
 
-    // --- 10: a different business date (the only way this exact identity could legitimately recur
-    // day-to-day - the cron only ever scans TODAY's business date, so same-day rescanning, tested
-    // above, is the only real recreation risk) produces a genuinely different fingerprint and is
-    // correctly NOT suppressed. ---
-    $hsNextDayAlert = array_replace($hsAlert, ['responseId' => 'resp-hardstop-a', 'businessDate' => '2026-09-25']);
-    $hsNextDayId = broth_log_copilot_create_incident($hsNextDayAlert);
-    expect_true($hsNextDayId !== $hsIncidentId && $hsNextDayId !== '', '10: the identity rule is scoped to business date - a new business date is never accidentally folded into a prior day\'s suppressed incident');
-
-    // --- 12: a genuinely NEW submission (its own distinct responseId, as a real re-measurement in
-    // the sheet would have) is entirely unaffected by the suppression above and opens its own
-    // incident with its own fresh 4-hour window. ---
+    // --- D/F: a genuinely NEW submission for the SAME still-unsafe station - whether a different
+    // responseId on the same business date, or the identical responseId text on the NEXT business
+    // date (the only way this exact identity could legitimately recur day-to-day, since the cron
+    // only ever scans TODAY's business date) - is folded into the SAME suppressed incident. Owner
+    // policy: only a safe reading or a human Resolve, never a new source row alone, clears this. ---
     $hsNewSubmissionAlert = array_replace($hsAlert, ['responseId' => 'resp-hardstop-a-new-measurement']);
     $hsNewSubmissionId = broth_log_copilot_create_incident($hsNewSubmissionAlert);
-    expect_true($hsNewSubmissionId !== $hsIncidentId && $hsNewSubmissionId !== '', '12: a genuinely new submission (different responseId) creates its own new incident even though the old one for this station is still suppressed');
-    expect_true((broth_log_copilot_notify_incident($hsNewSubmissionId, new DateTimeImmutable('2026-09-25 04:00:00 UTC'))['sent'] ?? false), '12: the new submission\'s incident can be notified normally - suppression is per-fingerprint, not per-station');
+    expect_eq($hsNewSubmissionId, $hsIncidentId, 'D: a genuinely new submission (different responseId), still unsafe, for the same station does NOT open a new incident while the old one is unresolved');
+    expect_true(empty(broth_log_copilot_notify_incident($hsNewSubmissionId, new DateTimeImmutable('2026-09-25 04:00:00 UTC'))['sent']), 'D: notify_incident() still refuses to send - the new submission does not restart notifications');
 
-    // --- 13/23: suppressing Problem A (this station, this branch) must not suppress Problem B (a
+    $hsNextDayAlert = array_replace($hsAlert, ['responseId' => 'resp-hardstop-a', 'businessDate' => '2026-09-25']);
+    $hsNextDayId = broth_log_copilot_create_incident($hsNextDayAlert);
+    expect_eq($hsNextDayId, $hsIncidentId, 'F: the next business date, still unsafe, is folded into the same suppressed incident - active_key is not scoped to business date, so the problem stays silent day-to-day until actually cleared');
+
+    // --- 13/23/J/K: suppressing Problem A (this station, this branch) must not suppress Problem B (a
     // different station) or Problem C (the same station on a different branch). ---
     $hsProblemBAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => $hsStationB, 'station' => 'Diced Pork Hot', 'responseId' => 'resp-hardstop-b', 'businessDate' => '2026-09-24']);
     $hsProblemBId = broth_log_copilot_create_incident($hsProblemBAlert);
     run("UPDATE broth_log_incidents SET created_at='2026-09-24 22:35:51', level_entered_at='2026-09-24 22:35:51' WHERE incident_id=?", [$hsProblemBId]);
     $hsBDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 02:35:51 UTC')), fn($d) => $d['incident']['incident_id'] === $hsProblemBId));
     broth_log_copilot_apply_escalation_action_with_notification($hsBDue[0], new DateTimeImmutable('2026-09-25 02:35:51 UTC'));
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$hsProblemBId])['state'] ?? '', 'auto_stopped', '13: sanity - Problem B (a different station) independently reaches auto_stopped too');
-    expect_eq(broth_log_copilot_create_incident($hsProblemBAlert), $hsProblemBId, '13: Problem B\'s own identical rescan is suppressed independently of Problem A');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$hsProblemBId])['state'] ?? '', 'auto_stopped', '13/J: sanity - Problem B (a different station) independently reaches auto_stopped too');
+    expect_eq(broth_log_copilot_create_incident($hsProblemBAlert), $hsProblemBId, '13/J: Problem B\'s own identical rescan is suppressed independently of Problem A');
 
     $hsProblemCAlert = array_replace($alert, ['branch' => 'B2', 'stationKey' => $hsStationA, 'station' => 'Sliced Pork Hot', 'responseId' => 'resp-hardstop-a', 'businessDate' => '2026-09-24']);
     $hsProblemCId = broth_log_copilot_create_incident($hsProblemCAlert);
-    expect_true($hsProblemCId !== $hsIncidentId && $hsProblemCId !== '', '23: the same station/responseId text on a DIFFERENT branch (B2) is a different fingerprint entirely and is not cross-branch-suppressed by B1\'s suppressed incident');
-    expect_true((broth_log_copilot_notify_incident($hsProblemCId, new DateTimeImmutable('2026-09-25 04:00:00 UTC'))['sent'] ?? false), '23: the B2 incident notifies normally');
+    expect_true($hsProblemCId !== $hsIncidentId && $hsProblemCId !== '', '23/K: the same station on a DIFFERENT branch (B2) has its own independent station_problem_key and is not cross-branch-suppressed by B1\'s suppressed incident');
+    expect_true((broth_log_copilot_notify_incident($hsProblemCId, new DateTimeImmutable('2026-09-25 04:00:00 UTC'))['sent'] ?? false), '23/K: the B2 incident notifies normally');
+
+    // --- G/H: a genuinely SAFE reading, submitted after the incident's own creation, clears
+    // active_key via broth_log_copilot_process_station_safe_clears() - without touching state,
+    // resolved_at, or acknowledged_* (never claims a human resolved it) - and a later unsafe reading
+    // then opens a real new incident with its own fresh 4-hour window. ---
+    // The raw sheet's submittedAt text is parsed in Asia/Ho_Chi_Minh (BROTH_LOG_SHEET_TIMESTAMP_TIMEZONE),
+    // never the America/Chicago business timezone - converting explicitly here, matching the
+    // established pattern elsewhere in this file, rather than hand-picking an offset.
+    $hsSafeReadingSubmittedAt = (new DateTimeImmutable('2026-09-25 00:00:00', new DateTimeZone('America/Chicago')))
+        ->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh'))->format('n/j/Y G:i:s');
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($hsStationA, $hsSafeReadingSubmittedAt) {
+        if ($branch !== 'B1') return [];
+        return [[
+            'branch' => 'B1',
+            'businessDate' => '2026-09-25',
+            'businessTime' => '00:00',
+            'submittedAt' => $hsSafeReadingSubmittedAt,
+            'responseId' => 'resp-hardstop-a-safe-reading',
+            'employeeName' => '',
+            'readings' => [
+                ['key' => $hsStationA, 'label' => 'Sliced Pork Hot', 'category' => 'hot', 'temperature' => 100.0, 'unit' => 'F', 'severity' => 'safe', 'target' => '95F - 105F', 'correctiveAction' => ''],
+            ],
+        ]];
+    };
+    $hsClears = broth_log_copilot_process_station_safe_clears();
+    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
+    expect_true(in_array($hsIncidentId, array_column($hsClears, 'incident_id'), true), 'G: a safe reading submitted after the incident was created clears its active_key via broth_log_copilot_process_station_safe_clears()');
+    $hsRowAfterClear = q1("SELECT state, resolved_at, resolved_by, acknowledged_at, active_key FROM broth_log_incidents WHERE incident_id=?", [$hsIncidentId]);
+    expect_true($hsRowAfterClear['active_key'] === null, 'G: active_key is now freed - the station is eligible for a new incident again');
+    expect_eq($hsRowAfterClear['state'], 'auto_stopped', 'G: the original incident\'s state is untouched by the safe-clear - it stays auto_stopped, exactly as Needs Attention/Open Issues already show it');
+    expect_true($hsRowAfterClear['resolved_at'] === null && $hsRowAfterClear['resolved_by'] === null, 'G: the safe-clear never claims a human Resolve - resolved_at/resolved_by stay empty');
+    expect_true($hsRowAfterClear['acknowledged_at'] === null, 'G: the safe-clear never touches ACK/ownership fields either - orthogonal to the ACK flow, per instruction');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='auto_cleared_safe_reading'", [$hsIncidentId])['c'] ?? -1), 1, 'G: the clearing is recorded as a plain audit event, never silent - Q: historical audit preserved');
+
+    $hsRearmAlert = array_replace($hsAlert, ['responseId' => 'resp-hardstop-a-rearmed']);
+    $hsRearmId = broth_log_copilot_create_incident($hsRearmAlert);
+    expect_true($hsRearmId !== $hsIncidentId && $hsRearmId !== '', 'H: once the station is genuinely cleared by a safe reading, a later unsafe reading opens a real NEW incident');
+    expect_true((broth_log_copilot_notify_incident($hsRearmId, new DateTimeImmutable('2026-09-25 05:05:00 UTC'))['sent'] ?? false), 'H/I: the new incident gets its own fresh initial notification - a genuinely new 4-hour window, independent of the cleared one');
 
     // --- 18: missing_shift auto-close still works correctly for an incident that already
     // auto_stopped - the close-lookup was changed from active_key to fingerprint precisely because
@@ -3475,7 +3637,7 @@ try {
     expect_eq((int)($hsOpsDeliveries[0]['c'] ?? -1), 1, '21: Ops received exactly one initial-notification delivery for the original incident - the suppressed rescans never produced a second/duplicate initial notification');
 
     // Cleanup
-    $hsIncidentIds = [$hsIncidentId, $hsNextDayId, $hsNewSubmissionId, $hsProblemBId, $hsProblemCId, $hsMsId];
+    $hsIncidentIds = array_values(array_unique([$hsIncidentId, $hsNextDayId, $hsNewSubmissionId, $hsProblemBId, $hsProblemCId, $hsRearmId, $hsMsId]));
     $hsPlaceholders = implode(',', array_fill(0, count($hsIncidentIds), '?'));
     run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds);
     run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds);
@@ -3533,6 +3695,8 @@ try {
     expect_eq($nuGmWrongBranch['intent'], 'menu_forbidden', 'a manager cannot reach a Needs Attention view for a branch they are not authorized for');
 
     // --- Now create real incidents and prove the aggregation reflects them correctly ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $nuUnackedId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-nu-unacked', 'businessDate' => $nuToday]));
     run("UPDATE broth_log_incidents SET business_date=? WHERE incident_id=?", [$nuToday, $nuUnackedId]);
     $nuDailyActionRequired = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
@@ -3568,6 +3732,8 @@ try {
     expect_eq($nuAttentionAfterResolve['intent'], 'menu_attention_empty', '30: a resolved incident is excluded from Needs Attention - the empty state returns');
 
     // --- 21/29: an unresolved auto_stopped incident remains visible and drives ATTENTION NEEDED ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $nuAutoStoppedId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-nu-autostop', 'businessDate' => $nuToday]));
     run("UPDATE broth_log_incidents SET state='auto_stopped', active_key=NULL, business_date=? WHERE incident_id=?", [$nuToday, $nuAutoStoppedId]);
     $nuDailyAutoStopped = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
@@ -3580,6 +3746,8 @@ try {
     run("UPDATE broth_log_incidents SET state='resolved' WHERE incident_id=?", [$nuAutoStoppedId]);
 
     // --- 32: historical/wrong-branch incidents never leak into today's attention or another store's ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $nuHistoricalId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-nu-historical', 'businessDate' => '2020-01-01']));
     run("UPDATE broth_log_incidents SET business_date='2020-01-01' WHERE incident_id=?", [$nuHistoricalId]);
     $nuDailyStillClean = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
@@ -3668,8 +3836,12 @@ try {
 
     // --- 5: Needs Attention shows today's items before an older backlog item, even though the
     // older item was created first (created_at ASC would otherwise put it first). ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $hgTodayIssueId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-today', 'businessDate' => $hgDate]));
     run("UPDATE broth_log_incidents SET business_date=?, created_at='2026-08-25 12:00:00' WHERE incident_id=?", [$hgDate, $hgTodayIssueId]);
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $hgOlderIssueId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-older', 'businessDate' => '2020-01-01']));
     run("UPDATE broth_log_incidents SET business_date='2020-01-01', created_at='2020-01-01 08:00:00' WHERE incident_id=?", [$hgOlderIssueId]);
     $hgAttentionOrdered = broth_log_copilot_menu_callback_response('menu:attention_branch:B1', $hgUser, 'private', $hgJustPastClose);
@@ -3695,6 +3867,8 @@ try {
     // --- 6: Review Date is a historical outcome summary, never silently re-painted as "ALL GOOD"
     // merely because that date's incident has since been resolved, and never silently hidden if it
     // is still unresolved today. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $hgReviewResolvedId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-review-resolved', 'businessDate' => '2020-06-01']));
     run("UPDATE broth_log_incidents SET business_date='2020-06-01' WHERE incident_id=?", [$hgReviewResolvedId]);
     broth_log_copilot_resolve($hgReviewResolvedId, $hgUser, 38.0, 'fixed that day', $ownNow);
@@ -3703,6 +3877,8 @@ try {
     expect_true(str_contains($hgReviewResolvedView['message'], 'Resolved later: 1'), '6: Review Date distinguishes "resolved later" from the day\'s own live condition');
     expect_true(str_contains($hgReviewResolvedView['message'], 'Outcome: ') && str_contains($hgReviewResolvedView['message'], 'Resolved'), '6: a fully-resolved historical day reports outcome Resolved, worded as a final outcome, not conflated with a live ALL GOOD health check');
 
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $hgReviewUnresolvedId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-review-unresolved', 'businessDate' => '2020-06-02']));
     run("UPDATE broth_log_incidents SET business_date='2020-06-02' WHERE incident_id=?", [$hgReviewUnresolvedId]);
     $hgReviewUnresolvedView = broth_log_copilot_menu_callback_response('menu:review_nav:B1:2020-06-02', $hgUser, 'private', $ownNow);
@@ -3713,6 +3889,8 @@ try {
     // --- 1: manager-facing Details never leaks the internal incident id/ref, for either incident
     // type - only operational information. ---
     putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $hgIdLeakTempId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-hg-idleak-temp']));
     $hgIdLeakTempDetails = broth_log_copilot_incident_message(q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$hgIdLeakTempId]), 'details');
     expect_true(!str_contains($hgIdLeakTempDetails, $hgIdLeakTempId), '1: temperature Details text never contains the raw incident id');
@@ -3785,6 +3963,8 @@ try {
 
     // --- Exact real screenshot regression cases (Section 11): the specific station/reading pairs
     // reported as broken in production, each independently reproduced end-to-end. ---
+    // [test-isolation] fresh station identities for this block (2026-09-25 hard-stop policy: station-level continuity would otherwise fold these into earlier fixtures reusing the same stations, e.g. the bowlWarmer min-violation fixture near the top of this file).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $slicedPorkAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => 'slicedPorkHot', 'station' => 'Sliced Pork Hot', 'responseId' => 'resp-screenshot-sliced-pork', 'temperature' => '158F', 'target' => '<= -999F']);
     $slicedPorkId = broth_log_copilot_create_incident($slicedPorkAlert);
     $slicedPorkRow = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$slicedPorkId]);
@@ -3879,6 +4059,8 @@ try {
     // --- 6: broth_log_copilot_incident_known_destinations() (shared-ownership broadcast recipient
     // safety) automatically respects the same per-branch cutover, since it calls
     // manager_dm_chat_ids() internally - no separate fix needed there. ---
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pbaOldB2Incident = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B2', 'responseId' => 'resp-pba-old-b2']));
     run("UPDATE broth_log_incidents SET created_at='2026-09-01 00:00:00' WHERE incident_id=?", [$pbaOldB2Incident]);
     run("INSERT INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,status,sent_at) VALUES (?,?,?,?,?, 'sent', ?)",
@@ -3886,6 +4068,8 @@ try {
     $pbaOldB2Known = broth_log_copilot_incident_known_destinations($pbaOldB2Incident);
     expect_true(!in_array($pbaChat, $pbaOldB2Known, true), '6: known_destinations() also excludes the manager from an old, pre-grant B2 incident despite a real historical (contaminated) delivery row - the per-branch cutover applies to broadcast eligibility too');
 
+    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $pbaNewB2Incident = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B2', 'responseId' => 'resp-pba-new-b2']));
     run("UPDATE broth_log_incidents SET created_at='2026-09-26 00:00:00' WHERE incident_id=?", [$pbaNewB2Incident]);
     run("INSERT INTO broth_log_outbound_deliveries (delivery_key,incident_id,chat_id,message_kind,message_text,status,sent_at) VALUES (?,?,?,?,?, 'sent', ?)",

@@ -1274,20 +1274,50 @@ function broth_log_copilot_process_missing_shifts(?DateTimeImmutable $now = null
     return $results;
 }
 
-// Owner policy (2026-09-25): a station's unresolved problem (broth_log_copilot_create_incident()'s
-// active_key, no longer cleared by auto_stop) must stay suppressed until either a human Resolve
-// happens, or a genuinely SAFE reading is observed for that station - whichever comes first. This
-// function is the second path: run once per cron cycle, it finds every temperature incident that
-// still holds a station-level active_key (open OR auto_stopped - ACK status is irrelevant here,
-// deliberately kept orthogonal to the ACK/Resolve flow per Owner instruction) and checks whether the
-// branch's canonical source data has a safe reading for that exact station submitted after the
-// incident's own creation. If so, active_key is freed - the SAME mechanism a human Resolve already
-// uses - so the next still-unsafe reading opens a genuinely new incident with its own fresh 4-hour
-// window. This never touches state/resolved_by/resolved_at/acknowledged_* - it does not claim a
-// human resolved anything, and Needs Attention/Open Issues/Review Date continue to show the original
-// incident exactly as before (still auto_stopped, still STILL OPEN) unless a human later ACKs or
-// Resolves it directly. The only observable effect is that station becoming eligible for a new
-// incident again; a plain audit event (auto_cleared_safe_reading) records when and why.
+// Owner policy (2026-09-25, corrected 2026-09-26 for cross-process ordering): a station's
+// unresolved problem must be governed by the FULL ordered history of real observations since the
+// problem began, never by "does *a* safe reading exist" in isolation. Detection
+// (broth_log_copilot_create_incident(), reached via an HTTP request triggered by the separate cron
+// process scripts/broth-log-telegram-cron.php) and this reconciliation sweep (run from
+// scripts/broth-log-telegram-bot-worker.php, its own separate cron process) have NO ordering
+// guarantee relative to each other - they are different OS processes on independent 5-minute
+// schedules with no shared lock. A naive "clear if any safe reading exists after creation" (the
+// 2026-09-25 version of this function) could rearm a station off a stale safe reading even though a
+// newer unsafe reading already exists in the same source data, and because a genuinely new unsafe
+// submission that lands on a bad-ordering tick gets folded into the still-open old incident by
+// create_incident()'s active_key check (which never records that submission's own fingerprint
+// anywhere), the only reliable place left to notice and correct that is here, on this sweep's very
+// next pass - independent of which process happened to run first.
+//
+// For every station with a currently-tracked problem (an incident still holding this station's
+// active_key, in ANY state including auto_stopped - ACK/Resolve status is irrelevant, kept
+// orthogonal to that flow per Owner instruction), this walks every real reading for that station
+// submitted after the incident's own creation, in chronological order (ties broken deterministically
+// by responseId - a Google Sheets response id is assigned in submission order, so this is never
+// ambiguous), and derives the Owner's state machine: UNSAFE -> UNSAFE is the same unresolved
+// problem; UNSAFE -> SAFE is a rearm boundary; SAFE -> UNSAFE starts a genuinely new problem. Only
+// the FINAL state after walking the complete history decides the outcome:
+//
+// - Final state SAFE: the incident's active_key is freed - the same state-preserving,
+//   never-claims-a-human-resolved-it clear as before. No new incident is created now; the next
+//   genuinely new unsafe reading (whenever detection or a later pass of this sweep sees it) opens
+//   one normally.
+// - Final state UNSAFE, no rearm boundary crossed since this incident's own creation: no change -
+//   the ordinary "still the same unresolved problem" case, unaffected by any of this.
+// - Final state UNSAFE, but a rearm boundary WAS crossed after this incident's creation (a safe
+//   reading occurred, then a later unsafe one did too): the OLD incident is stale for this purpose -
+//   its active_key is freed - and a genuinely NEW incident is minted and notified directly here,
+//   from the reading that started the new unsafe run, rather than waiting on the separate detection
+//   process to eventually get the ordering right. Built with that reading's own responseId, so if
+//   detection independently processes the same reading later (or already tried to on a bad-ordering
+//   tick, before this sweep ran), broth_log_copilot_create_incident()'s fingerprint check finds this
+//   same row first and simply returns its id - never a duplicate.
+//
+// This never touches state/resolved_by/resolved_at/acknowledged_* on the old incident - it does not
+// claim a human resolved anything - and Needs Attention/Open Issues/Review Date continue to show it
+// exactly as before (still auto_stopped, still STILL OPEN) unless a human later ACKs/Resolves it
+// directly. A plain audit event (auto_cleared_safe_reading) records every clear and its observed
+// final state; the new incident's own 'detected' audit event records its creation, same as any other.
 function broth_log_copilot_process_station_safe_clears(): array {
     if (!broth_log_copilot_enabled()) return [];
     $cleared = [];
@@ -1305,7 +1335,10 @@ function broth_log_copilot_process_station_safe_clears(): array {
                 $recordsByBranch[$branch] = [];
             }
         }
-        $latestSafeAfterCreation = null;
+
+        // Every real reading for this exact station submitted after this incident's own creation -
+        // safe AND unsafe alike (unlike the 2026-09-25 version, which only ever looked at safe ones).
+        $observations = [];
         foreach ($recordsByBranch[$branch] as $record) {
             $parsed = broth_log_parse_submission_datetime((string)($record['submittedAt'] ?? ''));
             if (!$parsed) continue;
@@ -1316,13 +1349,70 @@ function broth_log_copilot_process_station_safe_clears(): array {
             if (!$reading || $reading['temperature'] === null) continue;
             $parsedUtc = $parsed->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
             if ($parsedUtc <= (string)$problem['created_at']) continue;
-            if (broth_log_severity_for($sop, (float)$reading['temperature']) !== 'safe') continue;
-            if ($latestSafeAfterCreation === null || $parsedUtc > $latestSafeAfterCreation) $latestSafeAfterCreation = $parsedUtc;
+            $observations[] = [
+                'timestamp' => $parsedUtc,
+                'responseId' => (string)($record['responseId'] ?? ''),
+                'safe' => broth_log_severity_for($sop, (float)$reading['temperature']) === 'safe',
+                'record' => $record,
+                'reading' => $reading,
+            ];
         }
-        if ($latestSafeAfterCreation === null) continue;
+        if (!$observations) continue;
+
+        // Deterministic chronological order: timestamp first, responseId as a stable tie-breaker.
+        usort($observations, fn($a, $b) => $a['timestamp'] <=> $b['timestamp'] ?: $a['responseId'] <=> $b['responseId']);
+
+        // Walk the ordered history to find the final state and, if a new unsafe run started after a
+        // rearm, the reading that started it.
+        $currentlySafe = false; // this incident exists because the station was unsafe when created
+        $rearmedAfterCreation = false;
+        $newProblemTrigger = null;
+        foreach ($observations as $obs) {
+            if ($obs['safe']) {
+                $currentlySafe = true;
+                $rearmedAfterCreation = true;
+                $newProblemTrigger = null;
+            } elseif ($currentlySafe) {
+                $currentlySafe = false;
+                $newProblemTrigger = $obs;
+            }
+            // else: unsafe following unsafe - no transition, the same run continues.
+        }
+        if (!$rearmedAfterCreation) continue; // never went safe - still the original unresolved problem
+
+        $lastObservation = end($observations);
         run("UPDATE broth_log_incidents SET active_key=NULL, updated_at=datetime('now') WHERE incident_id=?", [$problem['incident_id']]);
-        broth_log_copilot_audit((string)$problem['incident_id'], 'auto_cleared_safe_reading', null, ['observed_safe_at' => $latestSafeAfterCreation]);
+        broth_log_copilot_audit((string)$problem['incident_id'], 'auto_cleared_safe_reading', null, [
+            'observed_safe_at' => $lastObservation['timestamp'] ?? null,
+            'final_state' => $currentlySafe ? 'safe' : 'unsafe',
+        ]);
         $cleared[] = ['branch' => $branch, 'station_key' => $stationKey, 'incident_id' => $problem['incident_id']];
+
+        if ($currentlySafe || $newProblemTrigger === null) continue; // final state is genuinely safe
+
+        // Final state is unsafe after a rearm boundary: mint and notify the new incident directly,
+        // guaranteeing recovery even if detection already silently folded this exact reading into
+        // the now-cleared old incident on a bad-ordering tick.
+        $record = $newProblemTrigger['record'];
+        $reading = $newProblemTrigger['reading'];
+        $newAlert = [
+            'branch' => $branch,
+            'responseId' => $newProblemTrigger['responseId'],
+            'stationKey' => $stationKey,
+            'station' => (string)($reading['label'] ?? $stationKey),
+            'severity' => 'critical',
+            'businessDate' => (string)($record['businessDate'] ?? ''),
+            'businessTime' => (string)($record['businessTime'] ?? ''),
+            'employee' => (string)($record['employeeName'] ?? ''),
+            'temperature' => $reading['temperature'],
+            'target' => (string)($reading['target'] ?? ''),
+            'correctiveAction' => (string)($record['correctiveAction'] ?? ($reading['correctiveAction'] ?? '')),
+        ];
+        $newIncidentId = broth_log_copilot_create_incident($newAlert);
+        if ($newIncidentId !== '' && $newIncidentId !== $problem['incident_id']) {
+            broth_log_copilot_notify_incident($newIncidentId);
+            $cleared[count($cleared) - 1]['rearmed_incident_id'] = $newIncidentId;
+        }
     }
     return $cleared;
 }

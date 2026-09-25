@@ -998,11 +998,23 @@ function broth_log_copilot_consume_compact_callback(string $data, ?int $now = nu
     return db()->changes() > 0 ? ['action' => $row['action'], 'incident_id' => $row['incident_id']] : null;
 }
 
+// $fingerprint is tied to one specific source submission (branch+responseId+station+severity+
+// businessDate) - it can never legitimately mean two different real-world problems. The cron that
+// feeds this (broth-log-telegram-cron.php) re-derives the SAME still-critical alert from the SAME
+// unchanged Google Sheet row on every 5-minute pass for as long as that row remains today's data,
+// regardless of what happened to the incident it already produced. Looking up by fingerprint (never
+// cleared) rather than active_key (cleared to NULL on resolve/auto_stop/close, precisely so a
+// GENUINELY different submission can open a fresh incident) means a fingerprint that has already
+// produced an incident - in any state, including auto_stopped - is never inserted a second time.
+// This is the fix for the "auto-stop frees active_key, next scan recreates the same stale alert"
+// defect: a station stuck unsafe under the SAME original reading gets exactly one incident and one
+// 4-hour notification window, ever, no matter how many times the cron rescans it. A real new
+// employee submission always carries its own distinct responseId/fingerprint and is never affected.
 function broth_log_copilot_create_incident(array $alert): string {
     if (!broth_log_copilot_enabled()) return '';
     $stationKey = (string)($alert['stationKey'] ?? '');
     $fingerprint = hash('sha256', implode('|', [$alert['branch'] ?? '', $alert['responseId'] ?? '', $stationKey ?: ($alert['station'] ?? ''), $alert['severity'] ?? 'critical', $alert['businessDate'] ?? '']));
-    $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=?", [$fingerprint]);
+    $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE fingerprint=? ORDER BY created_at DESC LIMIT 1", [$fingerprint]);
     if ($existing) return (string)$existing['incident_id'];
     $incidentId = 'bl-' . substr($fingerprint, 0, 10) . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(3));
     $nowTs = gmdate('Y-m-d H:i:s');
@@ -1111,7 +1123,14 @@ function broth_log_copilot_create_missing_shift_incident(string $branch, string 
     if (!broth_log_copilot_enabled()) return '';
     $branch = strtoupper($branch);
     $activeKey = broth_log_copilot_missing_shift_active_key($branch, $businessDate, $shift);
-    $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=?", [$activeKey]);
+    // Looked up by fingerprint (never cleared), not active_key (cleared to NULL on close/auto_stop)
+    // - same reasoning and same fix as broth_log_copilot_create_incident(). A missing shift's
+    // identity is the (branch, business_date, shift) tuple itself, not a submission id, so once it
+    // has ever produced an incident there is no legitimate reason to ever produce a second one for
+    // that exact same day/shift: an auto_stopped-without-a-submission shift stays silently open
+    // (still genuinely missing, still the same day), and a real submission still closes it via
+    // broth_log_copilot_close_missing_shift_incident() exactly as before - unaffected by this check.
+    $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE fingerprint=? ORDER BY created_at DESC LIMIT 1", [$activeKey]);
     if ($existing) return (string)$existing['incident_id'];
     // Deliberately "mshift", not "missing": broth_log_copilot_parse()'s keyword router treats any
     // message text containing the substring "missing" as the unrelated missing_logs intent (a
@@ -1198,7 +1217,14 @@ function broth_log_copilot_process_missing_shifts(?DateTimeImmutable $now = null
         foreach (['AM', 'PM'] as $shift) {
             $status = broth_log_shift_daily_status($shift, $records, $businessDate, $now);
             $activeKey = broth_log_copilot_missing_shift_active_key($branch, $businessDate, $shift);
-            $existing = q1("SELECT incident_id, state FROM broth_log_incidents WHERE active_key=? AND incident_type='missing_shift'", [$activeKey]);
+            // Looked up by fingerprint, not active_key: an auto_stopped missing-shift incident has
+            // active_key=NULL (freed, same as temperature incidents), so an active_key lookup here
+            // would silently lose track of it - the MISSING branch below would then call
+            // broth_log_copilot_create_missing_shift_incident() again (harmlessly a no-op thanks to
+            // its own fingerprint check) but, more importantly, a LATE real submission arriving after
+            // auto-stop would never be found by the auto-close branch either, leaving a genuinely
+            // late-but-submitted shift stuck in auto_stopped forever instead of closing as intended.
+            $existing = q1("SELECT incident_id, state FROM broth_log_incidents WHERE fingerprint=? AND incident_type='missing_shift'", [$activeKey]);
 
             if ($status['status'] === 'MISSING') {
                 if (!$existing && broth_log_shift_alert_deadline_passed($shift, $now)) {
@@ -1427,9 +1453,12 @@ function broth_log_copilot_apply_escalation_action(array $action, ?DateTimeImmut
     }
     if ($action['action'] === 'auto_stop') {
         // active_key=NULL, exactly like resolve()/close_missing_shift_incident() - this is NOT a
-        // claim the underlying problem is fixed, only that nobody responded in time. Freeing
-        // active_key lets a genuinely new violation at the same station/branch/date open a fresh,
-        // freshly-notified incident instead of silently folding into this now-silent one forever.
+        // claim the underlying problem is fixed, only that nobody responded in time. active_key is
+        // still freed (a genuinely NEW submission - a different fingerprint entirely - must always
+        // be able to open its own fresh incident), but it is fingerprint, not active_key, that
+        // broth_log_copilot_create_incident()/create_missing_shift_incident() now check for prior
+        // existence - so a rescan of this SAME unchanged reading finds this row by fingerprint and
+        // silently reuses it instead of inserting a duplicate. See those functions' comments.
         run("UPDATE broth_log_incidents SET state='auto_stopped', active_key=NULL, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$incident['incident_id'], $lockToken]);
         broth_log_copilot_audit($incident['incident_id'], 'auto_stopped', null, []);
         return ['ok' => true, 'action' => 'auto_stopped', 'incident_id' => $incident['incident_id']];
@@ -1999,10 +2028,15 @@ function broth_log_copilot_send_idempotent(string $deliveryKey, ?string $inciden
     return ['sent' => false, 'reason' => $reason];
 }
 
+// auto_stopped is excluded alongside resolved/closed: broth_log_copilot_create_incident() can now
+// return an already-auto_stopped incident's id when the cron rescans its same unchanged source row
+// (see that function's comment), and this guard is what stops that rescan from ever reaching a real
+// send - including to a manager/tester added to the branch AFTER the original notify already went
+// out, who would otherwise get a fresh "initial notification" idempotent key nothing has used yet.
 function broth_log_copilot_notify_incident(string $incidentId, ?DateTimeImmutable $now = null): array {
     if (!broth_log_copilot_enabled()) return ['sent' => false, 'reason' => 'disabled'];
     $incident = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
-    if (!$incident || in_array($incident['state'], ['resolved','closed'], true)) return ['sent' => false, 'reason' => 'incident_not_open'];
+    if (!$incident || in_array($incident['state'], ['resolved','closed','auto_stopped'], true)) return ['sent' => false, 'reason' => 'incident_not_open'];
     $message = broth_log_copilot_incident_message($incident, 'notify');
     $sendToChat = function (string $chatId) use ($incidentId, $message, $now): array {
         return broth_log_copilot_send_idempotent(

@@ -480,7 +480,18 @@ try {
     ])['queued'], 'stale resolve callback enqueues');
     $staleResolve = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:05:00 UTC')), '1024');
     expect_eq($staleResolve['intent'] ?? '', 'callback_stale', 'stale resolve callback is rejected after resolution');
-    expect_true(broth_log_copilot_create_incident($alert) !== $incidentId, 'critical-safe-critical creates a new incident after resolve');
+    // Owner policy (2026-09-25): a fingerprint is one specific source submission's identity - the
+    // SAME submission (same responseId) must NEVER open a second incident after resolve/auto_stop,
+    // no matter how many times a cron rescan re-derives it from the still-critical original sheet
+    // row. This replaces the old "same $alert -> new incident" expectation below, which encoded the
+    // exact recreation defect the Owner reported (auto-stop/resolve freed active_key, and the next
+    // cron pass re-created a fresh incident for a source reading that never actually changed).
+    expect_eq(broth_log_copilot_create_incident($alert), $incidentId, 'same source submission (same responseId) after resolve does NOT create a new incident - it is the identical stale reading, not a new problem');
+    // A genuinely NEW submission - its own distinct responseId, exactly as a real re-measurement in
+    // the Google Sheet would have - legitimately opens its own new incident. This is "critical-safe-
+    // critical": the station was fixed, then a real new critical reading came in later.
+    $recurrenceId = broth_log_copilot_create_incident(array_replace($alert, ['responseId' => 'resp-1-recurrence']));
+    expect_true($recurrenceId !== $incidentId && $recurrenceId !== '', 'critical-safe-critical: a genuinely new submission (new responseId) creates a new incident after the prior one resolved');
 
     // --- Approved balanced cadence: T+0 alert, T+5 reminder, T+10 -> L2, T+15 -> L3 (URGENT),
     // then a level-3 reminder every 15 minutes indefinitely until ACK. ---
@@ -3349,6 +3360,127 @@ try {
     run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id IN (?,?)", [$asEarlyMgr, $asLateMgr]);
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id IN (?,?)", [$asEarlyMgr, $asLateMgr]);
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($asPlaceholders)", $asIncidentIds)['c'] ?? -1), 0, 'auto-stop: no leftover fixture incidents remain');
+
+    // ============================================================================
+    // 4-HOUR HARD-STOP SUPPRESSION (Owner policy, 2026-09-25): the cron that feeds critical alerts
+    // (scripts/broth-log-telegram-cron.php) re-derives EVERY still-critical row from today's Google
+    // Sheet on every 5-minute pass, regardless of what happened to the incident it already produced.
+    // Before this fix, auto_stop/resolve freed active_key, so the very next pass re-created a brand
+    // new incident (and a brand new 4-hour alert cycle) for the exact same unchanged source reading -
+    // confirmed against real production history for Sliced Pork Hot, Diced Pork Hot, and Line Freezer
+    // (two incidents sharing one identical fingerprint, 5 minutes apart, the night of 2026-09-24/25).
+    // The fix: broth_log_copilot_create_incident() and broth_log_copilot_create_missing_shift_incident()
+    // now look up prior existence by fingerprint (permanent) instead of active_key (cleared on
+    // resolve/auto_stop/close), and broth_log_copilot_notify_incident() now also excludes auto_stopped
+    // - so a fingerprint that already produced an incident, in ANY state, is never inserted or notified
+    // a second time. A genuinely different submission always carries its own distinct responseId, so
+    // its fingerprint is different and is never affected by any of this.
+    // ============================================================================
+    $hsStationA = 'slicedPorkHot';
+    $hsStationB = 'dicedPorkHot';
+    $hsAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => $hsStationA, 'station' => 'Sliced Pork Hot', 'responseId' => 'resp-hardstop-a', 'businessDate' => '2026-09-24']);
+
+    // --- 1-5: normal lifecycle up to auto-stop, unaffected by this fix. ---
+    $hsIncidentId = broth_log_copilot_create_incident($hsAlert);
+    expect_true($hsIncidentId !== '', '1: an unsafe station creates an incident');
+    $hsSentBefore = count($sentMessages);
+    expect_true(broth_log_copilot_notify_incident($hsIncidentId, new DateTimeImmutable('2026-09-24 22:35:51 UTC'))['sent'] ?? false, '2: the initial notification sends normally before 4 hours');
+    expect_true(count($sentMessages) > $hsSentBefore, '2: sanity - the initial notification batch actually sent');
+    run("UPDATE broth_log_incidents SET created_at='2026-09-24 22:35:51', level_entered_at='2026-09-24 22:35:51' WHERE incident_id=?", [$hsIncidentId]);
+    $hsAckActor = ['telegram_user_id' => '910hs001', 'allowed_branch_list' => ['B1']];
+    $hsAckResult = broth_log_copilot_ack($hsIncidentId, $hsAckActor, new DateTimeImmutable('2026-09-24 22:40:00 UTC'));
+    expect_true($hsAckResult['ok'] ?? false, '3: ACK before 4 hours succeeds');
+    expect_true(empty(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-24 23:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $hsIncidentId)), '3: ACK stops reminders - the acknowledged incident never appears in due_escalations() again');
+    // Un-ACK for the rest of this scenario (simulating the real no-response case) by putting the
+    // fixture back into a live, unacknowledged state before proceeding to the auto-stop walkthrough.
+    run("UPDATE broth_log_incidents SET state='detected', owner_telegram_user_id=NULL, acknowledged_by=NULL, acknowledged_at=NULL WHERE incident_id=?", [$hsIncidentId]);
+
+    $hsDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 02:35:51 UTC')), fn($d) => $d['incident']['incident_id'] === $hsIncidentId));
+    expect_eq($hsDue[0]['action'] ?? '', 'auto_stop', '4: no ACK -> auto_stop is due at exactly 4 hours');
+    broth_log_copilot_apply_escalation_action_with_notification($hsDue[0], new DateTimeImmutable('2026-09-25 02:35:51 UTC'));
+    $hsRowAfterStop = q1("SELECT state, resolved_at, active_key, fingerprint FROM broth_log_incidents WHERE incident_id=?", [$hsIncidentId]);
+    expect_eq($hsRowAfterStop['state'] ?? '', 'auto_stopped', '4: incident transitions to auto_stopped');
+    expect_true($hsRowAfterStop['resolved_at'] === null, '5: auto-stop != resolved - resolved_at stays empty');
+    expect_true($hsRowAfterStop['active_key'] === null, 'sanity: active_key is freed by auto_stop, exactly as before this fix');
+    $hsFingerprint = $hsRowAfterStop['fingerprint'];
+
+    // --- 6-9: the SAME unchanged source reading (identical responseId, therefore identical
+    // fingerprint) is rescanned repeatedly - at the next tick, 5 minutes later, and 1 hour later -
+    // and must NEVER create a new incident or send a new notification. ---
+    $hsSentAfterStop = count($sentMessages);
+    foreach ([
+        ['2026-09-25 02:40:51 UTC', '6: immediately after auto-stop'],
+        ['2026-09-25 02:45:51 UTC', '7: next 5-minute cron tick'],
+        ['2026-09-25 02:50:51 UTC', '8: 5 minutes later again'],
+        ['2026-09-25 03:35:51 UTC', '9: 1 hour later'],
+    ] as [$rescanTime, $label]) {
+        $rescanId = broth_log_copilot_create_incident($hsAlert);
+        expect_eq($rescanId, $hsIncidentId, "$label: rescanning the identical source reading returns the SAME incident id, never a new one");
+        $rescanNotify = broth_log_copilot_notify_incident($rescanId, new DateTimeImmutable($rescanTime));
+        expect_true(empty($rescanNotify['sent']), "$label: notify_incident() refuses to send for the auto_stopped incident");
+    }
+    expect_eq(count($sentMessages), $hsSentAfterStop, '22: no duplicate notifications were sent across any of the repeated rescans above');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE fingerprint=?", [$hsFingerprint])['c'] ?? -1), 1, '6-9: exactly one incident row exists for this fingerprint no matter how many times it was rescanned');
+
+    // --- 10: a different business date (the only way this exact identity could legitimately recur
+    // day-to-day - the cron only ever scans TODAY's business date, so same-day rescanning, tested
+    // above, is the only real recreation risk) produces a genuinely different fingerprint and is
+    // correctly NOT suppressed. ---
+    $hsNextDayAlert = array_replace($hsAlert, ['responseId' => 'resp-hardstop-a', 'businessDate' => '2026-09-25']);
+    $hsNextDayId = broth_log_copilot_create_incident($hsNextDayAlert);
+    expect_true($hsNextDayId !== $hsIncidentId && $hsNextDayId !== '', '10: the identity rule is scoped to business date - a new business date is never accidentally folded into a prior day\'s suppressed incident');
+
+    // --- 12: a genuinely NEW submission (its own distinct responseId, as a real re-measurement in
+    // the sheet would have) is entirely unaffected by the suppression above and opens its own
+    // incident with its own fresh 4-hour window. ---
+    $hsNewSubmissionAlert = array_replace($hsAlert, ['responseId' => 'resp-hardstop-a-new-measurement']);
+    $hsNewSubmissionId = broth_log_copilot_create_incident($hsNewSubmissionAlert);
+    expect_true($hsNewSubmissionId !== $hsIncidentId && $hsNewSubmissionId !== '', '12: a genuinely new submission (different responseId) creates its own new incident even though the old one for this station is still suppressed');
+    expect_true((broth_log_copilot_notify_incident($hsNewSubmissionId, new DateTimeImmutable('2026-09-25 04:00:00 UTC'))['sent'] ?? false), '12: the new submission\'s incident can be notified normally - suppression is per-fingerprint, not per-station');
+
+    // --- 13/23: suppressing Problem A (this station, this branch) must not suppress Problem B (a
+    // different station) or Problem C (the same station on a different branch). ---
+    $hsProblemBAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => $hsStationB, 'station' => 'Diced Pork Hot', 'responseId' => 'resp-hardstop-b', 'businessDate' => '2026-09-24']);
+    $hsProblemBId = broth_log_copilot_create_incident($hsProblemBAlert);
+    run("UPDATE broth_log_incidents SET created_at='2026-09-24 22:35:51', level_entered_at='2026-09-24 22:35:51' WHERE incident_id=?", [$hsProblemBId]);
+    $hsBDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 02:35:51 UTC')), fn($d) => $d['incident']['incident_id'] === $hsProblemBId));
+    broth_log_copilot_apply_escalation_action_with_notification($hsBDue[0], new DateTimeImmutable('2026-09-25 02:35:51 UTC'));
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$hsProblemBId])['state'] ?? '', 'auto_stopped', '13: sanity - Problem B (a different station) independently reaches auto_stopped too');
+    expect_eq(broth_log_copilot_create_incident($hsProblemBAlert), $hsProblemBId, '13: Problem B\'s own identical rescan is suppressed independently of Problem A');
+
+    $hsProblemCAlert = array_replace($alert, ['branch' => 'B2', 'stationKey' => $hsStationA, 'station' => 'Sliced Pork Hot', 'responseId' => 'resp-hardstop-a', 'businessDate' => '2026-09-24']);
+    $hsProblemCId = broth_log_copilot_create_incident($hsProblemCAlert);
+    expect_true($hsProblemCId !== $hsIncidentId && $hsProblemCId !== '', '23: the same station/responseId text on a DIFFERENT branch (B2) is a different fingerprint entirely and is not cross-branch-suppressed by B1\'s suppressed incident');
+    expect_true((broth_log_copilot_notify_incident($hsProblemCId, new DateTimeImmutable('2026-09-25 04:00:00 UTC'))['sent'] ?? false), '23: the B2 incident notifies normally');
+
+    // --- 18: missing_shift auto-close still works correctly for an incident that already
+    // auto_stopped - the close-lookup was changed from active_key to fingerprint precisely because
+    // active_key is NULL after auto_stop, which would otherwise make a genuinely late real
+    // submission unable to find (and thus never close) its own already-auto_stopped incident. ---
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $hsMsId = broth_log_copilot_create_missing_shift_incident('B1', '2026-09-24', 'PM');
+    run("UPDATE broth_log_incidents SET created_at='2026-09-24 21:00:00', level_entered_at='2026-09-24 21:00:00', last_reminder_at=NULL WHERE incident_id=?", [$hsMsId]);
+    $hsMsDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 01:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $hsMsId));
+    broth_log_copilot_apply_escalation_action_with_notification($hsMsDue[0], new DateTimeImmutable('2026-09-25 01:00:00 UTC'));
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$hsMsId])['state'] ?? '', 'auto_stopped', '18: sanity - the missing_shift fixture reaches auto_stopped');
+    expect_eq(broth_log_copilot_create_missing_shift_incident('B1', '2026-09-24', 'PM'), $hsMsId, '18: rescanning the same still-missing (branch, date, shift) after auto_stop does not create a duplicate missing_shift incident');
+    $hsMsCloseResult = broth_log_copilot_close_missing_shift_incident($hsMsId, 'LATE', new DateTimeImmutable('2026-09-25 01:30:00 UTC'));
+    expect_true($hsMsCloseResult['ok'] ?? false, '18: a genuinely late real submission still successfully closes the incident even though it had already auto_stopped - this is the fix for the close-lookup, not just the create-lookup');
+    expect_eq(q1("SELECT state, closure_reason FROM broth_log_incidents WHERE incident_id=?", [$hsMsId])['state'] ?? '', 'closed', '18: the incident is now closed, not stuck in auto_stopped forever');
+    expect_eq(q1("SELECT closure_reason FROM broth_log_incidents WHERE incident_id=?", [$hsMsId])['closure_reason'] ?? '', 'late_submission_received', '18: closure_reason correctly records this as a late submission, never silently upgraded to on-time');
+
+    // --- 21: Ops still received the original notification for Problem A exactly once - unaffected
+    // by any of the suppressed rescans above. ---
+    $hsOpsDeliveries = q("SELECT COUNT(*) c FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=? AND message_kind='incident_notification' AND status='sent'", [$hsIncidentId, $opsGroupChatId]);
+    expect_eq((int)($hsOpsDeliveries[0]['c'] ?? -1), 1, '21: Ops received exactly one initial-notification delivery for the original incident - the suppressed rescans never produced a second/duplicate initial notification');
+
+    // Cleanup
+    $hsIncidentIds = [$hsIncidentId, $hsNextDayId, $hsNewSubmissionId, $hsProblemBId, $hsProblemCId, $hsMsId];
+    $hsPlaceholders = implode(',', array_fill(0, count($hsIncidentIds), '?'));
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds);
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds)['c'] ?? -1), 0, '4-hour hard-stop suppression: no leftover fixture incidents remain');
 
     // ============================================================================
     // MANAGER DAILY OPERATIONS UX: Daily Check, Needs Attention, Review Date, Issue Detail.

@@ -998,12 +998,52 @@ function broth_log_copilot_consume_compact_callback(string $data, ?int $now = nu
     return db()->changes() > 0 ? ['action' => $row['action'], 'incident_id' => $row['incident_id']] : null;
 }
 
+// Owner policy (2026-09-25, stricter correction to an earlier fingerprint-only fix): a STATION - not
+// a single submission - is the unit of an unresolved problem. A later, genuinely new submission for
+// the SAME still-unsafe station must NOT start a new 4-hour notification cycle either; only an
+// actually SAFE reading (broth_log_copilot_process_station_safe_clears()) or a human Resolve
+// (broth_log_copilot_resolve()) makes the station eligible again. active_key is keyed by (branch,
+// station) via broth_log_copilot_station_problem_key(), NOT by fingerprint, and is no longer cleared
+// on auto_stop (see that branch's comment) - so it keeps finding the unresolved problem across
+// auto-stop, across any number of later still-unsafe submissions, and across calendar days.
+// fingerprint (per-submission, permanent, never cleared by anything) still gates independently: it is
+// what stops the ORIGINAL still-critical Google Sheet row itself from ever producing a second
+// incident even after Resolve frees active_key for the station - Resolve only records the manager's
+// own separate recheck value, it never updates the sheet, so the same stale row would otherwise
+// immediately recreate a fresh incident on the very next cron pass. See broth_log_copilot_create_incident().
+function broth_log_copilot_station_problem_key(string $branch, string $stationKey): string {
+    return hash('sha256', implode('|', [strtoupper($branch), $stationKey, 'station_problem']));
+}
+
 function broth_log_copilot_create_incident(array $alert): string {
     if (!broth_log_copilot_enabled()) return '';
+    $branch = strtoupper((string)($alert['branch'] ?? ''));
     $stationKey = (string)($alert['stationKey'] ?? '');
-    $fingerprint = hash('sha256', implode('|', [$alert['branch'] ?? '', $alert['responseId'] ?? '', $stationKey ?: ($alert['station'] ?? ''), $alert['severity'] ?? 'critical', $alert['businessDate'] ?? '']));
-    $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=?", [$fingerprint]);
-    if ($existing) return (string)$existing['incident_id'];
+    $stationIdentity = $stationKey ?: (string)($alert['station'] ?? '');
+    $fingerprint = hash('sha256', implode('|', [$branch, $alert['responseId'] ?? '', $stationIdentity, $alert['severity'] ?? 'critical', $alert['businessDate'] ?? '']));
+    $activeKey = broth_log_copilot_station_problem_key($branch, $stationIdentity);
+    // Two independent checks, in order:
+    // 1) This EXACT submission (fingerprint) already produced an incident, in any state. Without
+    // this, resolving an incident (which frees active_key, exactly like a genuinely safe reading
+    // does) would let the very next cron pass immediately recreate a brand new incident from the
+    // SAME still-critical original Google Sheet row - the row itself is never updated after a human
+    // Resolve, since Resolve only records the manager's own separate recheck value in our DB. This
+    // check is permanent and never bypassed by anything freeing active_key.
+    $existingBySubmission = q1("SELECT incident_id FROM broth_log_incidents WHERE fingerprint=? ORDER BY created_at DESC LIMIT 1", [$fingerprint]);
+    if ($existingBySubmission) return (string)$existingBySubmission['incident_id'];
+    // 2) A genuinely NEW submission (different fingerprint), but the STATION already has an open,
+    // unresolved problem (active_key still set - see broth_log_copilot_station_problem_key()'s
+    // comment). Owner policy: a later still-unsafe reading for the same station is the same problem,
+    // not a new one, until a safe reading or a human Resolve clears it.
+    $existingByStation = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=?", [$activeKey]);
+    if ($existingByStation) {
+        // Purely observational - the station's already-open unresolved problem is unaffected: no new
+        // row, no new notification. Lets a later audit/report distinguish "silent because nothing new
+        // happened" from "silent despite a fresh still-unsafe reading arriving," without changing the
+        // suppression decision itself.
+        broth_log_copilot_audit((string)$existingByStation['incident_id'], 'rescan_same_unresolved_problem', null, ['fingerprint' => $fingerprint, 'temperature' => $alert['temperature'] ?? null]);
+        return (string)$existingByStation['incident_id'];
+    }
     $incidentId = 'bl-' . substr($fingerprint, 0, 10) . '-' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(3));
     $nowTs = gmdate('Y-m-d H:i:s');
     run("INSERT OR IGNORE INTO broth_log_incidents
@@ -1011,8 +1051,8 @@ function broth_log_copilot_create_incident(array $alert): string {
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
         $incidentId,
         $fingerprint,
-        $fingerprint,
-        strtoupper((string)($alert['branch'] ?? '')),
+        $activeKey,
+        $branch,
         (string)($alert['businessDate'] ?? ''),
         (string)($alert['businessTime'] ?? ''),
         (string)($alert['responseId'] ?? ''),
@@ -1028,6 +1068,20 @@ function broth_log_copilot_create_incident(array $alert): string {
         hash('sha256', json_encode($alert)),
         (string)($alert['employee'] ?? ''),
     ]);
+    // The active_key UNIQUE index (and, vanishingly rarely, an exact fingerprint collision) can
+    // cause this INSERT OR IGNORE to silently do nothing if a concurrent caller - specifically now
+    // possible since broth_log_copilot_process_station_safe_clears() calls this function from a
+    // second, independent cron process, alongside the original HTTP-triggered detection path - won
+    // the same race first. Without this check, the caller would receive a locally-generated
+    // $incidentId that was never actually stored, and the unconditional audit() call below would
+    // write a 'detected' event against a row that does not exist. db()->changes() reflects exactly
+    // the previous statement, so this is a reliable, zero-extra-round-trip check: if it reports zero
+    // rows affected, some other process's row already owns this station's active_key (or, for an
+    // exact-row race, this same fingerprint) - look it up and return the real winner instead.
+    if (db()->changes() === 0) {
+        $winner = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=? OR fingerprint=? ORDER BY created_at DESC LIMIT 1", [$activeKey, $fingerprint]);
+        return $winner ? (string)$winner['incident_id'] : '';
+    }
     broth_log_copilot_audit($incidentId, 'detected', null, $alert);
     return $incidentId;
 }
@@ -1111,7 +1165,14 @@ function broth_log_copilot_create_missing_shift_incident(string $branch, string 
     if (!broth_log_copilot_enabled()) return '';
     $branch = strtoupper($branch);
     $activeKey = broth_log_copilot_missing_shift_active_key($branch, $businessDate, $shift);
-    $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=?", [$activeKey]);
+    // Looked up by fingerprint (never cleared), not active_key (cleared to NULL on close/auto_stop)
+    // - same reasoning and same fix as broth_log_copilot_create_incident(). A missing shift's
+    // identity is the (branch, business_date, shift) tuple itself, not a submission id, so once it
+    // has ever produced an incident there is no legitimate reason to ever produce a second one for
+    // that exact same day/shift: an auto_stopped-without-a-submission shift stays silently open
+    // (still genuinely missing, still the same day), and a real submission still closes it via
+    // broth_log_copilot_close_missing_shift_incident() exactly as before - unaffected by this check.
+    $existing = q1("SELECT incident_id FROM broth_log_incidents WHERE fingerprint=? ORDER BY created_at DESC LIMIT 1", [$activeKey]);
     if ($existing) return (string)$existing['incident_id'];
     // Deliberately "mshift", not "missing": broth_log_copilot_parse()'s keyword router treats any
     // message text containing the substring "missing" as the unrelated missing_logs intent (a
@@ -1198,7 +1259,14 @@ function broth_log_copilot_process_missing_shifts(?DateTimeImmutable $now = null
         foreach (['AM', 'PM'] as $shift) {
             $status = broth_log_shift_daily_status($shift, $records, $businessDate, $now);
             $activeKey = broth_log_copilot_missing_shift_active_key($branch, $businessDate, $shift);
-            $existing = q1("SELECT incident_id, state FROM broth_log_incidents WHERE active_key=? AND incident_type='missing_shift'", [$activeKey]);
+            // Looked up by fingerprint, not active_key: an auto_stopped missing-shift incident has
+            // active_key=NULL (freed, same as temperature incidents), so an active_key lookup here
+            // would silently lose track of it - the MISSING branch below would then call
+            // broth_log_copilot_create_missing_shift_incident() again (harmlessly a no-op thanks to
+            // its own fingerprint check) but, more importantly, a LATE real submission arriving after
+            // auto-stop would never be found by the auto-close branch either, leaving a genuinely
+            // late-but-submitted shift stuck in auto_stopped forever instead of closing as intended.
+            $existing = q1("SELECT incident_id, state FROM broth_log_incidents WHERE fingerprint=? AND incident_type='missing_shift'", [$activeKey]);
 
             if ($status['status'] === 'MISSING') {
                 if (!$existing && broth_log_shift_alert_deadline_passed($shift, $now)) {
@@ -1218,6 +1286,155 @@ function broth_log_copilot_process_missing_shifts(?DateTimeImmutable $now = null
         }
     }
     return $results;
+}
+
+// Owner policy (2026-09-25, corrected 2026-09-26 for cross-process ordering): a station's
+// unresolved problem must be governed by the FULL ordered history of real observations since the
+// problem began, never by "does *a* safe reading exist" in isolation. Detection
+// (broth_log_copilot_create_incident(), reached via an HTTP request triggered by the separate cron
+// process scripts/broth-log-telegram-cron.php) and this reconciliation sweep (run from
+// scripts/broth-log-telegram-bot-worker.php, its own separate cron process) have NO ordering
+// guarantee relative to each other - they are different OS processes on independent 5-minute
+// schedules with no shared lock. A naive "clear if any safe reading exists after creation" (the
+// 2026-09-25 version of this function) could rearm a station off a stale safe reading even though a
+// newer unsafe reading already exists in the same source data, and because a genuinely new unsafe
+// submission that lands on a bad-ordering tick gets folded into the still-open old incident by
+// create_incident()'s active_key check (which never records that submission's own fingerprint
+// anywhere), the only reliable place left to notice and correct that is here, on this sweep's very
+// next pass - independent of which process happened to run first.
+//
+// For every station with a currently-tracked problem (an incident still holding this station's
+// active_key, in ANY state including auto_stopped - ACK/Resolve status is irrelevant, kept
+// orthogonal to that flow per Owner instruction), this walks every real reading for that station
+// submitted after the incident's own creation, in chronological order (ties broken deterministically
+// by responseId - a Google Sheets response id is assigned in submission order, so this is never
+// ambiguous), and derives the Owner's state machine: UNSAFE -> UNSAFE is the same unresolved
+// problem; UNSAFE -> SAFE is a rearm boundary; SAFE -> UNSAFE starts a genuinely new problem. Only
+// the FINAL state after walking the complete history decides the outcome:
+//
+// - Final state SAFE: the incident's active_key is freed - the same state-preserving,
+//   never-claims-a-human-resolved-it clear as before. No new incident is created now; the next
+//   genuinely new unsafe reading (whenever detection or a later pass of this sweep sees it) opens
+//   one normally.
+// - Final state UNSAFE, no rearm boundary crossed since this incident's own creation: no change -
+//   the ordinary "still the same unresolved problem" case, unaffected by any of this.
+// - Final state UNSAFE, but a rearm boundary WAS crossed after this incident's creation (a safe
+//   reading occurred, then a later unsafe one did too): the OLD incident is stale for this purpose -
+//   its active_key is freed - and a genuinely NEW incident is minted and notified directly here,
+//   from the reading that started the new unsafe run, rather than waiting on the separate detection
+//   process to eventually get the ordering right. Built with that reading's own responseId, so if
+//   detection independently processes the same reading later (or already tried to on a bad-ordering
+//   tick, before this sweep ran), broth_log_copilot_create_incident()'s fingerprint check finds this
+//   same row first and simply returns its id - never a duplicate.
+//
+// This never touches state/resolved_by/resolved_at/acknowledged_* on the old incident - it does not
+// claim a human resolved anything - and Needs Attention/Open Issues/Review Date continue to show it
+// exactly as before (still auto_stopped, still STILL OPEN) unless a human later ACKs/Resolves it
+// directly. A plain audit event (auto_cleared_safe_reading) records every clear and its observed
+// final state; the new incident's own 'detected' audit event records its creation, same as any other.
+function broth_log_copilot_process_station_safe_clears(): array {
+    if (!broth_log_copilot_enabled()) return [];
+    $cleared = [];
+    $openProblems = q("SELECT incident_id, branch, station_key, created_at FROM broth_log_incidents WHERE incident_type='temperature' AND active_key IS NOT NULL");
+    $recordsByBranch = [];
+    foreach ($openProblems as $problem) {
+        $branch = (string)$problem['branch'];
+        $stationKey = (string)$problem['station_key'];
+        $sop = BROTH_LOG_SOP[$stationKey] ?? null;
+        if ($stationKey === '' || !$sop) continue;
+        if (!array_key_exists($branch, $recordsByBranch)) {
+            try {
+                $recordsByBranch[$branch] = broth_log_copilot_branch_records($branch);
+            } catch (Throwable $e) {
+                $recordsByBranch[$branch] = [];
+            }
+        }
+
+        // Every real reading for this exact station submitted after this incident's own creation -
+        // safe AND unsafe alike (unlike the 2026-09-25 version, which only ever looked at safe ones).
+        $observations = [];
+        foreach ($recordsByBranch[$branch] as $record) {
+            $parsed = broth_log_parse_submission_datetime((string)($record['submittedAt'] ?? ''));
+            if (!$parsed) continue;
+            $reading = null;
+            foreach ($record['readings'] ?? [] as $r) {
+                if (($r['key'] ?? '') === $stationKey) { $reading = $r; break; }
+            }
+            if (!$reading || $reading['temperature'] === null) continue;
+            $parsedUtc = $parsed->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+            if ($parsedUtc <= (string)$problem['created_at']) continue;
+            $observations[] = [
+                'timestamp' => $parsedUtc,
+                'responseId' => (string)($record['responseId'] ?? ''),
+                'safe' => broth_log_severity_for($sop, (float)$reading['temperature']) === 'safe',
+                'record' => $record,
+                'reading' => $reading,
+            ];
+        }
+        if (!$observations) continue;
+
+        // Deterministic chronological order: timestamp first, responseId as a stable tie-breaker.
+        usort($observations, fn($a, $b) => $a['timestamp'] <=> $b['timestamp'] ?: $a['responseId'] <=> $b['responseId']);
+
+        // Walk the ordered history to find the final state and, if a new unsafe run started after a
+        // rearm, the reading that started it.
+        $currentlySafe = false; // this incident exists because the station was unsafe when created
+        $rearmedAfterCreation = false;
+        $newProblemTrigger = null;
+        foreach ($observations as $obs) {
+            if ($obs['safe']) {
+                $currentlySafe = true;
+                $rearmedAfterCreation = true;
+                $newProblemTrigger = null;
+            } elseif ($currentlySafe) {
+                $currentlySafe = false;
+                $newProblemTrigger = $obs;
+            }
+            // else: unsafe following unsafe - no transition, the same run continues.
+        }
+        if (!$rearmedAfterCreation) continue; // never went safe - still the original unresolved problem
+
+        $lastObservation = end($observations);
+        run("UPDATE broth_log_incidents SET active_key=NULL, updated_at=datetime('now') WHERE incident_id=?", [$problem['incident_id']]);
+        broth_log_copilot_audit((string)$problem['incident_id'], 'auto_cleared_safe_reading', null, [
+            'observed_safe_at' => $lastObservation['timestamp'] ?? null,
+            'final_state' => $currentlySafe ? 'safe' : 'unsafe',
+        ]);
+        $cleared[] = ['branch' => $branch, 'station_key' => $stationKey, 'incident_id' => $problem['incident_id']];
+
+        if ($currentlySafe || $newProblemTrigger === null) continue; // final state is genuinely safe
+
+        // Final state is unsafe after a rearm boundary: mint and notify the new incident directly,
+        // guaranteeing recovery even if detection already silently folded this exact reading into
+        // the now-cleared old incident on a bad-ordering tick.
+        $record = $newProblemTrigger['record'];
+        $reading = $newProblemTrigger['reading'];
+        $newAlert = [
+            'branch' => $branch,
+            'responseId' => $newProblemTrigger['responseId'],
+            'stationKey' => $stationKey,
+            'station' => (string)($reading['label'] ?? $stationKey),
+            'severity' => 'critical',
+            'businessDate' => (string)($record['businessDate'] ?? ''),
+            'businessTime' => (string)($record['businessTime'] ?? ''),
+            'employee' => (string)($record['employeeName'] ?? ''),
+            'temperature' => $reading['temperature'],
+            'target' => (string)($reading['target'] ?? ''),
+            'correctiveAction' => (string)($record['correctiveAction'] ?? ($reading['correctiveAction'] ?? '')),
+        ];
+        $newIncidentId = broth_log_copilot_create_incident($newAlert);
+        if ($newIncidentId !== '' && $newIncidentId !== $problem['incident_id']) {
+            broth_log_copilot_notify_incident($newIncidentId);
+            $cleared[count($cleared) - 1]['rearmed_incident_id'] = $newIncidentId;
+            // A second, distinct event on the OLD incident (in addition to auto_cleared_safe_reading
+            // above, which is written exactly once per clear regardless of what follows) - so the
+            // forward link to the incident that replaced it is discoverable directly from the old
+            // incident's own audit history, not only from this function's transient return value.
+            // Never written for a plain rearm with no subsequent unsafe reading.
+            broth_log_copilot_audit((string)$problem['incident_id'], 'rearmed_into_new_incident', null, ['new_incident_id' => $newIncidentId]);
+        }
+    }
+    return $cleared;
 }
 
 function broth_log_copilot_audit(string $incidentId, string $eventType, ?string $actor, array $event): void {
@@ -1426,11 +1643,18 @@ function broth_log_copilot_apply_escalation_action(array $action, ?DateTimeImmut
         return ['ok' => true, 'action' => 'escalated', 'level' => $level, 'incident_id' => $incident['incident_id']];
     }
     if ($action['action'] === 'auto_stop') {
-        // active_key=NULL, exactly like resolve()/close_missing_shift_incident() - this is NOT a
-        // claim the underlying problem is fixed, only that nobody responded in time. Freeing
-        // active_key lets a genuinely new violation at the same station/branch/date open a fresh,
-        // freshly-notified incident instead of silently folding into this now-silent one forever.
-        run("UPDATE broth_log_incidents SET state='auto_stopped', active_key=NULL, escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$incident['incident_id'], $lockToken]);
+        // active_key is deliberately NOT cleared here (Owner policy, 2026-09-25): this is NOT a claim
+        // the underlying problem is fixed, only that nobody responded in time, and the station's
+        // unresolved-problem identity (broth_log_copilot_station_problem_key()) must keep governing
+        // broth_log_copilot_create_incident()'s dedup check through and beyond auto-stop - otherwise a
+        // later still-unsafe submission for the SAME station would silently open a brand new incident
+        // and restart its 4-hour window, which is exactly the behavior this policy forbids. Only an
+        // actually safe reading (broth_log_copilot_process_station_safe_clears()) or a human Resolve
+        // (broth_log_copilot_resolve(), which already frees active_key on its own) makes this station
+        // eligible for a new incident again. For missing_shift this column is otherwise inert now -
+        // broth_log_copilot_create_missing_shift_incident()/close_missing_shift_incident() dedupe and
+        // close by fingerprint, never active_key - so leaving it set here is harmless there too.
+        run("UPDATE broth_log_incidents SET state='auto_stopped', escalation_lock_expires_at=NULL, escalation_lock_token=NULL, updated_at=datetime('now') WHERE incident_id=? AND escalation_lock_token=?", [$incident['incident_id'], $lockToken]);
         broth_log_copilot_audit($incident['incident_id'], 'auto_stopped', null, []);
         return ['ok' => true, 'action' => 'auto_stopped', 'incident_id' => $incident['incident_id']];
     }
@@ -1999,10 +2223,15 @@ function broth_log_copilot_send_idempotent(string $deliveryKey, ?string $inciden
     return ['sent' => false, 'reason' => $reason];
 }
 
+// auto_stopped is excluded alongside resolved/closed: broth_log_copilot_create_incident() can now
+// return an already-auto_stopped incident's id when the cron rescans its same unchanged source row
+// (see that function's comment), and this guard is what stops that rescan from ever reaching a real
+// send - including to a manager/tester added to the branch AFTER the original notify already went
+// out, who would otherwise get a fresh "initial notification" idempotent key nothing has used yet.
 function broth_log_copilot_notify_incident(string $incidentId, ?DateTimeImmutable $now = null): array {
     if (!broth_log_copilot_enabled()) return ['sent' => false, 'reason' => 'disabled'];
     $incident = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
-    if (!$incident || in_array($incident['state'], ['resolved','closed'], true)) return ['sent' => false, 'reason' => 'incident_not_open'];
+    if (!$incident || in_array($incident['state'], ['resolved','closed','auto_stopped'], true)) return ['sent' => false, 'reason' => 'incident_not_open'];
     $message = broth_log_copilot_incident_message($incident, 'notify');
     $sendToChat = function (string $chatId) use ($incidentId, $message, $now): array {
         return broth_log_copilot_send_idempotent(

@@ -3694,6 +3694,55 @@ try {
     // must resolve to the SAME new incident, never a duplicate.
     expect_eq(broth_log_copilot_create_incident($raceO2CAlert), $raceO2NewId, 'ORDER 2: C\'s own fingerprint, re-scanned again later, now correctly resolves to the new incident - no duplicate');
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch='B1' AND station_key=? AND business_date='2026-09-25'", [$raceStationO2])['c'] ?? -1), 1, 'ORDER 2: exactly one incident exists for C\'s episode - no duplicate was created');
+    // The forward link from the old incident to the one that replaced it must be discoverable from
+    // the OLD incident's own audit history, not only from the sweep's transient return value.
+    $raceO2LinkEvent = q1("SELECT event_json FROM broth_log_incident_events WHERE incident_id=? AND event_type='rearmed_into_new_incident'", [$raceO2['incidentId']]);
+    expect_true($raceO2LinkEvent !== null, 'ORDER 2: the old incident\'s own audit history records a rearmed_into_new_incident event');
+    expect_eq(json_decode((string)($raceO2LinkEvent['event_json'] ?? '{}'), true)['new_incident_id'] ?? null, $raceO2NewId, 'ORDER 2: that event correctly points at the real new incident id');
+
+    // --- Concurrency, sequential case: if a concurrent process's row for this station already
+    // committed by the time THIS call reaches its own existingByStation check (the common, easily
+    // reachable ordering), the pre-existing fold path returns that real row - never attempts an
+    // insert, never risks a phantom id. Confirms broth_log_copilot_create_incident() is safe for
+    // this ordering regardless of which process is the alert-cron's detection path and which is this
+    // sweep. ---
+    $raceConcurStation = 'chickenCold';
+    $raceConcurActiveKey = broth_log_copilot_station_problem_key('B1', $raceConcurStation);
+    $raceConcurWinnerId = 'bl-concur-winner-test';
+    run("INSERT INTO broth_log_incidents
+        (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash,employee_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+        $raceConcurWinnerId, 'resp-concur-winner-fingerprint', $raceConcurActiveKey, 'B1', '2026-09-25', '00:00', 'resp-concur-winner', $raceConcurStation, 'Chicken Cold', 50.0, '30F - 40F', 'critical', '', 'detected', 1, gmdate('Y-m-d H:i:s'), 'x', '',
+    ]);
+    $raceConcurLoserAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => $raceConcurStation, 'station' => 'Chicken Cold', 'responseId' => 'resp-concur-loser', 'businessDate' => '2026-09-25']);
+    $raceConcurResult = broth_log_copilot_create_incident($raceConcurLoserAlert);
+    expect_eq($raceConcurResult, $raceConcurWinnerId, 'concurrency (sequential): a concurrent process\'s already-committed row for the station is found and returned, never duplicated');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch='B1' AND station_key=?", [$raceConcurStation])['c'] ?? -1), 1, 'concurrency (sequential): still exactly one incident row for the station');
+
+    // --- Concurrency, true sub-statement race: the narrower window this fix specifically guards -
+    // both callers' existingBySubmission/existingByStation checks pass (both see nothing, since
+    // neither row exists yet), then one caller's INSERT OR IGNORE commits first and the other's is
+    // silently ignored by the active_key UNIQUE constraint. This exact interleaving cannot be
+    // reproduced by single-threaded sequential test code (it requires two real OS processes racing
+    // at the SQLite engine level) - instead, this directly verifies the underlying assumption
+    // broth_log_copilot_create_incident()'s db()->changes()===0 check relies on: that SQLite
+    // genuinely reports zero rows changed for an ignored INSERT OR IGNORE, which is what turns an
+    // otherwise-silent phantom-id bug into a detectable, recoverable one. ---
+    $raceConcurStation2 = 'porkCold';
+    $raceConcurActiveKey2 = broth_log_copilot_station_problem_key('B1', $raceConcurStation2);
+    run("INSERT INTO broth_log_incidents
+        (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash,employee_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+        'bl-concur2-winner-test', 'resp-concur2-winner-fingerprint', $raceConcurActiveKey2, 'B1', '2026-09-25', '00:00', 'resp-concur2-winner', $raceConcurStation2, 'Pork Cold Holding', 50.0, '30F - 40F', 'critical', '', 'detected', 1, gmdate('Y-m-d H:i:s'), 'x', '',
+    ]);
+    run("INSERT OR IGNORE INTO broth_log_incidents
+        (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash,employee_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+        'bl-concur2-loser-test', 'resp-concur2-loser-fingerprint', $raceConcurActiveKey2, 'B1', '2026-09-25', '00:00', 'resp-concur2-loser', $raceConcurStation2, 'Pork Cold Holding', 50.0, '30F - 40F', 'critical', '', 'detected', 1, gmdate('Y-m-d H:i:s'), 'x', '',
+    ]);
+    expect_eq(db()->changes(), 0, 'concurrency (sub-statement race): SQLite reports zero rows changed for an INSERT OR IGNORE that collided on the active_key UNIQUE constraint - the exact signal broth_log_copilot_create_incident() checks to detect and recover from a lost race instead of returning a phantom id');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch='B1' AND station_key=?", [$raceConcurStation2])['c'] ?? -1), 1, 'concurrency (sub-statement race): the losing insert genuinely wrote nothing - only the winner\'s row exists');
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?)", [$raceConcurWinnerId, 'bl-concur2-winner-test']);
 
     // --- Item 1: an old SAFE reading from BEFORE the incident even existed must never count. ---
     $oldSafeStation = 'prepAreaCooler';

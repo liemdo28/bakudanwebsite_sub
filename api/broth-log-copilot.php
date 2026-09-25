@@ -1068,6 +1068,20 @@ function broth_log_copilot_create_incident(array $alert): string {
         hash('sha256', json_encode($alert)),
         (string)($alert['employee'] ?? ''),
     ]);
+    // The active_key UNIQUE index (and, vanishingly rarely, an exact fingerprint collision) can
+    // cause this INSERT OR IGNORE to silently do nothing if a concurrent caller - specifically now
+    // possible since broth_log_copilot_process_station_safe_clears() calls this function from a
+    // second, independent cron process, alongside the original HTTP-triggered detection path - won
+    // the same race first. Without this check, the caller would receive a locally-generated
+    // $incidentId that was never actually stored, and the unconditional audit() call below would
+    // write a 'detected' event against a row that does not exist. db()->changes() reflects exactly
+    // the previous statement, so this is a reliable, zero-extra-round-trip check: if it reports zero
+    // rows affected, some other process's row already owns this station's active_key (or, for an
+    // exact-row race, this same fingerprint) - look it up and return the real winner instead.
+    if (db()->changes() === 0) {
+        $winner = q1("SELECT incident_id FROM broth_log_incidents WHERE active_key=? OR fingerprint=? ORDER BY created_at DESC LIMIT 1", [$activeKey, $fingerprint]);
+        return $winner ? (string)$winner['incident_id'] : '';
+    }
     broth_log_copilot_audit($incidentId, 'detected', null, $alert);
     return $incidentId;
 }
@@ -1412,6 +1426,12 @@ function broth_log_copilot_process_station_safe_clears(): array {
         if ($newIncidentId !== '' && $newIncidentId !== $problem['incident_id']) {
             broth_log_copilot_notify_incident($newIncidentId);
             $cleared[count($cleared) - 1]['rearmed_incident_id'] = $newIncidentId;
+            // A second, distinct event on the OLD incident (in addition to auto_cleared_safe_reading
+            // above, which is written exactly once per clear regardless of what follows) - so the
+            // forward link to the incident that replaced it is discoverable directly from the old
+            // incident's own audit history, not only from this function's transient return value.
+            // Never written for a plain rearm with no subsequent unsafe reading.
+            broth_log_copilot_audit((string)$problem['incident_id'], 'rearmed_into_new_incident', null, ['new_incident_id' => $newIncidentId]);
         }
     }
     return $cleared;

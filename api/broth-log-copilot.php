@@ -1957,11 +1957,13 @@ function broth_log_copilot_incident_message(array $incident, string $kind, strin
         return "\u{2705} You acknowledged this issue\n\n" . (string)($incident['branch'] ?? '') . " \u{00B7} " . (string)($incident['station_label'] ?? '') . "\n\nYou are now responsible for follow-up.\n\nStatus: STILL OPEN\nReminders stopped for everyone.";
     }
     if ($kind === 'resolve_confirm') {
-        $lines = ["\u{2705} You resolved this issue", '', (string)($incident['branch'] ?? '') . " \u{00B7} " . (string)($incident['station_label'] ?? ''), ''];
+        $lines = ["\u{2705} Issue Resolved \u{2014} " . (string)($incident['branch'] ?? ''), '', (string)($incident['station_label'] ?? '')];
         $recheck = $incident['recheck_temperature_f'] ?? null;
-        if ($recheck !== null) { $lines[] = 'Recheck: ' . broth_log_copilot_format_number((float)$recheck) . "\u{00B0}F \u{2713}"; $lines[] = ''; }
-        $lines[] = 'Status: RESOLVED';
-        $lines[] = 'Issue closed.';
+        if ($recheck !== null) $lines[] = 'Recheck: ' . broth_log_copilot_format_number((float)$recheck) . "\u{00B0}F";
+        $rangeText = broth_log_copilot_incident_sop_range_text($incident);
+        if ($rangeText !== null) $lines[] = 'Safe range: ' . $rangeText;
+        $note = trim((string)($incident['resolution_note'] ?? ''));
+        if ($note !== '') { $lines[] = ''; $lines[] = 'Corrective action:'; $lines[] = $note; }
         return implode("\n", $lines);
     }
     return broth_log_copilot_verbose_incident_message($incident, $kind, $lang);
@@ -2487,12 +2489,20 @@ function broth_log_copilot_callback_response(string $callbackData, array $user, 
         return ['message' => broth_log_copilot_ack_rejection_message((string)$incident['incident_id'], (string)($result['reason'] ?? ''), $lang), 'intent' => 'ack_rejected'];
     }
     if ($callback['action'] === 'resolve') {
+        // 2026-09-26 pilot fix: this used to prompt with "/resolve #<incident_id> 38F ...", which a
+        // real Manager could not act on (see broth_log_copilot_recheck_prompt_message()'s own
+        // comment). The underlying action is unchanged - this is still the same 'resolve' callback,
+        // still gated by the same authorization/state checks above, still ending at the same
+        // broth_log_copilot_resolve() - only the conversational front-end changed. 'recheck_temp' is
+        // a new pending state (see broth_log_copilot_recheck_entry_response()), intentionally
+        // distinct from the old free-text 'resolve' pending state below (still supported for
+        // backward compatibility with anyone who already knows the /resolve syntax).
         run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at)
              VALUES (?,?,datetime('now', '+24 hours'),datetime('now'))", [
             $user['telegram_user_id'],
-            json_encode(['pending' => 'resolve', 'incident_id' => $incident['incident_id'], 'chat_id' => $chatId]),
+            json_encode(['pending' => 'recheck_temp', 'incident_id' => $incident['incident_id'], 'chat_id' => $chatId]),
         ]);
-        return ['message' => broth_log_copilot_tr('resolve_prompt', $lang, [$incident['incident_id'], $incident['incident_id']]), 'intent' => 'resolve_prompt'];
+        return ['message' => broth_log_copilot_recheck_prompt_message($incident), 'intent' => 'resolve_prompt'];
     }
     if ($callback['action'] === 'details') {
         return ['message' => broth_log_copilot_incident_message($incident, 'details', $lang), 'intent' => 'details'];
@@ -2511,6 +2521,158 @@ function broth_log_copilot_ack_confirm_reply_markup(array $incident, ?DateTimeIm
         return ['inline_keyboard' => [[broth_log_copilot_details_button($incidentId, $now)]]];
     }
     return ['inline_keyboard' => [[broth_log_copilot_enter_recheck_button($incidentId, $now), broth_log_copilot_details_button($incidentId, $now)]]];
+}
+
+// ============================================================================
+// CONVERSATIONAL RECHECK UX (2026-09-26 pilot fix)
+//
+// Real pilot feedback: a Manager tapped "Enter Recheck" and got a technical prompt
+// ("Resolve #bl-... by replying with safe recheck temp... Example: /resolve #bl-... 38F ...")
+// and replied only "45" - the bot could not do anything with that, because the old flow required
+// a single message containing the /resolve command, the incident id, a temperature, AND a
+// corrective-action note all at once. Managers should never need to know an incident id or command
+// syntax exists.
+//
+// This reuses the EXISTING broth_log_conversation_context table and the exact same priority
+// pattern as broth_log_copilot_menu_date_entry_response() (checked before the generic parser, and
+// only for the exact telegram_user_id whose own row it is - so it can never intercept another
+// Manager's message or another kind of pending context) rather than inventing new session
+// infrastructure. It is a pure front-end to the UNCHANGED broth_log_copilot_resolve(): every
+// safety property that function already enforces (authorization via broth_log_copilot_user_can_branch(),
+// canonical-SOP-only validation via broth_log_is_safe_recheck(), the missing_shift guard, the
+// already-resolved/closed guard) still runs, unchanged, on the actual resolve call this eventually
+// makes - this layer only decides WHEN to make that call and what to say in between.
+//
+// States: 'recheck_temp' (waiting for the new reading, optionally with a corrective-action note in
+// the same message) -> if safe with no note yet, 'recheck_action' (waiting for just the note, temp
+// already captured - the Manager is never asked to repeat it). The OLD 'resolve' pending state
+// (broth_log_copilot_message_action_response()) is untouched and still works for anyone who already
+// knows the /resolve syntax - this is a new, additional entry point, not a replacement of that one.
+// ============================================================================
+
+function broth_log_copilot_recheck_prompt_message(array $incident): string {
+    $branch = (string)($incident['branch'] ?? '');
+    $station = broth_log_copilot_incident_display_label($incident);
+    $temp = $incident['temperature_f'] ?? null;
+    $tempText = $temp === null ? 'not recorded' : broth_log_copilot_format_number((float)$temp) . "\u{00B0}F";
+    $rangeText = broth_log_copilot_incident_sop_range_text($incident) ?? 'not configured';
+    return "\u{1F321} Recheck Temperature \u{2014} {$branch}\n\n{$station}\n\n"
+        . "Current issue: {$tempText}\nSafe range: {$rangeText}\n\n"
+        . "Step 1: Take a new temperature reading after correcting the issue.\n\n"
+        . "Step 2: Send the new temperature and what you did.\n\n"
+        . "Example:\n42F - Closed the door and moved the product\n\n"
+        . "\u{2705} If the new temperature is within {$rangeText}, the issue can be resolved.\n\n"
+        . "\u{26A0}\u{FE0F} If it is still outside the safe range, the issue will remain open.";
+}
+
+function broth_log_copilot_recheck_need_temp_message(): string {
+    return "I need the new temperature reading first.\n\nPlease send the number you measured.\n\nExample:\n42F";
+}
+
+function broth_log_copilot_recheck_still_unsafe_message(float $temp, string $rangeText): string {
+    return "\u{26A0}\u{FE0F} Still Outside Safe Range\n\n"
+        . 'Recheck: ' . broth_log_copilot_format_number($temp) . "\u{00B0}F\nRequired: {$rangeText}\n\n"
+        . "The issue is still open.\n\nPlease correct the issue and take another temperature reading.";
+}
+
+function broth_log_copilot_recheck_ask_action_message(float $temp, string $rangeText): string {
+    return broth_log_copilot_format_number($temp) . "\u{00B0}F is within the safe range of {$rangeText}.\n\n"
+        . "What corrective action did you take?\n\nExample:\nClosed the door and moved the product.";
+}
+
+// Lenient recheck-temperature parser: accepts a bare number, with or without "F"/"°F"/"deg(rees)"
+// suffix, optionally followed by a corrective-action note (separated by a dash/colon/comma, or just
+// whitespace) - "45", "45F", "45°F", "45 F", and "42F - Closed the door and moved the product" all
+// parse correctly. Returns temperature=null (never a fabricated value) when the text does not START
+// with a number, so plain-language non-answers ("done", "ok", "abc") are correctly rejected rather
+// than silently misread.
+function broth_log_copilot_parse_recheck_input(string $text): array {
+    $trimmed = trim($text);
+    // (?![a-zA-Z0-9]) instead of \b: \b fails to match when the optional f/degrees group matches
+    // nothing AND \s* already consumed a preceding space (e.g. "42 - closed door", no "F" at all) -
+    // both sides of that position would be non-word characters, so \b never fires there even though
+    // this is a perfectly valid bare-temperature-plus-note message.
+    if (!preg_match('/^(-?\d+(?:\.\d+)?)\s*(?:°\s*)?(?:f|degrees?)?(?![a-zA-Z0-9])[\s\-:,]*(.*)$/is', $trimmed, $m)) {
+        return ['temperature' => null, 'note' => ''];
+    }
+    return ['temperature' => (float)$m[1], 'note' => trim($m[2])];
+}
+
+function broth_log_copilot_recheck_entry_response(string $text, array $user, string $chatId, ?DateTimeImmutable $now = null): ?array {
+    $contextRow = q1("SELECT context_json FROM broth_log_conversation_context WHERE telegram_user_id=? AND expires_at > datetime('now')", [$user['telegram_user_id']]);
+    if (!$contextRow) return null;
+    $ctx = json_decode((string)$contextRow['context_json'], true) ?: [];
+    $pending = (string)($ctx['pending'] ?? '');
+    if ($pending !== 'recheck_temp' && $pending !== 'recheck_action') return null;
+
+    $incidentId = (string)($ctx['incident_id'] ?? '');
+    $incident = $incidentId !== '' ? broth_log_copilot_incident_from_result($incidentId) : null;
+    // The incident may have been resolved/closed by someone else (or via /resolve) since this
+    // Manager tapped Enter Recheck, or their branch access may have changed - re-checked fresh here,
+    // exactly like broth_log_copilot_callback_response() does for the callback itself, rather than
+    // trusting the state of the world at the moment the context was first created.
+    if (!$incident || in_array($incident['state'], ['resolved', 'closed'], true)) {
+        run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id=?", [$user['telegram_user_id']]);
+        return ['message' => broth_log_copilot_tr('callback_stale', $user['preferred_language'] ?? 'en'), 'intent' => 'recheck_stale'];
+    }
+    if (!broth_log_copilot_user_can_branch($user, (string)$incident['branch'])) {
+        run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id=?", [$user['telegram_user_id']]);
+        return ['message' => broth_log_copilot_tr('callback_forbidden', $user['preferred_language'] ?? 'en'), 'intent' => 'recheck_forbidden'];
+    }
+
+    if ($pending === 'recheck_action') {
+        $note = trim($text);
+        if ($note === '') return ['message' => broth_log_copilot_recheck_need_temp_message(), 'intent' => 'recheck_need_action'];
+        $temp = isset($ctx['temperature_f']) ? (float)$ctx['temperature_f'] : null;
+        $result = $temp !== null ? broth_log_copilot_resolve($incidentId, $user, $temp, $note, $now) : ['ok' => false, 'reason' => 'missing_resolution_evidence'];
+        if (!empty($result['ok'])) {
+            run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id=?", [$user['telegram_user_id']]);
+            $fresh = broth_log_copilot_incident_from_result($incidentId) ?: $incident;
+            broth_log_copilot_broadcast_incident_update($incidentId, 'resolved', (string)$user['telegram_user_id'], $now);
+            return ['message' => broth_log_copilot_incident_message($fresh, 'resolve_confirm'), 'intent' => 'resolve'];
+        }
+        // The recheck temperature was already validated as safe before asking for the corrective
+        // action, so reaching 'recheck_still_unsafe' here should not happen in practice - but never
+        // surface an internal reason code if it somehow does (e.g. a race where someone else already
+        // resolved it). Re-prompt from the top rather than leaving the Manager stuck.
+        run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id=?", [$user['telegram_user_id']]);
+        return ['message' => broth_log_copilot_recheck_prompt_message($incident), 'intent' => 'recheck_retry'];
+    }
+
+    // $pending === 'recheck_temp'
+    $parsed = broth_log_copilot_parse_recheck_input($text);
+    if ($parsed['temperature'] === null) {
+        // Context is left untouched (still recheck_temp) - Case D/E, a friendly re-ask, never a
+        // parser error, never technical syntax.
+        return ['message' => broth_log_copilot_recheck_need_temp_message(), 'intent' => 'recheck_invalid_input'];
+    }
+    $stationKey = (string)($incident['station_key'] ?? '');
+    $rangeText = broth_log_copilot_incident_sop_range_text($incident) ?? 'not configured';
+    $isSafe = $stationKey !== '' && isset(BROTH_LOG_SOP[$stationKey]) && broth_log_is_safe_recheck($stationKey, $parsed['temperature']);
+    if (!$isSafe) {
+        // Still unsafe - stays in recheck_temp so the very next bare temperature the Manager sends
+        // (no need to tap Enter Recheck again) is evaluated the same way.
+        return ['message' => broth_log_copilot_recheck_still_unsafe_message($parsed['temperature'], $rangeText), 'intent' => 'recheck_unsafe'];
+    }
+    if ($parsed['note'] !== '') {
+        // One-step: temperature + corrective action in the same message (Case A).
+        $result = broth_log_copilot_resolve($incidentId, $user, $parsed['temperature'], $parsed['note'], $now);
+        if (!empty($result['ok'])) {
+            run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id=?", [$user['telegram_user_id']]);
+            $fresh = broth_log_copilot_incident_from_result($incidentId) ?: $incident;
+            broth_log_copilot_broadcast_incident_update($incidentId, 'resolved', (string)$user['telegram_user_id'], $now);
+            return ['message' => broth_log_copilot_incident_message($fresh, 'resolve_confirm'), 'intent' => 'resolve'];
+        }
+        return ['message' => broth_log_copilot_recheck_still_unsafe_message($parsed['temperature'], $rangeText), 'intent' => 'recheck_unsafe'];
+    }
+    // Two-step: safe temperature with no note yet (Case B, the exact real pilot scenario) - ask for
+    // the corrective action next, remembering the temperature so the Manager never has to repeat it.
+    run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at)
+         VALUES (?,?,datetime('now', '+24 hours'),datetime('now'))", [
+        $user['telegram_user_id'],
+        json_encode(['pending' => 'recheck_action', 'incident_id' => $incidentId, 'chat_id' => $chatId, 'temperature_f' => $parsed['temperature']]),
+    ]);
+    return ['message' => broth_log_copilot_recheck_ask_action_message($parsed['temperature'], $rangeText), 'intent' => 'recheck_ask_action'];
 }
 
 function broth_log_copilot_resolution_note(string $message, array $parsed): string {
@@ -3670,6 +3832,25 @@ function broth_log_copilot_process_inbox(int $limit = 10, ?DateTimeImmutable $no
                 $intentLabel = $menuDateResponse['intent'];
                 unset($menuDateResponse['_reprompt']);
                 $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], (string)$menuDateResponse['message'], $menuDateResponse['reply_markup'] ?? null);
+                if (!empty($send['sent'])) {
+                    run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
+                    $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $intentLabel, 'outbound' => 'sent'];
+                    continue;
+                }
+                $reason = broth_log_copilot_sanitize_error((string)($send['reason'] ?? $send['error'] ?? 'send_failed'));
+                run("UPDATE broth_log_bot_inbox SET status='send_failed', processed_at=datetime('now'), outbound_status='failed', outbound_error=? WHERE update_id=?", [$reason, $row['update_id']]);
+                $processed[] = ['update_id' => $row['update_id'], 'status' => 'send_failed', 'intent' => $intentLabel, 'outbound' => 'failed', 'reason' => $reason];
+                continue;
+            }
+
+            // Pending conversational recheck reply (Enter Recheck) takes priority over ordinary
+            // parsing, same as the "Enter Date" check above - returns null (falls through unchanged)
+            // unless this exact sender has an unexpired recheck_temp/recheck_action context, so it
+            // can never intercept a normal text command or another Manager's own pending flow.
+            $recheckResponse = broth_log_copilot_recheck_entry_response((string)$row['message_text'], $user, (string)$row['chat_id'], $now);
+            if ($recheckResponse !== null) {
+                $intentLabel = $recheckResponse['intent'];
+                $send = broth_log_copilot_send_telegram_message((string)$row['chat_id'], (string)$recheckResponse['message'], $recheckResponse['reply_markup'] ?? null);
                 if (!empty($send['sent'])) {
                     run("UPDATE broth_log_bot_inbox SET status='processed', processed_at=datetime('now'), outbound_status='sent', outbound_error=NULL, outbound_sent_at=datetime('now') WHERE update_id=?", [$row['update_id']]);
                     $processed[] = ['update_id' => $row['update_id'], 'status' => 'processed', 'intent' => $intentLabel, 'outbound' => 'sent'];

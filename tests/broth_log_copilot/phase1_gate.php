@@ -471,7 +471,7 @@ try {
     $validResolve = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:04:00 UTC')), '1023');
     expect_eq($validResolve['intent'] ?? '', 'resolve', 'valid resolve message succeeds');
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['state'] ?? '', 'resolved', 'resolve message records resolved state');
-    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'You resolved this issue'), 'resolve message sends confirmation');
+    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Issue Resolved'), 'resolve message sends confirmation (2026-09-26: confirmation wording simplified per pilot UX fix - no longer "You resolved this issue")');
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1024,
         'callback_query' => [
@@ -4275,6 +4275,203 @@ try {
     run("DELETE FROM broth_log_private_chat_registrations WHERE telegram_user_id=?", [$pbaMgr]);
     run("DELETE FROM broth_log_authorized_users WHERE telegram_user_id=?", [$pbaMgr]);
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN (?,?)", [$pbaOldB2Incident, $pbaNewB2Incident])['c'] ?? -1), 0, 'per-branch manager authorization: no leftover fixture incidents remain');
+
+    // ============================================================================
+    // CONVERSATIONAL RECHECK UX (2026-09-26 pilot fix): a real Manager tapped "Enter Recheck" and
+    // could not act on the technical "/resolve #bl-... 38F ..." prompt, replying only "45". This
+    // section reproduces that exact scenario and the full new conversational flow around it.
+    // ============================================================================
+    $rcMgr = ['telegram_user_id' => '920rc001', 'allowed_branch_list' => ['B3'], 'preferred_language' => 'en'];
+    $rcOtherBranchMgr = ['telegram_user_id' => '920rc002', 'allowed_branch_list' => ['B1'], 'preferred_language' => 'en'];
+    $rcOtherMgrSameBranch = ['telegram_user_id' => '920rc003', 'allowed_branch_list' => ['B3'], 'preferred_language' => 'en'];
+    $rcChat = 'rc-chat-001';
+
+    function rc_make_incident(string $stationKey, string $label, float $temp, string $businessDate = '2026-09-26'): string {
+        global $alert;
+        $rcAlert = array_replace($alert, ['branch' => 'B3', 'stationKey' => $stationKey, 'station' => $label, 'responseId' => 'resp-rc-' . $stationKey . '-' . bin2hex(random_bytes(3)), 'businessDate' => $businessDate, 'temperature' => (string)$temp . 'F', 'target' => '<= -999F']);
+        return broth_log_copilot_create_incident($rcAlert);
+    }
+
+    // --- 1-6: Enter Recheck shows a human-readable prompt, no technical syntax, no internal ids. ---
+    $rcIncident1 = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    $rcAckToken1 = broth_log_copilot_create_callback_token('ack', $rcIncident1, time() + 900);
+    broth_log_copilot_callback_response($rcAckToken1, $rcMgr, $rcChat);
+    $rcResolveToken1 = broth_log_copilot_create_callback_token('resolve', $rcIncident1, time() + 900);
+    $rcPromptResp = broth_log_copilot_callback_response($rcResolveToken1, $rcMgr, $rcChat);
+    $rcPrompt = (string)$rcPromptResp['message'];
+    expect_true(str_contains($rcPrompt, 'B3'), '1: Enter Recheck displays the branch');
+    expect_true(str_contains($rcPrompt, 'Ramen Reach-In Top'), '2: Enter Recheck displays the station');
+    expect_true(str_contains($rcPrompt, '47'), '3: Enter Recheck displays the current reading');
+    expect_true(str_contains($rcPrompt, '30') && str_contains($rcPrompt, '45'), '4: Enter Recheck displays the canonical safe range');
+    expect_true(!str_contains($rcPrompt, $rcIncident1), '5: Enter Recheck does NOT display the incident id');
+    expect_true(!str_contains($rcPrompt, '/resolve'), '6: Enter Recheck does NOT instruct /resolve');
+
+    // --- 7-10: lenient temperature parsing. ---
+    expect_eq(broth_log_copilot_parse_recheck_input('45')['temperature'], 45.0, '7: input "45" parses as 45F');
+    expect_eq(broth_log_copilot_parse_recheck_input('45F')['temperature'], 45.0, '8: input "45F" parses');
+    expect_eq(broth_log_copilot_parse_recheck_input('45°F')['temperature'], 45.0, '9: input "45°F" parses');
+    expect_eq(broth_log_copilot_parse_recheck_input('45 F')['temperature'], 45.0, '10: input "45 F" parses');
+
+    // --- 11-14: two-step safe temp -> ask corrective action -> completes resolve without repeating temp. ---
+    $rc1145 = broth_log_copilot_recheck_entry_response('45', $rcMgr, $rcChat);
+    expect_true(str_contains((string)$rc1145['message'], 'corrective action') || str_contains((string)$rc1145['message'], 'What corrective'), '11: a safe temp-only reply asks for corrective action, does not resolve yet');
+    $rc11Ctx = json_decode((string)(q1("SELECT context_json FROM broth_log_conversation_context WHERE telegram_user_id=?", [$rcMgr['telegram_user_id']])['context_json'] ?? '{}'), true);
+    expect_eq($rc11Ctx['incident_id'] ?? '', $rcIncident1, '12: pending context retains the correct incident');
+    expect_eq((float)($rc11Ctx['temperature_f'] ?? -1), 45.0, '12b: pending context retains the entered temperature');
+    $rc13 = broth_log_copilot_recheck_entry_response('Closed the door and moved the product', $rcMgr, $rcChat);
+    expect_eq($rc13['intent'] ?? '', 'resolve', '13: the next plain text action message completes the resolution');
+    expect_eq(q1("SELECT state, recheck_temperature_f, resolution_note FROM broth_log_incidents WHERE incident_id=?", [$rcIncident1])['state'] ?? '', 'resolved', '13b: incident is now resolved');
+    expect_eq((float)(q1("SELECT recheck_temperature_f FROM broth_log_incidents WHERE incident_id=?", [$rcIncident1])['recheck_temperature_f'] ?? -1), 45.0, '14: the Manager never had to repeat the temperature - it was carried from step 1');
+    expect_eq(q1("SELECT resolution_note FROM broth_log_incidents WHERE incident_id=?", [$rcIncident1])['resolution_note'] ?? '', 'Closed the door and moved the product', '14b: corrective action note stored correctly');
+
+    // --- 15: one-step safe temp + action resolves immediately. ---
+    $rcIncident2 = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcIncident2, time() + 900), $rcMgr, $rcChat);
+    $rc15 = broth_log_copilot_recheck_entry_response('42F - Closed the door and moved the product', $rcMgr, $rcChat);
+    expect_eq($rc15['intent'] ?? '', 'resolve', '15: safe temp + action in one message resolves directly');
+    expect_true(!str_contains((string)$rc15['message'], $rcIncident2), '15b: the resolve confirmation does not expose the incident id');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcIncident2])['state'] ?? '', 'resolved', '15c: incident is resolved');
+
+    // --- 16-17: unsafe temp does not resolve, invites another recheck. ---
+    $rcIncident3 = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcIncident3, time() + 900), $rcMgr, $rcChat);
+    $rc16 = broth_log_copilot_recheck_entry_response('46', $rcMgr, $rcChat);
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcIncident3])['state'] ?? '', 'detected', '16: unsafe temp does NOT resolve');
+    expect_true(str_contains((string)$rc16['message'], 'still open') || str_contains((string)$rc16['message'], 'Still Outside'), '17: unsafe temp asks for another recheck, still open');
+    $rc17Ctx = json_decode((string)(q1("SELECT context_json FROM broth_log_conversation_context WHERE telegram_user_id=?", [$rcMgr['telegram_user_id']])['context_json'] ?? '{}'), true);
+    expect_eq($rc17Ctx['pending'] ?? '', 'recheck_temp', '17b: still waiting for temperature - Manager can send another reading without tapping Enter Recheck again');
+
+    // --- 18: invalid text gets a friendly temperature prompt, never a parser error. ---
+    foreach (['done', 'ok', 'checked', 'abc', 'Closed the door and moved product'] as $rcInvalid) {
+        $rc18 = broth_log_copilot_recheck_entry_response($rcInvalid, $rcMgr, $rcChat);
+        expect_true(str_contains((string)$rc18['message'], 'temperature') && !str_contains((string)$rc18['message'], 'Exception') && !str_contains((string)$rc18['message'], '/resolve'), "18: invalid/action-only input '$rcInvalid' while waiting for temperature gets a friendly re-prompt, never a parser error or command syntax");
+        expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcIncident3])['state'] ?? '', 'detected', '18b: still not resolved after invalid input');
+    }
+
+    // --- 19-22: canonical SOP boundaries (ramenReachInTop 30-45F), never a duplicated hard-coded range. ---
+    $rcIncident4 = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcIncident4, time() + 900), $rcMgr, $rcChat);
+    $rc19 = broth_log_copilot_recheck_entry_response('30 - lower boundary check', $rcMgr, $rcChat);
+    expect_eq($rc19['intent'] ?? '', 'resolve', '19: canonical lower boundary (30F) accepted as safe');
+    $rcIncident5 = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcIncident5, time() + 900), $rcMgr, $rcChat);
+    $rc20 = broth_log_copilot_recheck_entry_response('45 - upper boundary check', $rcMgr, $rcChat);
+    expect_eq($rc20['intent'] ?? '', 'resolve', '20: canonical upper boundary (45F) accepted as safe');
+    $rcIncident6 = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcIncident6, time() + 900), $rcMgr, $rcChat);
+    $rc21 = broth_log_copilot_recheck_entry_response('29 - just below', $rcMgr, $rcChat);
+    expect_true(str_contains((string)$rc21['message'], 'Still Outside') || str_contains((string)$rc21['message'], 'still open'), '21: below lower boundary (29F) rejected as unsafe');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcIncident6])['state'] ?? '', 'detected', '21b: not resolved');
+    $rc22 = broth_log_copilot_recheck_entry_response('46 - just above', $rcMgr, $rcChat);
+    expect_true(str_contains((string)$rc22['message'], 'Still Outside') || str_contains((string)$rc22['message'], 'still open'), '22: above upper boundary (46F) rejected as unsafe');
+
+    // --- 23-27: authorization / incident binding. ---
+    $rcIncident7 = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcIncident7, time() + 900), $rcMgr, $rcChat);
+    // 23: an unauthorized user (no B3 access) has no pending context of their own - the function
+    // must return null (fall through) rather than acting on someone else's incident.
+    expect_true(broth_log_copilot_recheck_entry_response('45', $rcOtherBranchMgr, $rcChat) === null, '23: a user with no pending context of their own cannot use the pending flow at all (unauthorized)');
+    // 24: even if this OTHER user somehow had a pending context pointing at $rcIncident7 (simulating
+    // a forwarded/copied message scenario), branch authorization is re-checked fresh and rejects it.
+    run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at) VALUES (?,?,datetime('now','+24 hours'),datetime('now'))", [$rcOtherBranchMgr['telegram_user_id'], json_encode(['pending' => 'recheck_temp', 'incident_id' => $rcIncident7, 'chat_id' => $rcChat])]);
+    $rc24 = broth_log_copilot_recheck_entry_response('45', $rcOtherBranchMgr, $rcChat);
+    expect_eq($rc24['intent'] ?? '', 'recheck_forbidden', '24: wrong-branch context is rejected by fresh authorization re-check, never silently allowed');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcIncident7])['state'] ?? '', 'detected', '24b: unaffected - still not resolved');
+    // 25: a second, properly-authorized Manager for the SAME branch has their OWN context slot
+    // (keyed by their own telegram_user_id) - they cannot hijack the first Manager's pending flow
+    // merely by sending a message, because they have no pending context of their own for it.
+    expect_true(broth_log_copilot_recheck_entry_response('45', $rcOtherMgrSameBranch, $rcChat) === null, '25: a second same-branch Manager cannot hijack the first Manager\'s pending flow - no pending context of their own');
+    // 26: stale/expired context cannot resolve the wrong incident.
+    run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at) VALUES (?,?,datetime('now','-1 hours'),datetime('now'))", [$rcMgr['telegram_user_id'], json_encode(['pending' => 'recheck_temp', 'incident_id' => $rcIncident7, 'chat_id' => $rcChat])]);
+    expect_true(broth_log_copilot_recheck_entry_response('45', $rcMgr, $rcChat) === null, '26: an EXPIRED context is never used - falls through unchanged rather than resolving the wrong/stale incident');
+    // 27: a resolved incident cannot be resolved again via the conversational flow.
+    run("INSERT OR REPLACE INTO broth_log_conversation_context (telegram_user_id,context_json,expires_at,updated_at) VALUES (?,?,datetime('now','+24 hours'),datetime('now'))", [$rcMgr['telegram_user_id'], json_encode(['pending' => 'recheck_temp', 'incident_id' => $rcIncident2, 'chat_id' => $rcChat])]);
+    $rc27 = broth_log_copilot_recheck_entry_response('42F', $rcMgr, $rcChat);
+    expect_eq($rc27['intent'] ?? '', 'recheck_stale', '27: an already-resolved incident cannot be resolved again through the pending flow');
+
+    // --- 28-32: unrelated behavior explicitly unchanged. ---
+    $rcAckIncident = rc_make_incident('lineFreezer', 'Line Freezer', 8.0);
+    $rcAckResult = broth_log_copilot_ack($rcAckIncident, $rcMgr);
+    expect_true($rcAckResult['ok'] ?? false, '28: ACK still works unchanged');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcAckIncident])['state'] ?? '', 'acknowledged', '28b: ACK sets acknowledged state, unaffected by this change');
+    expect_eq(q1("SELECT owner_telegram_user_id FROM broth_log_incidents WHERE incident_id=?", [$rcAckIncident])['owner_telegram_user_id'] ?? '', $rcMgr['telegram_user_id'], '29: incident ownership unchanged');
+    run("UPDATE broth_log_incidents SET created_at='2026-09-25 00:00:00', level_entered_at='2026-09-25 00:00:00' WHERE incident_id=?", [$rcAckIncident]);
+    run("UPDATE broth_log_incidents SET state='detected', owner_telegram_user_id=NULL, acknowledged_by=NULL, acknowledged_at=NULL WHERE incident_id=?", [$rcAckIncident]);
+    $rcAsDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 04:00:01 UTC')), fn($d) => $d['incident']['incident_id'] === $rcAckIncident));
+    expect_eq($rcAsDue[0]['action'] ?? '', 'auto_stop', '30: auto-stop policy (4h) completely unchanged by this UX task');
+    broth_log_copilot_apply_escalation_action_with_notification($rcAsDue[0], new DateTimeImmutable('2026-09-25 04:00:01 UTC'));
+    expect_eq(q1("SELECT state, resolved_at FROM broth_log_incidents WHERE incident_id=?", [$rcAckIncident])['state'] ?? '', 'auto_stopped', '30b: auto_stopped, not resolved');
+    // Managers can still recheck an auto-stopped incident - Enter Recheck works the same way.
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcAckIncident, time() + 900), $rcMgr, $rcChat);
+    $rcAutoStoppedRecheck = broth_log_copilot_recheck_entry_response('-10F - closed the freezer', $rcMgr, $rcChat);
+    expect_eq($rcAutoStoppedRecheck['intent'] ?? '', 'resolve', 'auto-stopped: a legitimate safe recheck on an auto_stopped incident still resolves it via the existing safe-resolution semantics');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcAckIncident])['state'] ?? '', 'resolved', 'AUTO_STOPPED != RESOLVED, but a legitimate recheck can still resolve it, unchanged from prior behavior');
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=true');
+    $rcMsIncident = broth_log_copilot_create_missing_shift_incident('B3', '2026-09-26', 'AM');
+    expect_true($rcMsIncident !== '', '31: Missing Shift incident creation still works, functionally unaffected by this UX change');
+    // The Resolve rejection for missing_shift is untouched - and the conversational recheck flow
+    // must never be reachable for a missing_shift incident either, since it is never offered a
+    // Resolve/Enter-Recheck button in the first place (broth_log_copilot_ack_confirm_reply_markup()).
+    $rcMsResolveAttempt = broth_log_copilot_resolve($rcMsIncident, $rcMgr, 38.0, 'attempted', null);
+    expect_eq($rcMsResolveAttempt['reason'] ?? '', 'resolve_not_supported_for_missing_shift', '31b: Missing Shift Resolve rejection unchanged');
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$rcMsIncident]);
+    putenv('BROTH_LOG_SHIFT_ALERTS_ENABLED=false');
+    $rcRoutingIncident = rc_make_incident('lineFreezer', 'Line Freezer', 8.0);
+    $rcRoutingNotify = broth_log_copilot_notify_incident($rcRoutingIncident);
+    expect_true($rcRoutingNotify['sent'] ?? false, '32: a fresh incident still notifies normally through the unchanged routing/delivery path');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=? AND status='sent'", [$rcRoutingIncident, $opsGroupChatId])['c'] ?? -1), 1, '32b: Ops still receives the alert exactly as before - routing untouched by this UX change');
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id=?", [$rcRoutingIncident]);
+    run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$rcRoutingIncident]);
+    run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$rcRoutingIncident]);
+
+    // --- 33: backward compatibility - the old /resolve syntax still works for anyone who uses it. ---
+    $rcIncident8 = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    $rc33Parsed = broth_log_copilot_parse("/resolve #{$rcIncident8} 42F closed door and moved product");
+    $rc33Action = broth_log_copilot_message_action_response("/resolve #{$rcIncident8} 42F closed door and moved product", $rc33Parsed, $rcMgr, $rcChat);
+    expect_eq($rc33Action['intent'] ?? '', 'resolve', '33: the old explicit /resolve command syntax still works internally, backward compatible');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcIncident8])['state'] ?? '', 'resolved', '33b: resolved via the legacy path');
+
+    // --- Real pilot scenario, end to end: tap Enter Recheck -> "45" -> "Closed the door and moved
+    // the product" -> resolved, with no incident id/command syntax ever shown or required. ---
+    $rcPilotIncident = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    $rcPilotPrompt = broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcPilotIncident, time() + 900), $rcMgr, $rcChat);
+    expect_true(!str_contains((string)$rcPilotPrompt['message'], '/resolve') && !str_contains((string)$rcPilotPrompt['message'], $rcPilotIncident), 'pilot scenario: Enter Recheck prompt has no /resolve, no incident id');
+    $rcPilotStep2 = broth_log_copilot_recheck_entry_response('45', $rcMgr, $rcChat);
+    expect_true(str_contains((string)$rcPilotStep2['message'], 'within the safe range'), 'pilot scenario: "45" is recognized and confirmed as within the safe range');
+    $rcPilotStep3 = broth_log_copilot_recheck_entry_response('Closed the door and moved the product.', $rcMgr, $rcChat);
+    expect_eq($rcPilotStep3['intent'] ?? '', 'resolve', 'pilot scenario: the corrective action message completes the resolution');
+    expect_true(!str_contains((string)$rcPilotStep3['message'], $rcPilotIncident) && !str_contains((string)$rcPilotStep3['message'], '/resolve'), 'pilot scenario: final confirmation exposes no incident id, no /resolve, no fingerprint/responseId');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcPilotIncident])['state'] ?? '', 'resolved', 'pilot scenario: the exact real screenshot scenario now completes successfully end to end');
+
+    // --- FINAL SAFETY GATE: multi-incident context-switch safety. Manager taps Enter Recheck on
+    // Incident A, then taps Enter Recheck on Incident B before ever replying. Since the pending
+    // context is a single row keyed by telegram_user_id (INSERT OR REPLACE), the second tap must
+    // fully supersede the first - a subsequent bare temperature reply can only ever resolve
+    // whichever incident was most recently tapped (B), and must never touch A. ---
+    // Two DIFFERENT stations (distinct active_key, so both can be genuinely open at once) sharing
+    // the same 30-45F safe range, so a single temperature value is unambiguous evidence of WHICH
+    // incident got resolved rather than which SOP range happened to accept the reply.
+    $rcMultiA = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    $rcMultiB = rc_make_incident('prepAreaCooler', 'Prep Area Cooler', 48.0);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcMultiA, time() + 900), $rcMgr, $rcChat);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcMultiB, time() + 900), $rcMgr, $rcChat);
+    $rcMultiResult = broth_log_copilot_recheck_entry_response('40 - closed the door and moved product', $rcMgr, $rcChat);
+    expect_eq($rcMultiResult['intent'] ?? '', 'resolve', 'multi-incident context safety: the second Enter Recheck tap fully supersedes the first, so the reply still resolves something');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcMultiB])['state'] ?? '', 'resolved', 'multi-incident context safety: the reply resolves Incident B (the latest tap), never the stale one');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcMultiA])['state'] ?? '', 'detected', 'multi-incident context safety: Incident A (the earlier tap) is completely untouched, never accidentally resolved');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_conversation_context WHERE telegram_user_id=?", [$rcMgr['telegram_user_id']])['c'] ?? -1), 0, 'multi-incident context safety: pending context is cleared after the second incident resolves');
+
+    // Cleanup
+    $rcAllIds = array_values(array_unique(array_filter([
+        $rcIncident1, $rcIncident2, $rcIncident3, $rcIncident4, $rcIncident5, $rcIncident6, $rcIncident7, $rcIncident8,
+        $rcAckIncident, $rcPilotIncident, $rcMultiA, $rcMultiB,
+    ])));
+    $rcPlaceholders = implode(',', array_fill(0, count($rcAllIds), '?'));
+    run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($rcPlaceholders)", $rcAllIds);
+    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($rcPlaceholders)", $rcAllIds);
+    run("DELETE FROM broth_log_incidents WHERE incident_id IN ($rcPlaceholders)", $rcAllIds);
+    run("DELETE FROM broth_log_conversation_context WHERE telegram_user_id IN (?,?,?)", [$rcMgr['telegram_user_id'], $rcOtherBranchMgr['telegram_user_id'], $rcOtherMgrSameBranch['telegram_user_id']]);
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($rcPlaceholders)", $rcAllIds)['c'] ?? -1), 0, 'conversational recheck UX: no leftover fixture incidents remain');
 
     echo "\nAll PHP Phase 1 gate tests passed.\n";
 } finally {

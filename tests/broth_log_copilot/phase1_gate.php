@@ -4443,10 +4443,28 @@ try {
     expect_true(!str_contains((string)$rcPilotStep3['message'], $rcPilotIncident) && !str_contains((string)$rcPilotStep3['message'], '/resolve'), 'pilot scenario: final confirmation exposes no incident id, no /resolve, no fingerprint/responseId');
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcPilotIncident])['state'] ?? '', 'resolved', 'pilot scenario: the exact real screenshot scenario now completes successfully end to end');
 
+    // --- FINAL SAFETY GATE: multi-incident context-switch safety. Manager taps Enter Recheck on
+    // Incident A, then taps Enter Recheck on Incident B before ever replying. Since the pending
+    // context is a single row keyed by telegram_user_id (INSERT OR REPLACE), the second tap must
+    // fully supersede the first - a subsequent bare temperature reply can only ever resolve
+    // whichever incident was most recently tapped (B), and must never touch A. ---
+    // Two DIFFERENT stations (distinct active_key, so both can be genuinely open at once) sharing
+    // the same 30-45F safe range, so a single temperature value is unambiguous evidence of WHICH
+    // incident got resolved rather than which SOP range happened to accept the reply.
+    $rcMultiA = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
+    $rcMultiB = rc_make_incident('prepAreaCooler', 'Prep Area Cooler', 48.0);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcMultiA, time() + 900), $rcMgr, $rcChat);
+    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('resolve', $rcMultiB, time() + 900), $rcMgr, $rcChat);
+    $rcMultiResult = broth_log_copilot_recheck_entry_response('40 - closed the door and moved product', $rcMgr, $rcChat);
+    expect_eq($rcMultiResult['intent'] ?? '', 'resolve', 'multi-incident context safety: the second Enter Recheck tap fully supersedes the first, so the reply still resolves something');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcMultiB])['state'] ?? '', 'resolved', 'multi-incident context safety: the reply resolves Incident B (the latest tap), never the stale one');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcMultiA])['state'] ?? '', 'detected', 'multi-incident context safety: Incident A (the earlier tap) is completely untouched, never accidentally resolved');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_conversation_context WHERE telegram_user_id=?", [$rcMgr['telegram_user_id']])['c'] ?? -1), 0, 'multi-incident context safety: pending context is cleared after the second incident resolves');
+
     // Cleanup
     $rcAllIds = array_values(array_unique(array_filter([
         $rcIncident1, $rcIncident2, $rcIncident3, $rcIncident4, $rcIncident5, $rcIncident6, $rcIncident7, $rcIncident8,
-        $rcAckIncident, $rcPilotIncident,
+        $rcAckIncident, $rcPilotIncident, $rcMultiA, $rcMultiB,
     ])));
     $rcPlaceholders = implode(',', array_fill(0, count($rcAllIds), '?'));
     run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($rcPlaceholders)", $rcAllIds);

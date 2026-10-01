@@ -1478,18 +1478,54 @@ function broth_log_copilot_ack(string $incidentId, array $actor, ?DateTimeImmuta
             db()->exec('COMMIT');
             return ['ok' => false, 'reason' => 'already_acknowledged'];
         }
-        run("UPDATE broth_log_incidents SET state='acknowledged', owner_telegram_user_id=?, acknowledged_by=?, acknowledged_at=?, last_reminder_at=NULL, updated_at=datetime('now') WHERE incident_id=?", [
-            $actor['telegram_user_id'],
-            $actor['telegram_user_id'],
-            $ts,
-            $incidentId,
-        ]);
+        // Owner policy (2026-10-01): for TEMPERATURE incidents, ACK now means fully handled - the
+        // manager's acknowledgment alone closes the incident, no separate recheck required anymore.
+        // This writes the exact same 'resolved' state/columns broth_log_copilot_resolve() already
+        // uses (resolved_by, resolved_at, active_key freed) so every existing "is this closed" check
+        // across Needs Attention/Open Issues/Daily Check/dashboards keeps working completely
+        // unchanged - resolved incidents are already a mature, fully-tested code path. recheck_
+        // temperature_f stays NULL (no real recheck was logged) and resolution_note carries a fixed
+        // marker, so an ACK-based closure is always honestly distinguishable from a real logged
+        // recheck, never silently presented as the same thing. acknowledged_by/acknowledged_at are
+        // still recorded exactly as before - that is the accountability trail this policy explicitly
+        // depends on: a later audit can always see who ACKed a specific incident and when.
+        // missing_shift is deliberately untouched: ACK there still only means ownership - the shift
+        // still only closes when a real log submission arrives, via
+        // broth_log_copilot_process_missing_shifts()/close_missing_shift_incident(). There is no
+        // recheck concept for a missing log, so there is nothing for an ACK-only closure to stand in
+        // for.
+        if (($incident['incident_type'] ?? 'temperature') === 'temperature') {
+            run("UPDATE broth_log_incidents SET state='resolved', active_key=NULL, owner_telegram_user_id=?, acknowledged_by=?, acknowledged_at=?, resolved_by=?, resolved_at=?, resolution_note=?, last_reminder_at=NULL, updated_at=datetime('now') WHERE incident_id=?", [
+                $actor['telegram_user_id'],
+                $actor['telegram_user_id'],
+                $ts,
+                $actor['telegram_user_id'],
+                $ts,
+                'Acknowledged by manager - no recheck logged',
+                $incidentId,
+            ]);
+        } else {
+            run("UPDATE broth_log_incidents SET state='acknowledged', owner_telegram_user_id=?, acknowledged_by=?, acknowledged_at=?, last_reminder_at=NULL, updated_at=datetime('now') WHERE incident_id=?", [
+                $actor['telegram_user_id'],
+                $actor['telegram_user_id'],
+                $ts,
+                $incidentId,
+            ]);
+        }
         db()->exec('COMMIT');
     } catch (Throwable $e) {
         try { db()->exec('ROLLBACK'); } catch (Throwable $ignored) {}
         return ['ok' => false, 'reason' => broth_log_copilot_classify_db_exception($e)];
     }
     broth_log_copilot_audit($incidentId, 'acknowledged', (string)$actor['telegram_user_id'], []);
+    // A parallel 'resolved' audit event, matching exactly what broth_log_copilot_resolve() itself
+    // emits, so any code or manual review scanning incident_events for 'resolved' finds this closure
+    // too - the incident really is resolved now, the audit trail should say so in both forms: the
+    // 'acknowledged' event for who-ACKed accountability, and this 'resolved' event for closure
+    // history, both on the public record for the same action.
+    if (($incident['incident_type'] ?? 'temperature') === 'temperature') {
+        broth_log_copilot_audit($incidentId, 'resolved', (string)$actor['telegram_user_id'], ['via' => 'ack']);
+    }
     return ['ok' => true, 'incident_id' => $incidentId];
 }
 
@@ -2483,6 +2519,15 @@ function broth_log_copilot_callback_response(string $callbackData, array $user, 
         $result = broth_log_copilot_ack((string)$incident['incident_id'], $user, $now);
         if (!empty($result['ok'])) {
             $fresh = broth_log_copilot_incident_from_result((string)$incident['incident_id']) ?: $incident;
+            // Temperature ACK now resolves the incident outright (2026-10-01 policy) - broadcast and
+            // confirm using the SAME 'resolved'/'resolve_confirm' path a real logged recheck already
+            // uses, never the old 'acknowledged'/'ack_confirm' wording, which would misrepresent this
+            // as still-open. missing_shift is unaffected: ack() left it in 'acknowledged' state, so
+            // this falls through to the unchanged ownership-only confirmation below.
+            if (($fresh['state'] ?? '') === 'resolved') {
+                broth_log_copilot_broadcast_incident_update((string)$incident['incident_id'], 'resolved', (string)$user['telegram_user_id'], $now);
+                return ['message' => broth_log_copilot_incident_message($fresh, 'resolve_confirm', $lang), 'intent' => 'ack'];
+            }
             broth_log_copilot_broadcast_incident_update((string)$incident['incident_id'], 'acknowledged', (string)$user['telegram_user_id'], $now);
             return ['message' => broth_log_copilot_incident_message($fresh, 'ack_confirm', $lang), 'intent' => 'ack', 'reply_markup' => broth_log_copilot_ack_confirm_reply_markup($fresh, $now)];
         }
@@ -2702,6 +2747,12 @@ function broth_log_copilot_message_action_response(string $messageText, array $p
         $result = broth_log_copilot_ack($incidentId, $user, $now);
         if (!empty($result['ok'])) {
             $incident = broth_log_copilot_incident_from_result($incidentId) ?: ['incident_id' => $incidentId, 'incident_type' => 'temperature'];
+            // Same 2026-10-01 policy as the callback-button ack path above: temperature ACK now
+            // resolves outright, so confirm/broadcast via the 'resolved' path, never 'acknowledged'.
+            if (($incident['state'] ?? '') === 'resolved') {
+                broth_log_copilot_broadcast_incident_update($incidentId, 'resolved', (string)$user['telegram_user_id'], $now);
+                return ['message' => broth_log_copilot_incident_message($incident, 'resolve_confirm', $lang), 'intent' => 'ack'];
+            }
             broth_log_copilot_broadcast_incident_update($incidentId, 'acknowledged', (string)$user['telegram_user_id'], $now);
             return ['message' => broth_log_copilot_incident_message($incident, 'ack_confirm', $lang), 'intent' => 'ack', 'reply_markup' => broth_log_copilot_ack_confirm_reply_markup($incident, $now)];
         }

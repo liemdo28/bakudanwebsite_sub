@@ -362,6 +362,12 @@ try {
         expect_true(str_contains($rendered, $expectedText), "a recorded temperature of {$raw} renders as exactly \"{$expectedText}\", never truncated (e.g. 10 must never become 1, 20 must never become 2, 100 must never become 1, 120 must never become 12)");
     }
 
+    // Owner policy (2026-10-01): ACK on a TEMPERATURE incident now resolves it outright - no
+    // separate recheck required. This reuses the exact 'resolved' state Resolve already writes, so
+    // the confirmation is the same "Issue Resolved" wording resolve_confirm always used, never the
+    // old "You acknowledged this issue / STILL OPEN" text, which would now misrepresent this as
+    // still needing follow-up. acknowledged_by/acknowledged_at are still recorded underneath for
+    // accountability - verified separately below - this is a presentation and state change only.
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1020,
         'callback_query' => [
@@ -372,8 +378,15 @@ try {
     ])['queued'], 'ACK callback enqueues');
     $ackProcessed = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:01:00 UTC')), '1020');
     expect_eq($ackProcessed['intent'] ?? '', 'ack', 'ACK callback mutates incident');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['state'] ?? '', 'acknowledged', 'ACK callback records acknowledged state');
-    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'You acknowledged this issue'), 'ACK callback sends confirmation');
+    $ackedRow = q1("SELECT state, acknowledged_by, acknowledged_at, resolved_by, resolved_at, recheck_temperature_f, resolution_note FROM broth_log_incidents WHERE incident_id=?", [$incidentId]);
+    expect_eq($ackedRow['state'] ?? '', 'resolved', 'ACK on a temperature incident now records resolved state directly (2026-10-01 policy)');
+    expect_eq($ackedRow['acknowledged_by'] ?? '', '101', 'who-ACKed accountability is still recorded even though ACK now resolves the incident');
+    expect_true(($ackedRow['acknowledged_at'] ?? '') !== '', 'acknowledged_at is still recorded');
+    expect_eq($ackedRow['resolved_by'] ?? '', '101', 'resolved_by is also populated - the same actor, visible through either lens');
+    expect_true($ackedRow['recheck_temperature_f'] === null, 'no recheck temperature is fabricated - ACK-based closure never claims a real logged recheck');
+    expect_eq($ackedRow['resolution_note'] ?? '', 'Acknowledged by manager - no recheck logged', 'resolution_note honestly marks this as an ACK-based closure, distinguishable from a real recheck');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolved'", [$incidentId])['c'] ?? -1), 1, 'a parallel resolved audit event is recorded alongside the acknowledged one');
+    expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Issue Resolved'), 'ACK callback sends the Issue Resolved confirmation, not the old "You acknowledged this issue" wording');
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1021,
         'callback_query' => [
@@ -387,8 +400,12 @@ try {
     expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'You acknowledged this issue'), 'ACK replay does not send second ACK confirmation');
 
     // Regression: a reminder message mints its own independently-signed ACK token for the same
-    // incident. Tapping that token after the incident is already acknowledged must not re-fire
-    // the ack action, since it is not caught by same-token replay protection.
+    // incident. Tapping that token after the incident is already closed must not re-fire the ack
+    // action, since it is not caught by same-token replay protection. Under the 2026-10-01 policy
+    // this incident is now 'resolved' (not merely 'acknowledged'), so broth_log_copilot_callback_response()'s
+    // own top-level resolved/closed check catches it first, as 'callback_stale' - a more accurate
+    // classification now than 'ack_rejected' would be, since the incident is genuinely closed, not
+    // just already owned.
     $secondAckData = broth_log_copilot_create_callback_token('ack', $incidentId, (new DateTimeImmutable('2026-08-20 00:05:00 UTC'))->getTimestamp());
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1025,
@@ -399,7 +416,7 @@ try {
         ],
     ])['queued'], 'second independently-signed ACK token enqueues');
     $secondTokenProcessed = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:02:30 UTC')), '1025');
-    expect_eq($secondTokenProcessed['intent'] ?? '', 'ack_rejected', 'a second valid-but-distinct ACK token is rejected once already acknowledged (regression: duplicate ack via reminder-message button)');
+    expect_eq($secondTokenProcessed['intent'] ?? '', 'callback_stale', 'a second valid-but-distinct ACK token is rejected as stale once the incident is already resolved (regression: duplicate ack via reminder-message button)');
     expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_incident_events WHERE incident_id=? AND event_type='acknowledged'", [$incidentId])['c'] ?? -1, 1, 'exactly one acknowledged audit event even after a second valid token is consumed');
     expect_true(!str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'You acknowledged this issue'), 'second valid-token ACK attempt does not send a duplicate confirmation');
 
@@ -414,15 +431,22 @@ try {
     $rawMessageException = new Exception('UNIQUE constraint failed: broth_log_incidents.active_key with secret-looking-value-XYZ');
     expect_true(!str_contains(broth_log_copilot_classify_db_exception($rawMessageException), 'secret-looking-value-XYZ'), 'the classified reason never leaks the raw exception message text');
 
-    expect_eq(broth_log_copilot_ack($incidentId, ['telegram_user_id' => '999', 'allowed_branch_list' => ['B2']])['reason'], 'forbidden', 'cross-branch ACK is rejected');
-    expect_eq(broth_log_copilot_resolve($incidentId, $user, null, 'fixed')['reason'], 'missing_resolution_evidence', 'resolve requires recheck temperature');
-    // Stale fixture: this incident's station is prepAreaCooler (BROTH_LOG_SOP min=30/max=45,
-    // an inclusive range - the same convention the dashboard displays as "30F - 45F" and every
-    // other station in BROTH_LOG_SOP uses). 45 IS the safe boundary itself, not an unsafe value -
-    // broth_log_severity_for() has classified it 'safe' since this codebase's first commit
-    // (c081a8b), unchanged. 60F is unambiguously outside the safe range on either read of the
-    // boundary, so it actually exercises "resolve rejects unsafe recheck" as the label promises.
-    expect_eq(broth_log_copilot_resolve($incidentId, $user, 60, 'fixed')['reason'], 'recheck_still_unsafe', 'resolve rejects unsafe recheck');
+    // The resolve-flow validation tests below (missing evidence, unsafe recheck, unconfigured
+    // station, valid resolve, stale callback) need their own never-ACKed incident now - $incidentId
+    // above is already resolved (via ACK, 2026-10-01 policy), so broth_log_copilot_resolve() would
+    // just reject every one of these as 'incident_not_open' rather than reaching the specific
+    // validation path each assertion claims to test. Fresh station (not prepAreaCooler, already
+    // claimed) so this is a genuinely independent, never-ACKed incident.
+    $resolveFlowAlert = array_replace($alert, ['responseId' => 'resp-resolve-flow', 'stationKey' => 'pastaBoilerLeft', 'station' => 'Pasta Boiler Left', 'temperature' => '160F', 'target' => '200F - 220F']);
+    $resolveFlowId = broth_log_copilot_create_incident($resolveFlowAlert);
+    $resolveFlowResolveData = broth_log_copilot_create_callback_token('resolve', $resolveFlowId, (new DateTimeImmutable('2026-08-20 00:06:00 UTC'))->getTimestamp());
+
+    expect_eq(broth_log_copilot_ack($resolveFlowId, ['telegram_user_id' => '999', 'allowed_branch_list' => ['B2']])['reason'], 'forbidden', 'cross-branch ACK is rejected');
+    expect_eq(broth_log_copilot_resolve($resolveFlowId, $user, null, 'fixed')['reason'], 'missing_resolution_evidence', 'resolve requires recheck temperature');
+    // pastaBoilerLeft's real SOP range is 200-220F inclusive; 160F (the fixture's own alert
+    // temperature) is unambiguously still unsafe, so this genuinely exercises "resolve rejects
+    // unsafe recheck" rather than accidentally passing on a boundary value.
+    expect_eq(broth_log_copilot_resolve($resolveFlowId, $user, 160, 'fixed')['reason'], 'recheck_still_unsafe', 'resolve rejects unsafe recheck');
 
     // Regression: an incident whose station key has no BROTH_LOG_SOP entry (unconfigured or
     // mistyped) must never be treated as automatically safe, no matter the recheck temperature.
@@ -445,13 +469,12 @@ try {
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$unknownStationIncidentId])['state'] ?? '', 'detected', 'unconfigured-station incident is not silently resolved using an invented threshold');
     expect_eq(broth_log_severity_for(BROTH_LOG_SOP['prepAreaCooler'], 38.0), 'safe', 'unaffected: a known, correctly configured station still classifies a genuinely safe reading as safe');
     expect_eq(broth_log_is_safe_recheck('prepAreaCooler', 38.0), true, 'unaffected: a known, correctly configured station still accepts a genuinely safe recheck');
-    // Same stale-fixture pattern as above: 45F is prepAreaCooler's safe boundary, not an
-    // "invalid"/unsafe recheck. 60F is unambiguously unsafe, so this actually exercises the
-    // rejection path the assertion below claims to test.
+    // 60F is unambiguously outside pastaBoilerLeft's real 200-220F SOP range, so this genuinely
+    // exercises the rejection path the assertion below claims to test.
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1022,
         'message' => [
-            'text' => '/resolve #' . $incidentId . ' 60F closed door',
+            'text' => '/resolve #' . $resolveFlowId . ' 60F closed door',
             'from' => ['id' => 101],
             'chat' => ['id' => 999],
             'message_id' => 82,
@@ -462,7 +485,7 @@ try {
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1023,
         'message' => [
-            'text' => '/resolve #' . $incidentId . ' 38F closed door and moved product',
+            'text' => '/resolve #' . $resolveFlowId . ' 210F closed door and moved product',
             'from' => ['id' => 101],
             'chat' => ['id' => 999],
             'message_id' => 83,
@@ -470,12 +493,12 @@ try {
     ])['queued'], 'valid resolve message enqueues');
     $validResolve = find_processed(broth_log_copilot_process_inbox(10, new DateTimeImmutable('2026-08-20 00:04:00 UTC')), '1023');
     expect_eq($validResolve['intent'] ?? '', 'resolve', 'valid resolve message succeeds');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['state'] ?? '', 'resolved', 'resolve message records resolved state');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$resolveFlowId])['state'] ?? '', 'resolved', 'resolve message records resolved state');
     expect_true(str_contains($sentMessages[count($sentMessages) - 1]['payload']['text'], 'Issue Resolved'), 'resolve message sends confirmation (2026-09-26: confirmation wording simplified per pilot UX fix - no longer "You resolved this issue")');
     expect_true(broth_log_copilot_enqueue_webhook([
         'update_id' => 1024,
         'callback_query' => [
-            'data' => $resolveData,
+            'data' => $resolveFlowResolveData,
             'from' => ['id' => 101],
             'message' => ['message_id' => 84, 'chat' => ['id' => 999]],
         ],
@@ -1135,7 +1158,7 @@ try {
     broth_log_copilot_enqueue_webhook(['update_id' => 7101, 'callback_query' => ['id' => 'cb-7101', 'data' => $ackToken, 'from' => ['id' => (int)$dmManagerA], 'message' => ['chat' => ['id' => $dmManagerAChat, 'type' => 'private'], 'message_id' => 9101]]]);
     $dmAckProcessed = broth_log_copilot_process_inbox(10, $dmAckNow);
     expect_eq(find_processed($dmAckProcessed, '7101')['status'] ?? '', 'processed', 'K: ACK pressed from Alice\'s private DM is processed');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '', 'acknowledged', 'K: the canonical incident is acknowledged');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '', 'resolved', 'K: the canonical incident is resolved directly by the ACK (2026-10-01 policy)');
 
     $dmAckStillDue = array_values(array_filter(broth_log_copilot_due_escalations($dmAckNow->modify('+30 minutes')), fn($d) => $d['incident']['incident_id'] === $dmAckIncidentId));
     expect_true(empty($dmAckStillDue), 'L: ACK from Alice\'s DM stops future reminders for the incident everywhere - group, Alice, and Bob alike');
@@ -1148,19 +1171,28 @@ try {
 
     broth_log_copilot_enqueue_webhook(['update_id' => 7103, 'callback_query' => ['id' => 'cb-7103', 'data' => $ackToken, 'from' => ['id' => (int)$dmManagerA], 'message' => ['chat' => ['id' => $dmManagerAChat, 'type' => 'private'], 'message_id' => 9103]]]);
     broth_log_copilot_process_inbox(10, $dmAckNow);
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '', 'acknowledged', 'N: replaying the already-consumed ACK token from the DM has no additional effect - state is unchanged, not reprocessed');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '', 'resolved', 'N: replaying the already-consumed ACK token from the DM has no additional effect - state is unchanged, not reprocessed');
 
     // O/P: Resolve from a DM uses the exact same safety rules as the group - unsafe recheck
-    // rejected, safe recheck closes the canonical incident globally.
+    // rejected, safe recheck closes the canonical incident globally. Needs its own never-ack'd
+    // incident now: $dmAckIncidentId above is already resolved directly by K's ACK (2026-10-01
+    // policy), so Resolve on it would just be rejected as already-closed (covered separately below).
     $bobUser = broth_log_copilot_authorized_user($dmManagerB);
+    $dmResolveIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-dm-resolve']));
+    run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, level_entered_at='2026-08-22 00:00:00', last_reminder_at='2026-08-22 00:00:00', reminder_count=1 WHERE incident_id=?", [$dmResolveIncidentId]);
     // Same stale-fixture pattern fixed above: 45F is prepAreaCooler's inclusive-safe boundary
     // (BROTH_LOG_SOP min=30/max=45), not an unsafe reading. 60F is unambiguously unsafe.
-    $unsafeResolve = broth_log_copilot_resolve($dmAckIncidentId, $bobUser, 60.0, 'checked', $dmAckNow);
+    $unsafeResolve = broth_log_copilot_resolve($dmResolveIncidentId, $bobUser, 60.0, 'checked', $dmAckNow);
     expect_true(!($unsafeResolve['ok'] ?? true), 'O: an unsafe recheck temperature is rejected, regardless of which surface (group or DM) it came from');
-    expect_true((q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '') !== 'resolved', 'O: the incident remains open after a rejected unsafe resolve');
-    $safeResolve = broth_log_copilot_resolve($dmAckIncidentId, $bobUser, 35.0, 'closed door and moved product', $dmAckNow);
+    expect_true((q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmResolveIncidentId])['state'] ?? '') !== 'resolved', 'O: the incident remains open after a rejected unsafe resolve');
+    $safeResolve = broth_log_copilot_resolve($dmResolveIncidentId, $bobUser, 35.0, 'closed door and moved product', $dmAckNow);
     expect_true($safeResolve['ok'] ?? false, 'P: a safe recheck temperature resolves the incident');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmAckIncidentId])['state'] ?? '', 'resolved', 'P: the canonical incident is resolved globally, the same as if Resolve had come from the group');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$dmResolveIncidentId])['state'] ?? '', 'resolved', 'P: the canonical incident is resolved globally, the same as if Resolve had come from the group');
+
+    // Regression (2026-10-01 policy): once ACK has already resolved an incident, a further Resolve
+    // attempt is correctly rejected as already-closed, not silently re-processed or double-counted.
+    $resolveAfterAck = broth_log_copilot_resolve($dmAckIncidentId, $bobUser, 35.0, 'closed door and moved product', $dmAckNow);
+    expect_eq($resolveAfterAck['reason'] ?? '', 'incident_not_open', 'Resolve on an incident already closed via ACK is rejected as already-closed');
 
     // R: deactivating a manager immediately stops future DMs without deleting their registration.
     run("UPDATE broth_log_authorized_users SET active=0 WHERE telegram_user_id=?", [$dmManagerA]);
@@ -1430,15 +1462,19 @@ try {
     $cutAckToken = broth_log_copilot_create_callback_token('ack', $cutAckIncidentId, $cutAckExpiresAt);
     broth_log_copilot_enqueue_webhook(['update_id' => 8101, 'callback_query' => ['id' => 'cb-8101', 'data' => $cutAckToken, 'from' => ['id' => (int)$cutManagerA], 'message' => ['chat' => ['id' => $cutManagerAChat, 'type' => 'private'], 'message_id' => 9601]]]);
     broth_log_copilot_process_inbox(10, $cutAckNow);
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$cutAckIncidentId])['state'] ?? '', 'acknowledged', '12: ACK from a manager DM acknowledges the canonical incident under manager_dm mode too');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$cutAckIncidentId])['state'] ?? '', 'resolved', '12: ACK from a manager DM resolves the canonical incident under manager_dm mode too (2026-10-01 policy)');
     $cutAckStillDue = array_values(array_filter(broth_log_copilot_due_escalations($cutAckNow->modify('+30 minutes')), fn($d) => $d['incident']['incident_id'] === $cutAckIncidentId));
     expect_true(empty($cutAckStillDue), '12: ACK stops future reminders for the incident globally - for the Ops group and every manager alike, since there is only one canonical incident state, not per-destination state');
     expect_eq(q1("SELECT COUNT(*) AS c FROM broth_log_incident_events WHERE incident_id=? AND event_type='manager_dm_coverage_gap'", [$cutAckIncidentId])['c'] ?? -1, 0, '13: no manager_dm_coverage_gap event fires for this incident - both managers were eligible and this reminder succeeded for at least one of them');
 
-    // 14: Resolve from a DM closes the canonical incident globally, same as before cutover.
-    $cutResolveResult = broth_log_copilot_resolve($cutAckIncidentId, broth_log_copilot_authorized_user($cutManagerA), 35.0, 'closed door and moved product', $cutAckNow);
+    // 14: Resolve from a DM closes the canonical incident globally, same as before cutover. Needs
+    // its own never-ack'd incident now: $cutAckIncidentId above is already resolved directly by 12's
+    // ACK (2026-10-01 policy).
+    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
+    $cutResolveIncidentId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-cutover-resolve']));
+    $cutResolveResult = broth_log_copilot_resolve($cutResolveIncidentId, broth_log_copilot_authorized_user($cutManagerA), 35.0, 'closed door and moved product', $cutAckNow);
     expect_true($cutResolveResult['ok'] ?? false, '14: a safe resolve from a manager DM succeeds under manager_dm mode');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$cutAckIncidentId])['state'] ?? '', 'resolved', '14: the canonical incident is resolved globally');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$cutResolveIncidentId])['state'] ?? '', 'resolved', '14: the canonical incident is resolved globally');
 
     // 16: /pilotid from a private chat by an unauthorized sender is still rejected (unchanged
     // policy) even after B1's cutover - the /pilotid Ops-group gate is untouched by this feature.
@@ -1530,7 +1566,7 @@ try {
     broth_log_copilot_enqueue_webhook(['update_id' => 9302, 'callback_query' => ['id' => 'cb-9302', 'data' => $parityAuthToken, 'from' => ['id' => (int)$parityGmId], 'message' => ['chat' => ['id' => $opsGroupChatId, 'type' => 'group'], 'message_id' => 9701]]]);
     $parityAuthProcessed = find_processed(broth_log_copilot_process_inbox(10), '9302');
     expect_eq($parityAuthProcessed['status'] ?? '', 'processed', 'actor-auth: the authorized manager pressing an ACK button from within the SAME Ops-group message succeeds - authorization follows the person (callback.from.id), not the chat');
-    expect_eq(q1("SELECT state, acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$parityIncidentId])['state'] ?? '', 'acknowledged', 'actor-auth: the canonical incident is acknowledged globally once the authorized actor presses ACK, regardless of which surface it was pressed from');
+    expect_eq(q1("SELECT state, acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$parityIncidentId])['state'] ?? '', 'resolved', 'actor-auth: the canonical incident is resolved globally once the authorized actor presses ACK (2026-10-01 policy), regardless of which surface it was pressed from');
     expect_eq(q1("SELECT acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$parityIncidentId])['acknowledged_by'] ?? '', $parityGmId, 'actor-auth: acknowledged_by correctly records the real authorized actor, not a group/chat identity');
 
     // --- Global ACK/reminders stop for BOTH destinations, since there is one canonical state, not
@@ -2021,7 +2057,7 @@ try {
     $ackRegressProcessed = broth_log_copilot_process_inbox(10, $now25);
     expect_eq(find_processed($ackRegressProcessed, '9800')['status'] ?? '', 'processed', 'existing ACK callback still works end-to-end through process_inbox() after the menu dispatcher was added');
     expect_eq(find_processed($ackRegressProcessed, '9800')['intent'] ?? '', 'ack', 'existing ACK callback still resolves to intent=ack (unchanged)');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ackProbeId])['state'] ?? '', 'acknowledged', 'existing ACK callback still mutates the incident exactly as before');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ackProbeId])['state'] ?? '', 'resolved', 'existing ACK callback still mutates the incident, now directly to resolved (2026-10-01 policy)');
 
     // --- 20: private DM menu works end-to-end through process_inbox() ---
     broth_log_copilot_enqueue_webhook(['update_id' => 9900, 'message' => ['text' => '/help', 'from' => ['id' => (int)$menuManagerId], 'chat' => ['id' => 'menu-private-chat', 'type' => 'private'], 'message_id' => 9900]]);
@@ -2554,7 +2590,7 @@ try {
     $ownASentBefore = count($sentMessages);
     $ownAResponse = broth_log_copilot_callback_response($ownAAckToken, $ownAUser, $opsGroupChatId, $ownNow);
     expect_eq($ownAResponse['intent'], 'ack', 'A: David\'s ACK from the Ops group succeeds');
-    expect_eq(q1("SELECT state, acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncA])['state'], 'acknowledged', 'A: canonical incident is acknowledged globally');
+    expect_eq(q1("SELECT state, acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncA])['state'], 'resolved', 'A: canonical incident is resolved globally by the ACK (2026-10-01 policy)');
     expect_eq(q1("SELECT acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncA])['acknowledged_by'], $ownGmA, 'A: acknowledged_by correctly records David');
     $ownABroadcast = array_slice($sentMessages, $ownASentBefore);
     $ownABroadcastToOps = null; $ownABroadcastToGrace = null; $ownABroadcastToDavid = null;
@@ -2564,11 +2600,11 @@ try {
         if ($cid === $ownGmBChat) $ownABroadcastToGrace = $m;
         if ($cid === $ownGmAChat) $ownABroadcastToDavid = $m;
     }
-    expect_true($ownABroadcastToOps !== null, 'A: the Ops group receives the ownership broadcast, even though David pressed the button from within that same group - other members have not seen anything yet');
-    expect_true($ownABroadcastToGrace !== null, 'A: Manager (Grace) receives "Acknowledged by David"');
-    expect_true(str_contains((string)($ownABroadcastToGrace['payload']['text'] ?? ''), 'Acknowledged — David'), 'A: broadcast text correctly names the actor by display name');
-    expect_true($ownABroadcastToDavid === null, 'A: David\'s own private DM does NOT receive a redundant ownership broadcast - he already has his callback confirmation');
-    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncA])['c'], 1, 'A: exactly one ownership_broadcast_sent audit event, not one per destination');
+    expect_true($ownABroadcastToOps !== null, 'A: the Ops group receives the resolution broadcast, even though David pressed the button from within that same group - other members have not seen anything yet');
+    expect_true($ownABroadcastToGrace !== null, 'A: Manager (Grace) receives "Resolved by David"');
+    expect_true(str_contains((string)($ownABroadcastToGrace['payload']['text'] ?? ''), 'Resolved — David'), 'A: broadcast text correctly names the actor by display name (ACK now resolves, 2026-10-01 policy)');
+    expect_true($ownABroadcastToDavid === null, 'A: David\'s own private DM does NOT receive a redundant broadcast - he already has his callback confirmation');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncA])['c'], 1, 'A: exactly one resolution_broadcast_sent audit event, not one per destination');
     run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncA]);
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncA]);
 
@@ -2603,11 +2639,18 @@ try {
     $ownCRespA = broth_log_copilot_callback_response($ownCTokenA, $ownAUser, $ownGmAChat, $ownNow);
     $ownCRespB = broth_log_copilot_callback_response($ownCTokenB, $ownBUser, $ownGmBChat, $ownNow);
     expect_eq($ownCRespA['intent'], 'ack', 'C: David (first) wins the race');
-    expect_eq($ownCRespB['intent'], 'ack_rejected', 'C: Grace (second) is rejected');
-    expect_true(str_contains((string)$ownCRespB['message'], 'Already acknowledged by David'), 'C: Grace\'s rejection names the actual winner, David, not a generic error');
+    // 2026-10-01 policy note: since ACK now resolves the incident outright, Grace's losing callback
+    // hits broth_log_copilot_callback_response()'s own top-level resolved/closed check first ("stale"
+    // callback) rather than ever reaching ack()'s specific already_acknowledged rejection - so her
+    // message is now the generic "Incident is not open," no longer naming David as the winner by
+    // name. This is a real, minor UX regression versus the old acknowledged-but-still-open model
+    // (flagged, not silently absorbed) - the important safety property (David's ACK/ownership is
+    // never overwritten by the loser) still holds, verified below.
+    expect_eq($ownCRespB['intent'], 'callback_stale', 'C: Grace (second) is rejected as stale once the incident is already resolved');
+    expect_true(str_contains((string)$ownCRespB['message'], 'not open'), 'C: Grace sees the generic "incident is not open" message (no longer names David specifically - see note above)');
     expect_eq(q1("SELECT acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncC])['acknowledged_by'], $ownGmA, 'C: acknowledged_by is never overwritten by the losing actor');
     expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='acknowledged'", [$ownIncC])['c'], 1, 'C: exactly one acknowledged audit event, never two');
-    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncC])['c'], 1, 'C: exactly one ownership broadcast, not one per race attempt');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncC])['c'], 1, 'C: exactly one resolution broadcast, not one per race attempt (ACK now resolves, 2026-10-01 policy)');
     run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncC]);
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncC]);
 
@@ -2622,7 +2665,7 @@ try {
     $ownDResp2 = broth_log_copilot_message_action_response('/ack #' . $ownIncD, $ownDParsed, $ownAUser, $ownGmAChat, $ownNow);
     expect_eq($ownDResp1['intent'], 'ack', 'D: first /ack succeeds');
     expect_eq($ownDResp2['intent'], 'ack_rejected', 'D: second /ack from the same actor is rejected as already-acknowledged, not double-processed');
-    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncD])['c'], 1, 'D: idempotent - exactly one broadcast even with a double-ack attempt');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncD])['c'], 1, 'D: idempotent - exactly one broadcast even with a double-ack attempt (ACK now resolves, 2026-10-01 policy)');
     run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncD]);
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncD]);
 
@@ -2638,11 +2681,14 @@ try {
     expect_eq($ownEResp['intent'], 'callback_forbidden', 'E: an unauthorized user (wrong branch) pressing ACK is denied');
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ownIncE])['state'], 'detected', 'E: zero mutation from the denied press');
     expect_eq(count($sentMessages), $ownESentBefore, 'E: zero broadcast messages sent for a denied ACK');
-    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncE])['c'], 0, 'E: zero broadcast audit events for a denied ACK');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncE])['c'], 0, 'E: zero broadcast audit events for a denied ACK');
     run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncE]);
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncE]);
 
-    // --- F: temperature ACK stays open, reminders stop, Solve remains available (broadcast includes a Resolve button) ---
+    // --- F: temperature ACK now resolves directly (2026-10-01 policy) - reminders stop, the
+    // resolution broadcast (not an ownership one) reaches other recipients with no buttons, since
+    // nothing further is actionable once resolved. This merges what used to be two separate steps
+    // (F: ack-stays-open, G: a later explicit Resolve) into the single real step ACK now performs. ---
     // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
     run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncF = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-f']));
@@ -2650,48 +2696,41 @@ try {
     $ownFAckToken = broth_log_copilot_create_callback_token('ack', $ownIncF, $ownAAckExpires);
     $ownFSentBefore = count($sentMessages);
     broth_log_copilot_callback_response($ownFAckToken, $ownAUser, $ownGmAChat, $ownNow);
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ownIncF])['state'], 'acknowledged', 'F: temperature incident stays open (acknowledged, not resolved/closed)');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ownIncF])['state'], 'resolved', 'F: temperature incident is resolved directly by the ACK (2026-10-01 policy)');
     run("UPDATE broth_log_incidents SET level_entered_at=? WHERE incident_id=?", [$ownNow->format('Y-m-d H:i:s'), $ownIncF]);
     $ownFDue = array_values(array_filter(broth_log_copilot_due_escalations($ownNow->modify('+1 hour')), fn($d) => $d['incident']['incident_id'] === $ownIncF));
-    expect_true(empty($ownFDue), 'F: reminders/escalations stop for the acknowledged incident');
-    $ownFBroadcastToOps = null;
+    expect_true(empty($ownFDue), 'F: reminders/escalations stop for the resolved incident');
+    $ownFBroadcastToOps = null; $ownFBroadcastToGrace = null;
     foreach (array_slice($sentMessages, $ownFSentBefore) as $m) {
         if (($m['payload']['chat_id'] ?? '') === $opsGroupChatId) $ownFBroadcastToOps = $m;
+        if (($m['payload']['chat_id'] ?? '') === $ownGmBChat) $ownFBroadcastToGrace = $m;
     }
-    expect_true($ownFBroadcastToOps !== null, 'F: sanity - Ops received the ownership broadcast');
-    expect_true(!isset($ownFBroadcastToOps['payload']['reply_markup']), 'F: the ACK broadcast to other recipients carries NO buttons - purely informational, so nobody is invited to compete for ownership the acting manager already claimed. The owner resolves it themselves via their own ack_confirm Enter Recheck button instead.');
+    expect_true($ownFBroadcastToOps !== null && $ownFBroadcastToGrace !== null, 'F: both Ops and Grace receive the resolution broadcast from the single ACK action');
+    expect_true(str_contains((string)($ownFBroadcastToGrace['payload']['text'] ?? ''), 'Resolved — David'), 'F: broadcast text names the actor and uses RESOLVED wording, not the old ownership "is handling this issue" text');
+    expect_true(!isset($ownFBroadcastToOps['payload']['reply_markup']), 'F: the broadcast to other recipients carries NO buttons - nothing further is actionable once ACK has resolved it');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncF])['c'], 1, 'F: exactly one resolution_broadcast_sent audit event');
 
-    // --- G: valid temperature Solve - resolved, all recipients informed, reminders remain stopped ---
+    // --- G: once ACK has resolved an incident, a further explicit Resolve attempt is correctly
+    // rejected as already-closed - there is no more "acknowledged but not yet resolved" state for
+    // Resolve to act on for temperature incidents. ---
     $ownGResolveActor = broth_log_copilot_authorized_user($ownGmA);
-    $ownGSentBefore = count($sentMessages);
     $ownGResolveResult = broth_log_copilot_resolve($ownIncF, $ownGResolveActor, 38.0, 'closed door and moved product', $ownNow);
-    expect_true($ownGResolveResult['ok'] ?? false, 'G: valid Resolve succeeds');
-    broth_log_copilot_broadcast_incident_update($ownIncF, 'resolved', $ownGmA, $ownNow);
-    $ownGBroadcastToOps = null; $ownGBroadcastToGrace = null;
-    foreach (array_slice($sentMessages, $ownGSentBefore) as $m) {
-        if (($m['payload']['chat_id'] ?? '') === $opsGroupChatId) $ownGBroadcastToOps = $m;
-        if (($m['payload']['chat_id'] ?? '') === $ownGmBChat) $ownGBroadcastToGrace = $m;
-    }
-    expect_true($ownGBroadcastToOps !== null && $ownGBroadcastToGrace !== null, 'G: both Ops and Grace are informed of the resolution');
-    expect_true(str_contains((string)($ownGBroadcastToGrace['payload']['text'] ?? ''), 'Resolved — David'), 'G: resolution broadcast names the resolver');
-    expect_true(!isset($ownGBroadcastToGrace['payload']['reply_markup']), 'G: the resolution broadcast carries no buttons - nothing further is actionable once resolved');
-    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncF])['c'], 1, 'G: exactly one resolution_broadcast_sent audit event');
-    $ownGStillDue = array_values(array_filter(broth_log_copilot_due_escalations($ownNow->modify('+1 hour')), fn($d) => $d['incident']['incident_id'] === $ownIncF));
-    expect_true(empty($ownGStillDue), 'G: reminders remain stopped after resolution (resolved is excluded from due_escalations() same as before)');
+    expect_eq($ownGResolveResult['reason'] ?? '', 'incident_not_open', 'G: a Resolve attempt after ACK already resolved the incident is rejected as already-closed, not re-processed');
     run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncF]);
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncF]);
 
-    // --- H: unsafe temperature Solve is rejected - no false resolution broadcast, ownership preserved ---
+    // --- H: Resolve's own unsafe-recheck rejection is completely unaffected by the ACK policy
+    // change - verified here on a fresh, never-ACKed incident (decoupled from ACK entirely, since
+    // ACK no longer leaves a temperature incident in an intermediate "acknowledged but open" state
+    // for Resolve to be attempted against). ---
     // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
     run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $ownIncH = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-own-h']));
     broth_log_copilot_notify_incident($ownIncH, $ownNow);
-    broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $ownIncH, $ownAAckExpires), $ownAUser, $ownGmAChat, $ownNow);
     $ownHUnsafeResult = broth_log_copilot_resolve($ownIncH, $ownAUser, 120.0, 'tried but still too warm', $ownNow);
     expect_true(!($ownHUnsafeResult['ok'] ?? true), 'H: an unsafe recheck temperature is rejected');
     expect_eq($ownHUnsafeResult['reason'] ?? '', 'recheck_still_unsafe', 'H: rejected with the correct, existing reason code - unweakened');
-    expect_eq(q1("SELECT state, acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncH])['state'], 'acknowledged', 'H: incident stays open (acknowledged), not falsely resolved');
-    expect_eq(q1("SELECT acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$ownIncH])['acknowledged_by'], $ownGmA, 'H: David\'s ACK ownership is preserved, untouched by the failed Resolve attempt');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ownIncH])['state'], 'detected', 'H: incident stays open (detected), not falsely resolved by a rejected recheck');
     expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncH])['c'], 0, 'H: no resolution_broadcast_sent event for a rejected Resolve');
     run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncH]);
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncH]);
@@ -2782,7 +2821,7 @@ try {
     $ownMResp2 = broth_log_copilot_callback_response($ownMToken, $ownAUser, $ownGmAChat, $ownNow);
     expect_eq($ownMResp1['intent'], 'ack', 'M: first delivery of the callback succeeds');
     expect_eq($ownMResp2['intent'], 'callback_rejected', 'M: a webhook-retry redelivery of the identical callback is rejected as already-used, not reprocessed');
-    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$ownIncM])['c'], 1, 'M: exactly one broadcast despite the retried delivery');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$ownIncM])['c'], 1, 'M: exactly one broadcast despite the retried delivery (ACK now resolves, 2026-10-01 policy)');
     run("DELETE FROM broth_log_incident_events WHERE incident_id=?", [$ownIncM]);
     run("DELETE FROM broth_log_incidents WHERE incident_id=?", [$ownIncM]);
 
@@ -2799,17 +2838,17 @@ try {
     };
     $ownNAckResp = broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $ownIncN, $ownAAckExpires), $ownAUser, $ownGmAChat, $ownNow);
     expect_eq($ownNAckResp['intent'], 'ack', 'N: the canonical ACK commits even though one broadcast destination will fail');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ownIncN])['state'], 'acknowledged', 'N: incident state remains committed regardless of the downstream send failure');
-    $ownNGraceStatus = q1("SELECT status FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=? AND message_kind='acknowledged_status'", [$ownIncN, $ownGmBChat])['status'] ?? '';
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ownIncN])['state'], 'resolved', 'N: incident state remains committed (resolved, 2026-10-01 policy) regardless of the downstream send failure');
+    $ownNGraceStatus = q1("SELECT status FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=? AND message_kind='resolved_status'", [$ownIncN, $ownGmBChat])['status'] ?? '';
     expect_eq($ownNGraceStatus, 'failed', 'N: the failed destination is recorded as failed, retryable, not silently dropped');
-    $ownNOpsStatus = q1("SELECT status FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=? AND message_kind='acknowledged_status'", [$ownIncN, $opsGroupChatId])['status'] ?? '';
+    $ownNOpsStatus = q1("SELECT status FROM broth_log_outbound_deliveries WHERE incident_id=? AND chat_id=? AND message_kind='resolved_status'", [$ownIncN, $opsGroupChatId])['status'] ?? '';
     expect_eq($ownNOpsStatus, 'sent', 'N: the succeeded destination (Ops) is unaffected by the other destination\'s failure');
     $GLOBALS['BROTH_LOG_COPILOT_TELEGRAM_TRANSPORT'] = function (string $method, array $payload, string $token) use (&$sentMessages): array {
         $sentMessages[] = ['method' => $method, 'payload' => $payload, 'token' => $token];
         return ['sent' => true, 'mock' => true];
     };
     $ownNRetrySentBefore = count($sentMessages);
-    broth_log_copilot_broadcast_incident_update($ownIncN, 'acknowledged', $ownGmA, $ownNow);
+    broth_log_copilot_broadcast_incident_update($ownIncN, 'resolved', $ownGmA, $ownNow);
     $ownNRetryChats = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $ownNRetrySentBefore));
     expect_true(in_array($ownGmBChat, $ownNRetryChats, true), 'N: retrying the broadcast resends to the previously-failed destination (Grace)');
     expect_true(!in_array($opsGroupChatId, $ownNRetryChats, true), 'N: retrying the broadcast does NOT resend to the already-succeeded destination (Ops)');
@@ -2844,7 +2883,7 @@ try {
     $auditJInc = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-audit-j']));
     broth_log_copilot_notify_incident($auditJInc, $ownNow);
     broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $auditJInc, $ownAAckExpires), $ownAUser, $ownGmAChat, $ownNow);
-    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$auditJInc])['c'], 1, 'J: exactly one event after the real ACK broadcast');
+    expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$auditJInc])['c'], 1, 'J: exactly one event after the real ACK broadcast (ACK now resolves and broadcasts as resolution, 2026-10-01 policy)');
     broth_log_copilot_broadcast_incident_update($auditJInc, 'acknowledged', $ownGmA, $ownNow);
     broth_log_copilot_broadcast_incident_update($auditJInc, 'acknowledged', $ownGmA, $ownNow);
     expect_eq(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$auditJInc])['c'], 1, 'J: calling the broadcast again with every destination already a duplicate adds zero new events');
@@ -3027,7 +3066,7 @@ try {
     $cutOldAckBroadcastChats = array_map(fn($m) => $m['payload']['chat_id'] ?? '', array_slice($sentMessages, $cutOldAckSentBefore));
     expect_true(!in_array($cutLateChat, $cutOldAckBroadcastChats, true), '14: the excluded manager does not suddenly receive the old incident\'s ACK ownership broadcast merely because they are currently authorized');
     expect_true(in_array($opsGroupChatId, $cutOldAckBroadcastChats, true), '12: Ops still correctly receives the ownership broadcast for the old incident');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$cutOldIncId])['state'], 'acknowledged', '12: ACK/reminder-stop semantics are unchanged - the old incident is acknowledged normally');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$cutOldIncId])['state'], 'resolved', '12: the old incident is resolved normally by ACK (2026-10-01 policy)');
     $cutOldStillDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-26 10:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $cutOldIncId));
     expect_true(empty($cutOldStillDue), '12: reminders stop globally after ACK, exactly as before');
 
@@ -3132,13 +3171,13 @@ try {
     expect_true(in_array($opsGroupChatId, $pr49OldAckChats, true), '9: ACK ownership broadcast for the old incident still reaches Ops');
     expect_true(!in_array($pr49LateChat, $pr49OldAckChats, true), '9: ACK ownership broadcast for the old incident does not reach the excluded late manager');
     // --- 15, 16: first ACK wins, reminders stop globally - unaffected by this PR ---
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$pr49OldIncId])['state'], 'acknowledged', '15: the old incident is acknowledged normally');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$pr49OldIncId])['state'], 'resolved', '15: the old incident is resolved normally by ACK (2026-10-01 policy)');
     $pr49OldStillDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-26 10:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $pr49OldIncId));
     expect_true(empty($pr49OldStillDue), '16: reminders stop globally after ACK, exactly as before');
     $pr49SecondAckSentBefore = count($sentMessages);
     broth_log_copilot_callback_response(broth_log_copilot_create_callback_token('ack', $pr49OldIncId, $pr49OldAckExpires), $pr49EarlyUser, $pr49EarlyChat, new DateTimeImmutable('2026-08-26 05:05:00 UTC'));
     expect_eq(count($sentMessages), $pr49SecondAckSentBefore, '15: first ACK wins - a second ACK attempt on an already-acknowledged incident sends nothing further');
-    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='ownership_broadcast_sent'", [$pr49OldIncId])['c'] ?? -1), 1, '17: PR #47 audit-idempotency remains exactly-once even with the new recipient filtering in place');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='resolution_broadcast_sent'", [$pr49OldIncId])['c'] ?? -1), 1, '17: PR #47 audit-idempotency remains exactly-once even with the new recipient filtering in place (ACK now resolves, 2026-10-01 policy)');
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id=?", [$pr49OldIncId])['c'] ?? -1), 1, '20: no additional canonical incident was created by any of this');
 
     // ------------------------------------------------------------------------------
@@ -3407,15 +3446,16 @@ try {
     broth_log_copilot_broadcast_incident_update($asBoundaryAtId, 'auto_stopped', '', new DateTimeImmutable('2026-08-20 04:05:00 UTC'));
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='auto_stop_broadcast_sent'", [$asBoundaryAtId])['c'] ?? -1), 1, 'PR #47 audit-idempotency holds for auto_stop_broadcast_sent too - a retry never double-counts');
 
-    // --- the auto_stopped incident remains fully ACK-able and Resolve-able afterward, exactly like
-    // any other still-open incident - auto_stop is not a terminal claim of resolution. ---
+    // --- the auto_stopped incident remains fully ACK-able afterward, exactly like any other
+    // still-open incident - auto_stop is not a terminal claim of resolution. Under the 2026-10-01
+    // policy, that ACK now resolves it directly (no separate Resolve step needed), and a further
+    // Resolve attempt afterward is correctly rejected as already-closed. ---
     $asEarlyUser = broth_log_copilot_authorized_user($asEarlyMgr);
     $asAckResult = broth_log_copilot_ack($asBoundaryAtId, $asEarlyUser, new DateTimeImmutable('2026-08-20 05:00:00 UTC'));
     expect_true($asAckResult['ok'] ?? false, 'an auto_stopped incident can still be ACKed by a human afterward');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId])['state'] ?? '', 'acknowledged', 'ACKing an auto_stopped incident transitions it to acknowledged normally');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId])['state'] ?? '', 'resolved', 'ACKing an auto_stopped incident resolves it directly (2026-10-01 policy)');
     $asResolveResult = broth_log_copilot_resolve($asBoundaryAtId, $asEarlyUser, 38.0, 'fixed after auto-stop', new DateTimeImmutable('2026-08-20 05:05:00 UTC'));
-    expect_true($asResolveResult['ok'] ?? false, 'a formerly auto_stopped, now-acknowledged incident can still be Resolved with recheck evidence');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId])['state'] ?? '', 'resolved', 'Resolve succeeds normally after auto_stop -> acknowledged');
+    expect_eq($asResolveResult['reason'] ?? '', 'incident_not_open', 'a Resolve attempt after ACK already resolved the formerly-auto_stopped incident is rejected as already-closed');
 
     // --- Owner policy (2026-09-25): a genuinely new submission (different responseId) for the SAME
     // station, still unsafe, does NOT open a new incident once the old one is auto_stopped - it is
@@ -3518,7 +3558,11 @@ try {
     expect_true(empty(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-24 23:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $hsIncidentId)), '3: ACK stops reminders - the acknowledged incident never appears in due_escalations() again');
     // Un-ACK for the rest of this scenario (simulating the real no-response case) by putting the
     // fixture back into a live, unacknowledged state before proceeding to the auto-stop walkthrough.
-    run("UPDATE broth_log_incidents SET state='detected', owner_telegram_user_id=NULL, acknowledged_by=NULL, acknowledged_at=NULL WHERE incident_id=?", [$hsIncidentId]);
+    // Under the 2026-10-01 policy, ACK on a temperature incident also writes resolved_by/resolved_at/
+    // resolution_note and frees active_key - all of those must be restored too, not just the
+    // original acknowledged_* fields, or the auto-stop assertions below would see stale resolved-
+    // looking data from this already-undone ACK.
+    run("UPDATE broth_log_incidents SET state='detected', owner_telegram_user_id=NULL, acknowledged_by=NULL, acknowledged_at=NULL, resolved_by=NULL, resolved_at=NULL, resolution_note=NULL, active_key=? WHERE incident_id=?", [broth_log_copilot_station_problem_key('B1', $hsStationA), $hsIncidentId]);
 
     $hsDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 02:35:51 UTC')), fn($d) => $d['incident']['incident_id'] === $hsIncidentId));
     expect_eq($hsDue[0]['action'] ?? '', 'auto_stop', '4: no ACK -> auto_stop is due at exactly 4 hours');
@@ -3900,8 +3944,14 @@ try {
     expect_true(str_contains($nuAttentionWithItem['message'], 'Prep Area Cooler'), '25: an unowned open temperature incident appears in Needs Attention');
 
     // --- 15: acknowledged-but-unresolved -> ATTENTION NEEDED, and it stays visible in Needs Attention (26) ---
+    // 2026-10-01 policy note: a live ACK on a temperature incident now resolves it directly (see the
+    // dedicated hard-stop/ownership test sections above), so this specific "acknowledged but still
+    // open" state is no longer reachable for a NEW temperature ACK - it remains a real, valid state
+    // only for missing_shift (unaffected) or for historical pre-policy data. Set directly here so the
+    // dashboard's own rendering for that still-real state keeps being verified, decoupled from how a
+    // live ACK behaves today.
     $nuAckActor = broth_log_copilot_authorized_user($nuMgr);
-    broth_log_copilot_ack($nuUnackedId, $nuAckActor, $ownNow);
+    run("UPDATE broth_log_incidents SET state='acknowledged', owner_telegram_user_id=?, acknowledged_by=?, acknowledged_at=? WHERE incident_id=?", [$nuMgr, $nuMgr, $ownNow->format('Y-m-d H:i:s'), $nuUnackedId]);
     $nuDailyAttentionNeeded = broth_log_copilot_menu_callback_response('menu:daily', $nuUser, 'private', $ownNow);
     expect_true(str_contains($nuDailyAttentionNeeded['message'], 'ATTENTION NEEDED'), 'an acknowledged-but-unresolved incident makes Daily Check report ATTENTION NEEDED, not ALL GOOD and not ACTION REQUIRED');
     $nuAttentionAfterAck = broth_log_copilot_menu_callback_response('menu:attention', $nuUser, 'private', $ownNow);
@@ -4293,9 +4343,13 @@ try {
     }
 
     // --- 1-6: Enter Recheck shows a human-readable prompt, no technical syntax, no internal ids. ---
+    // 2026-10-01 policy note: this used to ACK first to simulate a realistic "manager already claimed
+    // ownership, now entering their recheck" flow - but Enter Recheck/resolve never actually required
+    // prior ACK (every sibling test below presses it on a freshly-created, never-ACKed incident), and
+    // ACK on a temperature incident now resolves it directly, which would make this specific prompt
+    // unreachable. Dropped the ack-first step; the station stays in its natural 'detected' state,
+    // exactly like every other test in this section.
     $rcIncident1 = rc_make_incident('ramenReachInTop', 'Ramen Reach-In Top', 47.0);
-    $rcAckToken1 = broth_log_copilot_create_callback_token('ack', $rcIncident1, time() + 900);
-    broth_log_copilot_callback_response($rcAckToken1, $rcMgr, $rcChat);
     $rcResolveToken1 = broth_log_copilot_create_callback_token('resolve', $rcIncident1, time() + 900);
     $rcPromptResp = broth_log_copilot_callback_response($rcResolveToken1, $rcMgr, $rcChat);
     $rcPrompt = (string)$rcPromptResp['message'];
@@ -4390,13 +4444,21 @@ try {
     expect_eq($rc27['intent'] ?? '', 'recheck_stale', '27: an already-resolved incident cannot be resolved again through the pending flow');
 
     // --- 28-32: unrelated behavior explicitly unchanged. ---
+    // 2026-10-01 policy note: ACK itself is still fully functional and still works unchanged at the
+    // function level - what changed is that it now also resolves a temperature incident directly
+    // (see the dedicated ACK-policy test sections earlier in this file). Updated 28/28b to assert
+    // that, rather than the now-superseded "stays acknowledged" expectation.
     $rcAckIncident = rc_make_incident('lineFreezer', 'Line Freezer', 8.0);
     $rcAckResult = broth_log_copilot_ack($rcAckIncident, $rcMgr);
     expect_true($rcAckResult['ok'] ?? false, '28: ACK still works unchanged');
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcAckIncident])['state'] ?? '', 'acknowledged', '28b: ACK sets acknowledged state, unaffected by this change');
-    expect_eq(q1("SELECT owner_telegram_user_id FROM broth_log_incidents WHERE incident_id=?", [$rcAckIncident])['owner_telegram_user_id'] ?? '', $rcMgr['telegram_user_id'], '29: incident ownership unchanged');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$rcAckIncident])['state'] ?? '', 'resolved', '28b: ACK now resolves a temperature incident directly (2026-10-01 policy)');
+    expect_eq(q1("SELECT acknowledged_by FROM broth_log_incidents WHERE incident_id=?", [$rcAckIncident])['acknowledged_by'] ?? '', $rcMgr['telegram_user_id'], '29: who-ACKed accountability unchanged');
+    // Full reset (not just state/owner/acknowledged_*) because ACK now also writes resolved_by/
+    // resolved_at/resolution_note and frees active_key - all must be restored to simulate a fresh,
+    // never-ACKed incident before the auto-stop walkthrough below, exactly like the equivalent reset
+    // in the hard-stop suppression test section earlier in this file.
     run("UPDATE broth_log_incidents SET created_at='2026-09-25 00:00:00', level_entered_at='2026-09-25 00:00:00' WHERE incident_id=?", [$rcAckIncident]);
-    run("UPDATE broth_log_incidents SET state='detected', owner_telegram_user_id=NULL, acknowledged_by=NULL, acknowledged_at=NULL WHERE incident_id=?", [$rcAckIncident]);
+    run("UPDATE broth_log_incidents SET state='detected', owner_telegram_user_id=NULL, acknowledged_by=NULL, acknowledged_at=NULL, resolved_by=NULL, resolved_at=NULL, resolution_note=NULL, active_key=? WHERE incident_id=?", [broth_log_copilot_station_problem_key('B3', 'lineFreezer'), $rcAckIncident]);
     $rcAsDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 04:00:01 UTC')), fn($d) => $d['incident']['incident_id'] === $rcAckIncident));
     expect_eq($rcAsDue[0]['action'] ?? '', 'auto_stop', '30: auto-stop policy (4h) completely unchanged by this UX task');
     broth_log_copilot_apply_escalation_action_with_notification($rcAsDue[0], new DateTimeImmutable('2026-09-25 04:00:01 UTC'));

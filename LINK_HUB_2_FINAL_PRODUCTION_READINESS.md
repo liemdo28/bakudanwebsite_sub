@@ -90,16 +90,31 @@ The two remaining caveats (screenshot files as separate artifacts, and QR redire
 
 ## Cron Setup (for the site owner — not performed by this pass)
 
-To enable automatic execution every 5 minutes, SSH into the host and run:
+Credentials must never appear in the crontab line itself — `crontab -l` is
+readable by the account owner and may be logged or backed up in plaintext
+elsewhere. Instead, put them in a private env file outside the web root,
+same pattern as `scripts/broth-log-telegram-cron.php` uses for its Telegram
+secrets:
+
+```
+mkdir -p -m 700 /home/hoale24new/bakudan-app/config
+cat > /home/hoale24new/bakudan-app/config/linkhub-automations.env <<'EOF'
+LINKHUB_ADMIN_EMAIL=admin@bakudanramen.com
+LINKHUB_ADMIN_PASSWORD=<real password>
+EOF
+chmod 600 /home/hoale24new/bakudan-app/config/linkhub-automations.env
+```
+
+Then SSH into the host and run:
 
 ```
 crontab -e
 ```
 
-Add this line (replace the email/password with the real admin credentials — never commit them anywhere):
+Add this line (no credentials in it — the script loads them from the file above):
 
 ```
-*/5 * * * * LINKHUB_ADMIN_EMAIL=admin@bakudanramen.com LINKHUB_ADMIN_PASSWORD=<real password> /usr/bin/php /home/hoale24new/bakudanramen.com/api/run_linkhub_automations.php >> /home/hoale24new/bakudan-app/data/automations_cron.log 2>&1
+*/5 * * * * /usr/bin/php /home/hoale24new/bakudanramen.com/api/run_linkhub_automations.php >> /home/hoale24new/bakudan-app/data/automations_cron.log 2>&1
 ```
 
 Until this is added, the existing manual "Run Automations Now" button in the Admin continues to work exactly as before — nothing about this pass changes that.

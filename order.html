@@ -37,7 +37,8 @@
             font-family: var(--font-display); font-size: 1.8rem;
             letter-spacing: 2px; color: var(--color-cream); margin-bottom: 0.75rem;
         }
-        .order-page .order-card .btn { white-space: normal; }
+        .order-page .order-card .btn, .order-page .delivery-grid .btn { white-space: normal; }
+        .order-page .order-section-heading { text-align: center; color: var(--color-cream); font-size: 1.75rem; margin-bottom: 1rem; }
         .order-page .order-details {
             max-width: 1000px; margin: 1.5rem auto 0;
             color: var(--color-text-muted); font-size: 0.9rem; text-align: center;
@@ -96,24 +97,35 @@
             <p class="delivery-notice"><strong>For delivery, please order online. Delivery orders are not accepted by phone.</strong></p>
         </section>
 
-        <section class="order-section" aria-label="Choose a location to order online">
+        <section class="order-section" aria-labelledby="doordash-delivery-heading">
+            <h2 id="doordash-delivery-heading" class="order-section-heading">Delivery via DoorDash</h2>
+            <div class="order-grid delivery-grid">
+                <a href="https://www.doordash.com/store/bakudan-ramen-san-antonio-24627783/" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'doordash_bandera','brand':'bakudan'})">Bandera — DoorDash Delivery</a>
+                <a href="https://www.doordash.com/store/892048" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'doordash_the_rim','brand':'bakudan'})">The Rim — DoorDash Delivery</a>
+                <a href="https://www.doordash.com/store/bakudan-ramen-san-antonio-24437076/" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'doordash_stone_oak','brand':'bakudan'})">Stone Oak — DoorDash Delivery</a>
+            </div>
+            <p class="order-details">Choose your location to order delivery through DoorDash. Delivery availability, fees, and estimated times are shown during checkout.</p>
+        </section>
+
+        <section class="order-section" aria-labelledby="toast-order-heading">
+            <h2 id="toast-order-heading" class="order-section-heading">Order through Toast</h2>
             <div class="order-grid">
                 <div class="order-card">
                     <h2>Bandera</h2>
                     <address>11309 Bandera Rd Ste 111<br>San Antonio, TX 78254</address>
-                    <a href="https://order.toasttab.com/online/bakudan-bandera" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'toast_bandera','brand':'bakudan'})">Order Online — Bandera</a>
+                    <a href="https://order.toasttab.com/online/bakudan-bandera" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'toast_bandera','brand':'bakudan'})">Order via Toast — Bandera</a>
                 </div>
 
                 <div class="order-card">
                     <h2>Stone Oak</h2>
                     <address>22506 U.S. Hwy 281 N Ste 106<br>San Antonio, TX 78258</address>
-                    <a href="https://order.toasttab.com/online/bakudan-ramen-stone-oak" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'toast_stone_oak','brand':'bakudan'})">Order Online — Stone Oak</a>
+                    <a href="https://order.toasttab.com/online/bakudan-ramen-stone-oak" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'toast_stone_oak','brand':'bakudan'})">Order via Toast — Stone Oak</a>
                 </div>
 
                 <div class="order-card">
                     <h2>La Cantera</h2>
                     <address>17619 La Cantera Pkwy Unit 208<br>San Antonio, TX 78256</address>
-                    <a href="https://order.toasttab.com/online/bakudanramen" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'toast_la_cantera','brand':'bakudan'})">Order Online — La Cantera</a>
+                    <a href="https://order.toasttab.com/online/bakudanramen" class="btn btn-primary" onclick="trackEvent('order_click',{'event_category':'conversion','event_label':'toast_la_cantera','brand':'bakudan'})">Order via Toast — La Cantera</a>
                 </div>
             </div>
             <p class="order-details">You will be redirected to Toast to complete your order. Choose pickup or delivery there. Delivery availability, fees, and estimated times are shown during checkout.</p>
@@ -121,7 +133,7 @@
 
         <section class="order-contact" aria-labelledby="order-contact-heading">
             <h2 id="order-contact-heading">Need to contact the restaurant?</h2>
-            <p>Call your location for restaurant inquiries. To place a delivery order, use the online ordering buttons above.</p>
+            <p>Call your location for restaurant inquiries. To place a delivery order, use the DoorDash or Toast ordering buttons above.</p>
             <ul>
                 <li><a href="tel:+12102777740" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'order_contact_bandera','brand':'bakudan'})">Bandera: (210) 277-7740</a></li>
                 <li><a href="tel:+12104370632" onclick="trackEvent('phone_click',{'event_category':'conversion','event_label':'order_contact_stone_oak','brand':'bakudan'})">Stone Oak: (210) 437-0632</a></li>

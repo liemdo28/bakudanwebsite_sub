@@ -152,6 +152,7 @@ try {
     $dry = routing_cli('configure --branches=B1,B2,B3');
     expect_true(str_starts_with($dry, "0\nDRY RUN"), 'configure without --apply is a dry run');
     expect_eq((int)q1("SELECT COUNT(*) c FROM broth_log_alert_recipients")['c'], 0, 'dry run writes nothing');
+    expect_true(str_contains($dry, 'RESULT AFTER THIS PLAN') && str_contains($dry, 'L2: David') && str_contains($dry, 'PENDING onboarding: Omar') && str_contains($dry, '(mode: level_routing)'), 'dry run previews the full resulting recipient matrix from an in-memory copy');
     expect_eq((int)q1("SELECT COUNT(*) c FROM broth_log_branch_alert_mode")['c'], 0, 'dry run switches no branch');
     $applied = routing_cli('configure --branches=B1,B2,B3 --apply');
     expect_true(str_starts_with($applied, "0\nAPPLYING"), 'configure --apply succeeds');

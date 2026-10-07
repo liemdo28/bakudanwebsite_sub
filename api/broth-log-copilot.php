@@ -753,8 +753,31 @@ function broth_log_copilot_is_active_manager(?array $user): bool {
 // person is registered/authorized, never reveals numeric ids, never reveals branch data beyond the
 // sender's own approved store name. $isStatusCommand distinguishes /alerts (status query) from
 // /start (connection message) - both share the same authorization lookup and safe-reply shape.
+// Branches (sorted) for which this person is an active test observer AND is still authorized.
+// Presentation/status only: used by the /start and /alerts replies below and never consulted by
+// recipient resolution, routing, escalation, ACK/resolve authority or branch permissions - the
+// observer's actual alert eligibility is decided solely by broth_log_copilot_resolve_recipients().
+// Independent of the person's primary role, so an 'owner' (CEO/Admin) observer is recognized too.
+function broth_log_copilot_observer_branches(?array $user): array {
+    if ($user === null || (int)($user['active'] ?? 0) !== 1 || (string)($user['telegram_user_id'] ?? '') === '') return [];
+    $allowed = array_map('strtoupper', $user['allowed_branch_list'] ?? []);
+    $branches = [];
+    foreach (q("SELECT DISTINCT branch FROM broth_log_alert_recipients WHERE telegram_user_id=? AND kind='test_observer' AND active=1", [(string)$user['telegram_user_id']]) as $row) {
+        if (in_array(strtoupper((string)$row['branch']), $allowed, true)) $branches[] = strtoupper((string)$row['branch']);
+    }
+    sort($branches);
+    return $branches;
+}
+
 function broth_log_copilot_private_registration_response(?array $user, string $lang, bool $isStatusCommand): array {
     $isManager = broth_log_copilot_is_active_manager($user);
+    $observerBranches = $isManager ? [] : broth_log_copilot_observer_branches($user);
+    if (!empty($observerBranches)) {
+        if ($isStatusCommand) {
+            return ['intent' => 'private_alerts_status', 'message' => broth_log_copilot_tr('private_alerts_status_on_stores', $lang, [implode(', ', $observerBranches)])];
+        }
+        return ['intent' => 'private_start', 'message' => broth_log_copilot_tr('private_start_enabled_stores', $lang)];
+    }
     if ($isStatusCommand) {
         if ($isManager) {
             $branches = $user['allowed_branch_list'] ?? [];
@@ -2492,6 +2515,8 @@ const BROTH_LOG_COPILOT_I18N = [
     'private_start_connected' => ['en' => "Broth Log Alerts\n\nYour Telegram account is connected to the bot. Manager access requires approval.", 'es' => "Broth Log Alertas\n\nTu cuenta de Telegram esta conectada al bot. El acceso de gerente requiere aprobacion.", 'vi' => "Broth Log Canh Bao\n\nTai khoan Telegram cua ban da ket noi voi bot. Quyen truy cap quan ly can duoc phe duyet."],
     'private_start_enabled' => ['en' => "Broth Log Alerts\n\nPrivate alerts are enabled for your approved store.", 'es' => "Broth Log Alertas\n\nLas alertas privadas estan habilitadas para tu tienda aprobada.", 'vi' => "Broth Log Canh Bao\n\nCanh bao rieng tu da duoc bat cho chi nhanh ban duoc duyet."],
     'private_alerts_status_pending' => ['en' => 'Private alerts: Waiting for approval', 'es' => 'Alertas privadas: Esperando aprobacion', 'vi' => 'Canh bao rieng tu: Dang cho phe duyet'],
+    'private_start_enabled_stores' => ['en' => "Broth Log Alerts\n\nPrivate alerts are enabled for your approved stores.", 'es' => "Broth Log Alertas\n\nLas alertas privadas estan habilitadas para tus tiendas aprobadas.", 'vi' => "Broth Log Canh Bao\n\nCanh bao rieng tu da duoc bat cho cac chi nhanh ban duoc duyet."],
+    'private_alerts_status_on_stores' => ['en' => "Private alerts: ON\nStores: %s", 'es' => "Alertas privadas: ACTIVADAS\nTiendas: %s", 'vi' => "Canh bao rieng tu: BAT\nChi nhanh: %s"],
     'private_alerts_status_on' => ['en' => "Private alerts: ON\nStore: %s", 'es' => "Alertas privadas: ACTIVADAS\nTienda: %s", 'vi' => "Canh bao rieng tu: BAT\nChi nhanh: %s"],
 ];
 

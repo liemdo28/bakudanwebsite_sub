@@ -327,6 +327,25 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
         mode TEXT NOT NULL DEFAULT 'ops_fallback',
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    -- Level-aware alert recipients (additive; consulted only for a branch explicitly switched to
+    -- broth_log_branch_alert_mode.mode='level_routing' - no row/mode = legacy behavior, unchanged).
+    -- kind='manager': receives alerts once an incident reaches min_level (cumulative - still receives
+    -- every later level). kind='test_observer': a testing-only additional recipient (e.g. CEO/Admin)
+    -- who receives the same manager-style DMs from the first alert, WITHOUT changing the person's
+    -- authorized_users.role. telegram_user_id='' marks a person who is planned but not yet onboarded
+    -- (no verified Telegram ID): never resolved to a destination, only reported as pending.
+    CREATE TABLE IF NOT EXISTS broth_log_alert_recipients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        branch TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        min_level INTEGER NOT NULL DEFAULT 1,
+        telegram_user_id TEXT NOT NULL DEFAULT '',
+        display_name TEXT NOT NULL DEFAULT '',
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (branch, kind, telegram_user_id, display_name)
+    );
     CREATE TABLE IF NOT EXISTS broth_log_outbound_deliveries (
         delivery_key TEXT PRIMARY KEY,
         incident_id TEXT,
@@ -344,6 +363,7 @@ function broth_log_copilot_migrate(SQLite3 $db): void {
     ");
     broth_log_copilot_migrate_incident_state_check($db);
     foreach ([
+        "ALTER TABLE broth_log_authorized_users ADD COLUMN title TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN active_key TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_expires_at TEXT",
         "ALTER TABLE broth_log_incidents ADD COLUMN escalation_lock_token TEXT",
@@ -804,6 +824,140 @@ function broth_log_copilot_branch_alert_mode(string $branch): string {
     return (string)($row['mode'] ?? 'ops_fallback');
 }
 
+// ============================================================================
+// LEVEL-AWARE RECIPIENT RESOLUTION (branch mode 'level_routing')
+//
+// Replaces "every role='manager' user is an immediate recipient" for a branch that has been
+// explicitly switched to mode 'level_routing' (a human inserting that row - never automatic, never
+// a migration side effect; every other branch keeps the exact legacy behavior above).
+//
+// Who receives an alert at escalation level N: every ACTIVE row in broth_log_alert_recipients for
+// the branch with min_level <= N (cumulative - L1 recipients keep receiving at L2/L3, L2 recipients
+// join when the incident reaches L2), provided the person is still an active, branch-authorized
+// user with a registered private chat and passes the same per-branch cutover-timestamp rule as
+// legacy manager DMs. The person's authorized_users.role is NOT consulted: that is what lets a CEO
+// or Admin (role 'owner') be a testing observer without being re-labelled a manager, and what stops
+// an unassigned role='manager' user from being an implicit recipient.
+// kind='test_observer' rows are conventionally min_level=1 (same manager-style DM from the first
+// alert). A future CEO Level-3-only recipient is just a min_level=3 row; none exists during testing.
+// ============================================================================
+
+const BROTH_LOG_COPILOT_LEVEL_ROUTING_MODE = 'level_routing';
+const BROTH_LOG_COPILOT_MAX_LEVEL = 3;
+
+function broth_log_copilot_level_routing_enabled(string $branch): bool {
+    return broth_log_copilot_branch_alert_mode($branch) === BROTH_LOG_COPILOT_LEVEL_ROUTING_MODE;
+}
+
+// Explicit Ops-group copy allowlist (comma-separated branch codes, same fail-closed parsing as
+// BROTH_LOG_SHIFT_ALERT_BRANCHES). Default empty: in level_routing mode the Ops group is a
+// fallback, not an automatic second copy of an alert a direct recipient already received.
+function broth_log_copilot_ops_group_copy_branches(): array {
+    $raw = trim(broth_log_copilot_env('BROTH_LOG_OPS_GROUP_COPY_BRANCHES'));
+    if ($raw === '') return [];
+    $requested = array_filter(array_map('trim', explode(',', strtoupper($raw))), fn($b) => $b !== '');
+    return array_values(array_intersect($requested, ['B1', 'B2', 'B3']));
+}
+
+// Returns one entry per distinct person (a person holding several rows for the branch is merged:
+// kinds combined, lowest min_level wins) who is eligible to receive an alert at $level:
+// [['telegram_user_id','display_name','kinds'=>[...],'min_level','chat_id'], ...].
+// $incidentCreatedAt follows the same contract as broth_log_copilot_manager_dm_chat_ids(): null =
+// no cutover filtering (raw eligibility, used by reports); a string (including '' = fail closed) =
+// apply the per-branch authorization-moment rule.
+function broth_log_copilot_resolve_recipients(string $branch, int $level, ?string $incidentCreatedAt = null): array {
+    $branchUpper = strtoupper($branch);
+    $rows = q("SELECT ar.telegram_user_id, ar.kind, ar.min_level, au.display_name, au.allowed_branches, au.created_at, pcr.private_chat_id
+            FROM broth_log_alert_recipients ar
+            INNER JOIN broth_log_authorized_users au ON au.telegram_user_id = ar.telegram_user_id
+            INNER JOIN broth_log_private_chat_registrations pcr ON pcr.telegram_user_id = ar.telegram_user_id
+            WHERE ar.branch=? AND ar.active=1 AND ar.telegram_user_id != '' AND ar.min_level <= ? AND au.active=1
+            ORDER BY ar.min_level, ar.id", [$branchUpper, $level]);
+    $byUser = [];
+    foreach ($rows as $row) {
+        $branches = json_decode((string)$row['allowed_branches'], true) ?: [];
+        if (!in_array($branchUpper, array_map('strtoupper', $branches), true) || (string)$row['private_chat_id'] === '') continue;
+        if ($incidentCreatedAt !== null) {
+            $effectiveAuthorizedAt = broth_log_copilot_manager_branch_authorized_at((string)$row['telegram_user_id'], $branchUpper, (string)$row['created_at']);
+            if ($effectiveAuthorizedAt > $incidentCreatedAt) continue;
+        }
+        $uid = (string)$row['telegram_user_id'];
+        if (!isset($byUser[$uid])) {
+            $byUser[$uid] = [
+                'telegram_user_id' => $uid,
+                'display_name' => (string)$row['display_name'],
+                'kinds' => [],
+                'min_level' => (int)$row['min_level'],
+                'chat_id' => (string)$row['private_chat_id'],
+            ];
+        }
+        if (!in_array((string)$row['kind'], $byUser[$uid]['kinds'], true)) $byUser[$uid]['kinds'][] = (string)$row['kind'];
+        $byUser[$uid]['min_level'] = min($byUser[$uid]['min_level'], (int)$row['min_level']);
+    }
+    return array_values($byUser);
+}
+
+function broth_log_copilot_resolve_recipient_chat_ids(string $branch, int $level, ?string $incidentCreatedAt = null): array {
+    return array_values(array_unique(array_column(broth_log_copilot_resolve_recipients($branch, $level, $incidentCreatedAt), 'chat_id')));
+}
+
+// Planned-but-not-onboarded people for a branch (telegram_user_id=''), for reports only.
+function broth_log_copilot_pending_recipients(string $branch): array {
+    return q("SELECT display_name, kind, min_level FROM broth_log_alert_recipients WHERE branch=? AND active=1 AND telegram_user_id='' ORDER BY min_level, id", [strtoupper($branch)]);
+}
+
+// Read-only recipient matrix for every branch and level, for the pre-test review and for ongoing
+// verification: who would receive an alert at each level, whether the Ops group would also get it,
+// and who is still pending onboarding. Never writes anything and never sends anything.
+function broth_log_copilot_routing_matrix(array $branches = ['B1', 'B2', 'B3']): array {
+    $matrix = [];
+    foreach ($branches as $branch) {
+        $branch = strtoupper($branch);
+        $levels = [];
+        for ($level = 1; $level <= BROTH_LOG_COPILOT_MAX_LEVEL; $level++) {
+            $direct = broth_log_copilot_resolve_recipients($branch, $level);
+            $opsChats = broth_log_copilot_route_chat_ids($branch, $level);
+            $groupCopy = in_array($branch, broth_log_copilot_ops_group_copy_branches(), true);
+            $levels[$level] = [
+                'recipients' => array_map(fn($r) => ['telegram_user_id' => $r['telegram_user_id'], 'display_name' => $r['display_name'], 'kinds' => $r['kinds']], $direct),
+                'ops_group' => empty($opsChats) ? 'not_sent' : ($groupCopy ? 'copy' : (empty($direct) ? 'fallback' : 'not_sent')),
+            ];
+        }
+        $matrix[$branch] = [
+            'mode' => broth_log_copilot_branch_alert_mode($branch),
+            'levels' => $levels,
+            'pending' => broth_log_copilot_pending_recipients($branch),
+        ];
+    }
+    return $matrix;
+}
+
+// Delivery for a 'level_routing' branch: direct recipients (resolve_recipients() for this level) are
+// the primary path. The Ops group is NOT an automatic second copy; it receives the alert only when
+// (a) no eligible direct recipient exists for this level, (b) every direct delivery failed (nobody
+// was actually reached - a food-safety alert must never be silently lost), or (c) the branch is on
+// the explicit BROTH_LOG_OPS_GROUP_COPY_BRANCHES allowlist. Same $sendToChat closure and result shape
+// as the legacy path, so temperature and missing_shift incidents (and every lifecycle stage: initial,
+// reminder, escalation) go through exactly the same resolution.
+function broth_log_copilot_deliver_level_routed_alert(string $incidentId, string $branch, int $level, callable $sendToChat): array {
+    $incidentCreatedAt = (string)(q1("SELECT created_at FROM broth_log_incidents WHERE incident_id=?", [$incidentId])['created_at'] ?? '');
+    $directChats = broth_log_copilot_resolve_recipient_chat_ids($branch, $level, $incidentCreatedAt);
+    $results = [];
+    foreach ($directChats as $chatId) $results[$chatId] = $sendToChat($chatId);
+    $reached = count(array_filter($results, fn($r) => !empty($r['sent']) || !empty($r['duplicate']))) > 0;
+    $groupCopy = in_array($branch, broth_log_copilot_ops_group_copy_branches(), true);
+    $fallbackReason = empty($directChats) ? 'no_eligible_recipient' : (!$reached ? 'all_direct_deliveries_failed' : null);
+    if ($groupCopy || $fallbackReason !== null) {
+        foreach (broth_log_copilot_route_chat_ids($branch, $level) as $chatId) {
+            if (!isset($results[$chatId])) $results[$chatId] = $sendToChat($chatId);
+        }
+        if ($fallbackReason !== null) {
+            broth_log_copilot_audit($incidentId, 'ops_group_fallback', null, ['branch' => $branch, 'level' => $level, 'reason' => $fallbackReason]);
+        }
+    }
+    return $results;
+}
+
 // Resolves destinations for one proactive alert (initial/reminder/escalation/L3): the Ops Alert
 // Group (mandatory operational visibility) and every eligible Manager DM (additional authorized
 // private delivery) for the branch, sent independently via the caller-supplied $sendToChat closure.
@@ -816,6 +970,9 @@ function broth_log_copilot_branch_alert_mode(string $branch): string {
 // its own success count unchanged; failure of one destination never removes another from this list.
 function broth_log_copilot_deliver_proactive_alert(string $incidentId, string $branch, int $level, callable $sendToChat): array {
     $branch = strtoupper($branch);
+    if (broth_log_copilot_level_routing_enabled($branch)) {
+        return broth_log_copilot_deliver_level_routed_alert($incidentId, $branch, $level, $sendToChat);
+    }
     $groupChats = broth_log_copilot_route_chat_ids($branch, $level);
     // Manager DM eligibility is scoped to this specific incident's own creation time (see
     // broth_log_copilot_manager_dm_chat_ids()'s own comment) - applies uniformly across the whole
@@ -2087,10 +2244,20 @@ function broth_log_copilot_incident_known_destinations(string $incidentId): arra
         "SELECT DISTINCT pcr.private_chat_id AS chat_id
          FROM broth_log_private_chat_registrations pcr
          INNER JOIN broth_log_authorized_users au ON au.telegram_user_id = pcr.telegram_user_id
-         WHERE au.role = 'manager'"
+         WHERE au.role = 'manager'
+         UNION
+         SELECT DISTINCT pcr.private_chat_id AS chat_id
+         FROM broth_log_private_chat_registrations pcr
+         INNER JOIN broth_log_alert_recipients ar ON ar.telegram_user_id = pcr.telegram_user_id AND ar.telegram_user_id != ''"
     ), 'chat_id'));
+    // A level_routing branch's direct recipients are whoever the level-aware resolver currently
+    // allows at ANY level (an ack/resolve/auto-stop notice goes to people who actually received the
+    // incident - the historical-delivery intersection below - and are still eligible); every other
+    // branch keeps the legacy role='manager' eligibility unchanged.
     $currentlyEligibleManagerChats = ($branch !== '' && $incidentCreatedAt !== '')
-        ? array_flip(broth_log_copilot_manager_dm_chat_ids($branch, $incidentCreatedAt))
+        ? array_flip(broth_log_copilot_level_routing_enabled($branch)
+            ? broth_log_copilot_resolve_recipient_chat_ids($branch, BROTH_LOG_COPILOT_MAX_LEVEL, $incidentCreatedAt)
+            : broth_log_copilot_manager_dm_chat_ids($branch, $incidentCreatedAt))
         : [];
 
     $envFallbackChat = broth_log_copilot_env('TELEGRAM_COPILOT_CHAT_ID');

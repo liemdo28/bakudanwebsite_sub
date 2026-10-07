@@ -339,6 +339,60 @@ try {
     // fail-closed when created_at is unresolvable
     expect_eq(names_at('B1', 1, ''), [], 'an unresolvable incident created_at fails closed (no direct recipient)');
 
+    // ---------------------------------------------------------------- /start + /alerts are observer-aware (presentation only)
+    $matrixSnapshot = function (): string {
+        $out = [];
+        foreach (['B1', 'B2', 'B3'] as $b) {
+            foreach ([1, 2, 3] as $l) $out[$b][$l] = array_map(fn($r) => $r['telegram_user_id'] . ':' . $r['chat_id'] . ':' . implode('+', $r['kinds']), broth_log_copilot_resolve_recipients($b, $l, '2026-10-07 00:00:00'));
+        }
+        return json_encode([$out, broth_log_copilot_routing_matrix()]);
+    };
+    $hoang = broth_log_copilot_authorized_user(HOANG);
+    $liem = broth_log_copilot_authorized_user(LIEM);
+    $david = broth_log_copilot_authorized_user(DAVID);
+    expect_eq(broth_log_copilot_observer_branches($hoang), ['B1', 'B2', 'B3'], 'owner + test_observer: observer branches are B1/B2/B3');
+    expect_eq(broth_log_copilot_private_registration_response($hoang, 'en', true)['message'], "Private alerts: ON\nStores: B1, B2, B3", 'owner + test_observer (Hoang): /alerts shows private alerts ON for B1, B2, B3');
+    expect_eq(broth_log_copilot_private_registration_response($liem, 'en', true)['message'], "Private alerts: ON\nStores: B1, B2, B3", 'owner + test_observer (Liem): /alerts shows the same');
+    expect_eq(broth_log_copilot_private_registration_response($hoang, 'en', false)['message'], broth_log_copilot_tr('private_start_enabled_stores', 'en'), 'owner + test_observer: /start says private alerts are enabled for approved stores');
+    expect_true(!str_contains(broth_log_copilot_private_registration_response($hoang, 'en', false)['message'], 'requires approval'), 'an observer is never told manager access still needs approval');
+    // manager unchanged
+    expect_eq(broth_log_copilot_private_registration_response($david, 'en', true)['message'], broth_log_copilot_tr('private_alerts_status_on', 'en', ['B1']), 'manager behavior unchanged: /alerts shows ON plus the existing single store line');
+    expect_eq(broth_log_copilot_private_registration_response($david, 'en', false)['message'], broth_log_copilot_tr('private_start_enabled', 'en'), 'manager behavior unchanged: /start shows the existing enabled message');
+    // an owner with NO observer assignment is not shown as a recipient
+    run("INSERT INTO broth_log_authorized_users (telegram_user_id,display_name,role,allowed_branches,active,created_at) VALUES ('710008','Plain Owner','owner',?,1,'2025-01-01 00:00:00')", [json_encode(['B1', 'B2', 'B3'])]);
+    $plainOwner = broth_log_copilot_authorized_user('710008');
+    expect_eq(broth_log_copilot_observer_branches($plainOwner), [], 'owner without observer rows: no observer branches');
+    expect_eq(broth_log_copilot_private_registration_response($plainOwner, 'en', true)['message'], broth_log_copilot_tr('private_alerts_status_pending', 'en'), 'owner without observer assignment is NOT shown private alerts ON');
+    expect_eq(broth_log_copilot_private_registration_response($plainOwner, 'en', false)['message'], broth_log_copilot_tr('private_start_connected', 'en'), 'owner without observer assignment gets the generic /start message');
+    // unauthorized + inactive / revoked observers
+    expect_eq(broth_log_copilot_private_registration_response(null, 'en', true)['message'], broth_log_copilot_tr('private_alerts_status_pending', 'en'), 'unauthorized sender still sees the pending status');
+    run("UPDATE broth_log_alert_recipients SET active=0 WHERE telegram_user_id=? AND branch='B3'", [HOANG]);
+    expect_eq(broth_log_copilot_observer_branches(broth_log_copilot_authorized_user(HOANG)), ['B1', 'B2'], 'a deactivated observer assignment drops that store from the status line');
+    run("UPDATE broth_log_alert_recipients SET active=1 WHERE telegram_user_id=? AND branch='B3'", [HOANG]);
+    run("UPDATE broth_log_authorized_users SET allowed_branches=? WHERE telegram_user_id=?", [json_encode(['B1']), HOANG]);
+    expect_eq(broth_log_copilot_observer_branches(broth_log_copilot_authorized_user(HOANG)), ['B1'], 'an observer row for a store the person is no longer authorized for is not shown');
+    run("UPDATE broth_log_authorized_users SET allowed_branches=? WHERE telegram_user_id=?", [json_encode(['B1', 'B2', 'B3']), HOANG]);
+    // end to end through the inbox (private chat /alerts from Hoang)
+    broth_log_copilot_enqueue_webhook(['update_id' => 88001, 'message' => ['text' => '/alerts', 'from' => ['id' => (int)HOANG], 'chat' => ['id' => 'dm-' . HOANG, 'type' => 'private'], 'message_id' => 1]]);
+    $sent = [];
+    broth_log_copilot_process_inbox(10);
+    expect_true(count($sent) === 1 && $sent[0]['chat'] === 'dm-' . HOANG && str_contains($sent[0]['text'], 'Private alerts: ON') && str_contains($sent[0]['text'], 'B1, B2, B3'), 'inbox end to end: Hoang\'s /alerts reply says ON for B1, B2, B3');
+
+    // The role label is irrelevant to routing: manager vs owner gives a byte-identical matrix and destinations.
+    $matrixAsOwner = $matrixSnapshot();
+    run("UPDATE broth_log_authorized_users SET role='manager' WHERE telegram_user_id=?", [HOANG]);
+    $matrixAsManager = $matrixSnapshot();
+    run("UPDATE broth_log_authorized_users SET role='owner' WHERE telegram_user_id=?", [HOANG]);
+    expect_eq($matrixAsOwner, $matrixAsManager, 'changing Hoang from manager to owner does not change any resolved recipient set or the matrix');
+    expect_eq($matrixSnapshot(), $matrixAsOwner, 'matrix is stable after the role is set back to owner');
+    $sent = [];
+    $roleIncident = fresh_temp_incident('B1', 'rolecheck');
+    broth_log_copilot_notify_incident($roleIncident);
+    expect_eq(receivers($roleIncident), ['David', 'Hoang Le', 'Liem Do'], 'with Hoang as owner a B1 alert still reaches David, Hoang and Liem exactly once, Ops excluded');
+    expect_eq(count($sent), 3, 'one message per person after the role change');
+    $hoangAck = broth_log_copilot_ack($roleIncident, ['telegram_user_id' => HOANG, 'allowed_branch_list' => ['B1', 'B2', 'B3'], 'display_name' => 'Hoang Le']);
+    expect_true(!empty($hoangAck['ok']), 'Hoang (owner) keeps ACK authority on his stores');
+
     // ---------------------------------------------------------------- Existing bookkeeping untouched by a recipient change
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$legacyId])['state'], 'resolved', 'historical incident rows are untouched by routing configuration');
 

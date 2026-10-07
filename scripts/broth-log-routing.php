@@ -52,8 +52,32 @@ load_private_env_file_routing(PRIVATE_TELEGRAM_ENV_PATH);
 define('DB_PATH', getenv('BAKUDAN_DB_PATH') ?: '/home/hoale24new/bakudan-app/data/bakudan.db');
 require_once __DIR__ . '/../api/broth-log-copilot.php';
 
+// Dry-run support: an in-memory SQLite copy of the few tables routing reads, filled from the real
+// database opened READ-ONLY. Every simulated write lands here and is discarded with the process, so
+// a dry run can show the exact resolved matrix without ever writing to the real database.
+function routing_enable_preview(): void {
+    $src = new SQLite3(DB_PATH, SQLITE3_OPEN_READONLY);
+    $src->enableExceptions(true);
+    $src->busyTimeout(3000);
+    $mem = new SQLite3(':memory:');
+    $mem->enableExceptions(true);
+    broth_log_copilot_migrate($mem);
+    foreach (['broth_log_authorized_users', 'broth_log_private_chat_registrations', 'broth_log_manager_branch_authorizations', 'broth_log_routing_rules', 'broth_log_branch_alert_mode', 'broth_log_alert_recipients'] as $table) {
+        $res = $src->query("SELECT * FROM {$table}");
+        while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
+            $cols = array_keys($row);
+            $stmt = $mem->prepare('INSERT OR REPLACE INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')');
+            foreach (array_values($row) as $i => $v) $stmt->bindValue($i + 1, $v);
+            $stmt->execute();
+        }
+    }
+    $src->close();
+    $GLOBALS['ROUTING_PREVIEW_DB'] = $mem;
+}
+
 function db(): SQLite3 {
     static $db = null;
+    if (isset($GLOBALS['ROUTING_PREVIEW_DB'])) return $GLOBALS['ROUTING_PREVIEW_DB'];
     if ($db) return $db;
     $db = new SQLite3(DB_PATH);
     $db->enableExceptions(true);
@@ -146,6 +170,7 @@ try {
 
     if ($command === 'configure') {
         if ($branchArg === null || empty($branches)) throw new RuntimeException('configure requires --branches=B1[,B2,B3]');
+        if (!$apply) routing_enable_preview();
         $planned = [];
         foreach ($branches as $branch) {
             foreach (ROUTING_PLAN[$branch] as [$name, $kind, $minLevel]) {
@@ -159,12 +184,12 @@ try {
                 $planned[] = [$branch, $kind, $minLevel, (string)$user['telegram_user_id'], (string)$user['display_name']];
             }
         }
-        echo ($apply ? 'APPLYING' : 'DRY RUN (no changes)') . " - branches: " . implode(',', $branches) . "\n";
+        echo ($apply ? 'APPLYING' : 'DRY RUN (in-memory preview; the real database is not written)') . " - branches: " . implode(',', $branches) . "\n";
         foreach ($planned as [$branch, $kind, $minLevel, $uid, $name]) {
             echo "  {$branch} {$kind} from L{$minLevel}: {$name} [" . routing_mask($uid) . "]" . ($uid === '' ? ' PENDING' : '') . "\n";
         }
         foreach (ROUTING_TITLES as $name => $title) echo "  title: {$name} => {$title} (role unchanged)\n";
-        if ($apply) {
+        {
             db()->exec('BEGIN IMMEDIATE');
             try {
                 foreach ($planned as [$branch, $kind, $minLevel, $uid, $name]) {
@@ -187,7 +212,7 @@ try {
                 throw $e;
             }
         }
-        echo "\n";
+        echo "\n" . ($apply ? '' : "RESULT AFTER THIS PLAN (preview):\n");
         routing_print_report($branches);
         exit(0);
     }

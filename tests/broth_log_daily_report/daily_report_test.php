@@ -176,6 +176,25 @@ try {
     expect_eq($report['pending_recipients'], ['Omar - B2 Level 2 (pending onboarding, no Telegram ID)'], 'Omar is reported as pending onboarding');
     expect_eq([q1("SELECT COUNT(*) c FROM broth_log_incidents")['c'], q1("SELECT COUNT(*) c FROM broth_log_outbound_deliveries")['c'], q1("SELECT COUNT(*) c FROM broth_log_incident_events")['c']], $countsBefore, 'building the report creates/changes no incident, delivery or event');
 
+    // alert coverage for critical readings + legacy-era split
+    $fryer = array_values(array_filter($report['stores']['B1']['exceptions'], fn($e) => $e['station'] === 'Fryer Left'))[0];
+    $prepEx = array_values(array_filter($report['stores']['B1']['exceptions'], fn($e) => $e['station'] === 'Prep Area Cooler'))[0];
+    expect_eq($fryer['alert_coverage'], 'NO incident found for this critical reading', 'a critical reading with no incident anywhere is reported plainly as having no incident');
+    expect_eq($prepEx['alert_coverage'], 'not alert-eligible (not critical)', 'a non-critical exception is labelled not alert-eligible');
+    $inc('inc-b1-fryer-old', 'B1', '2026-09-01', 'temperature', 'auto_stopped', null, '2026-09-01 18:00:00', null, 'Fryer Left');
+    run("UPDATE broth_log_incidents SET station_key='fryerLeft' WHERE incident_id='inc-b1-fryer-old'");
+    $reportCov = bldr_build_report($d, ['B1' => ['table' => $b1], 'B2' => ['table' => $b2], 'B3' => ['table' => $b3]], utc('2026-10-09 04:00:00'));
+    $fryer2 = array_values(array_filter($reportCov['stores']['B1']['exceptions'], fn($e) => $e['station'] === 'Fryer Left'))[0];
+    expect_eq($fryer2['alert_coverage'], 'covered by earlier unresolved incident from 2026-09-01 (auto_stopped)', 'a critical reading folded into an earlier unresolved station incident names that incident date and state');
+    run("DELETE FROM broth_log_incidents WHERE incident_id='inc-b1-fryer-old'");
+    run("UPDATE broth_log_branch_alert_mode SET updated_at='2026-10-08 19:00:00' WHERE branch='B1'");
+    $reportEra = bldr_build_report($d, ['B1' => ['table' => $b1], 'B2' => ['table' => $b2], 'B3' => ['table' => $b3]], utc('2026-10-09 04:00:00'));
+    $dEra = $reportEra['stores']['B1']['delivery'];
+    expect_eq([$dEra['sent'], $dEra['failed'], $dEra['legacy_before_switch']['sent'], $dEra['legacy_before_switch']['failed'], $dEra['legacy_before_switch']['ops']], [0, 0, 3, 1, 1], 'deliveries made before the level_routing switch are tallied separately as legacy');
+    expect_eq([$dEra['unexpected_recipients'], $dEra['ops_plus_direct_same_incident_level']], [[], 0], 'legacy-era deliveries are not judged against level-aware expectations');
+    expect_true(str_contains(bldr_render_text($reportEra), 'earlier today before level_routing started'), 'the legacy-era line is rendered');
+    run("UPDATE broth_log_branch_alert_mode SET updated_at='2026-10-01 00:00:00' WHERE branch='B1'");
+
     // ------------------------------------------------------------------ rendering
     $html = bldr_render_html($report);
     $text = bldr_render_text($report);

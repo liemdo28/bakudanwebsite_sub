@@ -57,9 +57,11 @@ require_once __DIR__ . '/../api/broth-log-daily-report.php';
 function db(): SQLite3 {
     static $db = null;
     if ($db) return $db;
-    $db = new SQLite3(DB_PATH);
+    // --dry-run opens the database READ-ONLY at the SQLite level, so it cannot write even by mistake.
+    $readOnly = in_array('--dry-run', $GLOBALS['argv'] ?? [], true);
+    $db = $readOnly ? new SQLite3(DB_PATH, SQLITE3_OPEN_READONLY) : new SQLite3(DB_PATH);
     $db->enableExceptions(true);
-    $db->exec('PRAGMA journal_mode=WAL;');
+    if (!$readOnly) $db->exec('PRAGMA journal_mode=WAL;');
     $db->busyTimeout(5000);
     return $db;
 }

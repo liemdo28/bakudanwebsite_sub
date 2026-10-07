@@ -139,7 +139,7 @@ function bldr_collect_store(string $branch, array $table, string $date, DateTime
     foreach ($submissions as $s) {
         foreach ($s['stations'] as $st) {
             $tally[$st['class']]++;
-            $ctx = ['employee' => $s['employee'], 'local_time' => $s['local_time'], 'shift' => $s['assigned_shift'], 'station' => $st['label'], 'raw' => $st['raw'], 'target' => $st['target'], 'severity' => $st['severity'], 'temperature' => $st['temperature']];
+            $ctx = ['key' => $st['key'], 'employee' => $s['employee'], 'local_time' => $s['local_time'], 'shift' => $s['assigned_shift'], 'station' => $st['label'], 'raw' => $st['raw'], 'target' => $st['target'], 'severity' => $st['severity'], 'temperature' => $st['temperature']];
             if ($st['class'] === 'exception' || $st['class'] === 'config_gap') $exceptions[] = $ctx;
             if ($st['class'] === 'non_numeric') $nonNumeric[] = $ctx;
             if ($st['raw_text_parsed']) $reviews[] = $ctx;
@@ -225,12 +225,14 @@ function bldr_collect_delivery_health(string $branch, string $date): array {
     foreach ($opsChats as $c) $chatNames[(string)$c] = 'Ops group';
     $mode = q1("SELECT mode, updated_at FROM broth_log_branch_alert_mode WHERE branch=?", [$branch]);
     $routed = $mode && $mode['mode'] === BROTH_LOG_COPILOT_LEVEL_ROUTING_MODE;
-    $rows = q("SELECT d.incident_id, d.delivery_key, d.chat_id, d.message_kind, d.status, i.created_at inc_created
+    $rows = q("SELECT d.incident_id, d.delivery_key, d.chat_id, d.message_kind, d.status, d.created_at dcreated
                FROM broth_log_outbound_deliveries d JOIN broth_log_incidents i ON i.incident_id = d.incident_id
                WHERE i.branch=? AND d.created_at >= ? AND d.created_at < ? AND d.message_kind NOT LIKE '%\\_status' ESCAPE '\\'
                ORDER BY d.created_at", [$branch, $from, $to]);
-    $sent = 0; $failed = 0; $opsSent = 0;
-    $perPerson = [];
+    // Deliveries made before a branch was switched to level_routing went through the legacy path
+    // (Ops group + every manager), so they are tallied separately and never judged against the
+    // level-aware expectations.
+    $agg = ['routed' => ['sent' => 0, 'failed' => 0, 'ops' => 0, 'per_person' => []], 'legacy' => ['sent' => 0, 'failed' => 0, 'ops' => 0, 'per_person' => []]];
     $seen = [];
     $duplicates = [];
     $unexpected = [];
@@ -240,14 +242,14 @@ function bldr_collect_delivery_health(string $branch, string $date): array {
         $parts = explode(':', (string)$r['delivery_key']);
         $level = $r['message_kind'] === 'incident_notification' ? 1 : (int)($parts[4] ?? 0);
         $ok = $r['status'] === 'sent';
-        $ok ? $sent++ : $failed++;
-        if ($name === 'Ops group' && $ok) $opsSent++;
-        $perPerson[$name]['sent'] = ($perPerson[$name]['sent'] ?? 0) + ($ok ? 1 : 0);
-        $perPerson[$name]['failed'] = ($perPerson[$name]['failed'] ?? 0) + ($ok ? 0 : 1);
+        $era = ($routed && $r['dcreated'] >= $mode['updated_at']) ? 'routed' : 'legacy';
+        $agg[$era][$ok ? 'sent' : 'failed']++;
+        if ($name === 'Ops group' && $ok) $agg[$era]['ops']++;
+        $agg[$era]['per_person'][$name]['sent'] = ($agg[$era]['per_person'][$name]['sent'] ?? 0) + ($ok ? 1 : 0);
+        $agg[$era]['per_person'][$name]['failed'] = ($agg[$era]['per_person'][$name]['failed'] ?? 0) + ($ok ? 0 : 1);
         $sig = implode('|', [$r['incident_id'], $r['chat_id'], $r['message_kind'], $parts[3] ?? '', $level]);
         if (isset($seen[$sig])) $duplicates[$sig] = $name; else $seen[$sig] = true;
-        $byIncidentLevel[$r['incident_id'] . '|' . $level]['names'][$name] = true;
-        $byIncidentLevel[$r['incident_id'] . '|' . $level]['created'] = $r['inc_created'];
+        if ($era === 'routed') $byIncidentLevel[$r['incident_id'] . '|' . $level]['names'][$name] = true;
     }
     $crossPath = 0;
     foreach ($byIncidentLevel as $key => $info) {
@@ -255,20 +257,35 @@ function bldr_collect_delivery_health(string $branch, string $date): array {
         $names = array_keys($info['names']);
         $direct = array_values(array_filter($names, fn($n) => $n !== 'Ops group'));
         if (in_array('Ops group', $names, true) && !empty($direct)) $crossPath++;
-        if ($routed && $info['created'] >= $mode['updated_at']) {
-            $expected = array_column(broth_log_copilot_resolve_recipients($branch, (int)$level, null), 'display_name');
-            foreach ($direct as $n) if (!in_array($n, $expected, true)) $unexpected[] = $n . ' (L' . $level . ')';
-        }
+        $expected = array_column(broth_log_copilot_resolve_recipients($branch, (int)$level, null), 'display_name');
+        foreach ($direct as $n) if (!in_array($n, $expected, true)) $unexpected[] = $n . ' (L' . $level . ')';
     }
     $fallbacks = [];
     foreach (q("SELECT e.event_json FROM broth_log_incident_events e JOIN broth_log_incidents i ON i.incident_id = e.incident_id WHERE i.branch=? AND e.event_type='ops_group_fallback' AND e.created_at >= ? AND e.created_at < ?", [$branch, $from, $to]) as $e) {
         $fallbacks[] = (string)(json_decode((string)$e['event_json'], true)['reason'] ?? 'unspecified');
     }
+    $current = $routed ? $agg['routed'] : $agg['legacy'];
     return [
-        'mode' => $mode['mode'] ?? 'legacy', 'sent' => $sent, 'failed' => $failed, 'per_person' => $perPerson, 'ops_group_sent' => $opsSent,
+        'mode' => $mode['mode'] ?? 'legacy', 'switched_local' => $routed ? bldr_local_label((string)$mode['updated_at']) : null,
+        'sent' => $current['sent'], 'failed' => $current['failed'], 'per_person' => $current['per_person'], 'ops_group_sent' => $current['ops'],
+        'legacy_before_switch' => $routed ? $agg['legacy'] : null,
         'ops_fallback_reasons' => $fallbacks, 'duplicates' => array_values($duplicates), 'ops_plus_direct_same_incident_level' => $crossPath,
         'unexpected_recipients' => array_values(array_unique($unexpected)),
     ];
+}
+
+// Whether a reading outside SOP is backed by a Telegram incident. Only CRITICAL readings raise
+// alerts; a critical reading with no incident of its own that date is normally folded into a
+// still-unresolved incident for the same station (station-level suppression) - report which one,
+// from the incident table, or say plainly that none was found.
+function bldr_alert_coverage(string $branch, string $date, array $exception): string {
+    if (($exception['severity'] ?? '') !== 'critical') return 'not alert-eligible (not critical)';
+    $key = (string)($exception['key'] ?? '');
+    $same = q1("SELECT incident_id, state FROM broth_log_incidents WHERE branch=? AND station_key=? AND business_date=? ORDER BY created_at LIMIT 1", [$branch, $key, $date]);
+    if ($same) return 'incident this date (' . $same['state'] . ')';
+    $open = q1("SELECT business_date, state FROM broth_log_incidents WHERE branch=? AND station_key=? AND state NOT IN ('resolved','closed') ORDER BY created_at DESC LIMIT 1", [$branch, $key]);
+    if ($open) return 'covered by earlier unresolved incident from ' . $open['business_date'] . ' (' . $open['state'] . ')';
+    return 'NO incident found for this critical reading';
 }
 
 function bldr_build_report(string $date, array $tablesByBranch, DateTimeImmutable $now): array {
@@ -281,6 +298,7 @@ function bldr_build_report(string $date, array $tablesByBranch, DateTimeImmutabl
             $store = bldr_collect_store($branch, $entry['table'], $date, $now);
         }
         $store['incident_view'] = bldr_collect_incidents($branch, $date);
+        if ($store['error'] === null) $store['exceptions'] = array_map(fn($e) => $e + ['alert_coverage' => bldr_alert_coverage($branch, $date, $e)], $store['exceptions']);
         $store['delivery'] = bldr_collect_delivery_health($branch, $date);
         $stores[$branch] = $store;
     }
@@ -363,7 +381,7 @@ function bldr_render_text(array $r): string {
             foreach ($st['shifts'] as $shift => $sh) $L[] = $shift . ': ' . bldr_shift_cell_text($sh);
             $t = $st['tally'];
             $L[] = 'Readings: normal ' . $t['normal'] . ', exceptions ' . $t['exception'] . ', non-numeric ' . $t['non_numeric'] . ', blank ' . $t['blank'] . ($t['config_gap'] ? ', no SOP ' . $t['config_gap'] : '') . ($t['no_column'] ? ', column missing in sheet ' . $t['no_column'] : '');
-            foreach ($st['exceptions'] as $e) $L[] = '  EXCEPTION ' . $e['station'] . ': ' . $e['raw'] . ' (SOP ' . $e['target'] . ', ' . $e['severity'] . ') - ' . $e['employee'] . ' ' . ($e['local_time'] ?? '') . ' ' . ($e['shift'] ?? '');
+            foreach ($st['exceptions'] as $e) $L[] = '  EXCEPTION ' . $e['station'] . ': ' . $e['raw'] . ' (SOP ' . $e['target'] . ', ' . $e['severity'] . ') - ' . $e['employee'] . ' ' . ($e['local_time'] ?? '') . ' ' . ($e['shift'] ?? '') . ' - alert: ' . ($e['alert_coverage'] ?? 'n/a');
             foreach ($st['non_numeric'] as $e) $L[] = '  NON-NUMERIC ' . $e['station'] . ': "' . $e['raw'] . '" - ' . $e['employee'] . ' ' . ($e['local_time'] ?? '');
             foreach ($st['raw_text_review'] as $e) $L[] = '  REVIEW raw text parsed as number ' . $e['station'] . ': "' . $e['raw'] . '" read as ' . broth_log_format_number((float)$e['temperature']);
             foreach ($st['unclassified'] as $e) $L[] = '  UNCLASSIFIED submission (timestamp not parseable): ' . $e['employee'] . ' "' . $e['submitted_at_raw'] . '"';
@@ -373,7 +391,8 @@ function bldr_render_text(array $r): string {
         $L[] = 'Incidents: temperature ' . $iv['temperature'] . ', missing shift ' . $iv['missing_shift'] . ', still open ' . $iv['open'] . ($iv['carry_over_open'] ? ', older unresolved ' . $iv['carry_over_open'] . ' (oldest ' . $iv['carry_over_oldest'] . ')' : '');
         foreach ($iv['incidents'] as $i) $L[] = '  ' . strtoupper($i['type']) . ' ' . $i['what'] . ' - ' . $i['state'] . ' (L' . $i['level'] . ')' . ($i['acked_by'] ? ' - ACK by ' . $i['acked_by'] . ' at ' . ($i['acked_local'] ?? BLDR_MISSING) : ' - not acknowledged') . ($i['resolved_local'] ? ' - closed ' . $i['resolved_local'] : '') . ' [' . $i['incident_id'] . ']';
         $d = $st['delivery'];
-        $L[] = 'Telegram delivery (' . $d['mode'] . '): sent ' . $d['sent'] . ', failed ' . $d['failed'] . ', Ops group received ' . $d['ops_group_sent'] . ', fallback events ' . count($d['ops_fallback_reasons']) . ($d['ops_fallback_reasons'] ? ' (' . implode(', ', array_unique($d['ops_fallback_reasons'])) . ')' : '') . ', duplicates ' . count($d['duplicates']) . ', Ops+direct same incident ' . $d['ops_plus_direct_same_incident_level'] . ($d['unexpected_recipients'] ? ', UNEXPECTED recipients: ' . implode(', ', $d['unexpected_recipients']) : '');
+        if ($d['legacy_before_switch'] !== null && ($d['legacy_before_switch']['sent'] + $d['legacy_before_switch']['failed']) > 0) $L[] = 'Telegram, earlier today before level_routing started (' . ($d['switched_local'] ?? '?') . ', legacy path): sent ' . $d['legacy_before_switch']['sent'] . ', failed ' . $d['legacy_before_switch']['failed'] . ', Ops group received ' . $d['legacy_before_switch']['ops'];
+        $L[] = 'Telegram delivery (' . $d['mode'] . ($d['switched_local'] ? ', since ' . $d['switched_local'] : '') . '): sent ' . $d['sent'] . ', failed ' . $d['failed'] . ', Ops group received ' . $d['ops_group_sent'] . ', fallback events ' . count($d['ops_fallback_reasons']) . ($d['ops_fallback_reasons'] ? ' (' . implode(', ', array_unique($d['ops_fallback_reasons'])) . ')' : '') . ', duplicates ' . count($d['duplicates']) . ', Ops+direct same incident ' . $d['ops_plus_direct_same_incident_level'] . ($d['unexpected_recipients'] ? ', UNEXPECTED recipients: ' . implode(', ', $d['unexpected_recipients']) : '');
     }
     if ($r['pending_recipients']) { $L[] = ''; foreach ($r['pending_recipients'] as $p) $L[] = 'Pending: ' . $p; }
     $L[] = '';
@@ -435,7 +454,7 @@ function bldr_render_html(array $r): string {
             $h[] = '<p style="font-size:13px;margin:8px 0;">Readings audited against production SOP: <b>' . $t['normal'] . '</b> normal, <b>' . $t['exception'] . '</b> exceptions, <b>' . $t['non_numeric'] . '</b> non-numeric, <b>' . $t['blank'] . '</b> blank' . ($t['config_gap'] ? ', <b>' . $t['config_gap'] . '</b> without SOP' : '') . ($t['no_column'] ? ', <b>' . $t['no_column'] . '</b> with the sheet column missing' : '') . '.</p>';
             if ($st['exceptions']) {
                 $h[] = '<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;"><tr><th ' . $th . '>Exception</th><th ' . $th . '>Reading</th><th ' . $th . '>SOP</th><th ' . $th . '>Who / when</th></tr>';
-                foreach ($st['exceptions'] as $e) $h[] = '<tr><td ' . $td . '>' . bldr_h($e['station']) . '<br>' . bldr_pill($e['severity'], $e['severity'] === 'critical' ? '#c62828' : '#ef6c00') . '</td><td ' . $td . '>' . bldr_h($e['raw']) . '</td><td ' . $td . '>' . bldr_h($e['target']) . '</td><td ' . $td . '>' . bldr_h($e['employee']) . '<br>' . bldr_h(($e['shift'] ?? '') . ' ' . ($e['local_time'] ?? '')) . '</td></tr>';
+                foreach ($st['exceptions'] as $e) $h[] = '<tr><td ' . $td . '>' . bldr_h($e['station']) . '<br>' . bldr_pill($e['severity'], $e['severity'] === 'critical' ? '#c62828' : '#ef6c00') . '</td><td ' . $td . '>' . bldr_h($e['raw']) . '</td><td ' . $td . '>' . bldr_h($e['target']) . '</td><td ' . $td . '>' . bldr_h($e['employee']) . '<br>' . bldr_h(($e['shift'] ?? '') . ' ' . ($e['local_time'] ?? '')) . '<br><span style="font-size:12px;color:#666;">Alert: ' . bldr_h($e['alert_coverage'] ?? 'n/a') . '</span></td></tr>';
                 $h[] = '</table>';
             }
             if ($st['non_numeric']) {
@@ -457,7 +476,8 @@ function bldr_render_html(array $r): string {
         $d = $st['delivery'];
         $per = [];
         foreach ($d['per_person'] as $n => $c) $per[] = bldr_h($n) . ' ' . $c['sent'] . ' sent' . ($c['failed'] ? ' / ' . $c['failed'] . ' failed' : '');
-        $h[] = '<p style="font-size:13px;margin:10px 0 2px;"><b>Telegram delivery</b> (mode ' . bldr_h($d['mode']) . '): sent ' . $d['sent'] . ', failed ' . $d['failed'] . ($per ? ' &mdash; ' . implode('; ', $per) : '') . '<br>Ops group received: ' . $d['ops_group_sent'] . '; fallback events: ' . count($d['ops_fallback_reasons']) . ($d['ops_fallback_reasons'] ? ' (' . bldr_h(implode(', ', array_unique($d['ops_fallback_reasons']))) . ')' : '') . '; duplicate deliveries: ' . count($d['duplicates']) . '; Ops copy alongside direct DM for same incident/level: ' . $d['ops_plus_direct_same_incident_level'] . ($d['unexpected_recipients'] ? '<br><span style="color:#c62828;">Unexpected recipients: ' . bldr_h(implode(', ', $d['unexpected_recipients'])) . '</span>' : '') . '</p>';
+        if ($d['legacy_before_switch'] !== null && ($d['legacy_before_switch']['sent'] + $d['legacy_before_switch']['failed']) > 0) $h[] = '<p style="font-size:12px;color:#666;margin:10px 0 0;">Earlier today, before level_routing started (' . bldr_h($d['switched_local'] ?? '?') . ', legacy path): sent ' . $d['legacy_before_switch']['sent'] . ', failed ' . $d['legacy_before_switch']['failed'] . ', Ops group received ' . $d['legacy_before_switch']['ops'] . '.</p>';
+        $h[] = '<p style="font-size:13px;margin:10px 0 2px;"><b>Telegram delivery</b> (mode ' . bldr_h($d['mode']) . ($d['switched_local'] ? ', since ' . bldr_h($d['switched_local']) : '') . '): sent ' . $d['sent'] . ', failed ' . $d['failed'] . ($per ? ' &mdash; ' . implode('; ', $per) : '') . '<br>Ops group received: ' . $d['ops_group_sent'] . '; fallback events: ' . count($d['ops_fallback_reasons']) . ($d['ops_fallback_reasons'] ? ' (' . bldr_h(implode(', ', array_unique($d['ops_fallback_reasons']))) . ')' : '') . '; duplicate deliveries: ' . count($d['duplicates']) . '; Ops copy alongside direct DM for same incident/level: ' . $d['ops_plus_direct_same_incident_level'] . ($d['unexpected_recipients'] ? '<br><span style="color:#c62828;">Unexpected recipients: ' . bldr_h(implode(', ', $d['unexpected_recipients'])) . '</span>' : '') . '</p>';
     }
     if ($r['pending_recipients']) {
         $h[] = '<p style="font-size:13px;margin-top:16px;"><b>Pending onboarding (no deliveries possible yet):</b><br>' . implode('<br>', array_map('bldr_h', $r['pending_recipients'])) . '</p>';

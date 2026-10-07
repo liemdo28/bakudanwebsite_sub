@@ -3415,7 +3415,7 @@ try {
     expect_eq(count($asAtDue), 1, 'boundary: exactly one due action at exactly 4:00:00 elapsed');
     expect_eq($asAtDue[0]['action'] ?? '', 'auto_stop', 'boundary: at exactly 4 hours elapsed, action is auto_stop even though the incident is already at level 3 (would otherwise be due for an L3 reminder)');
 
-    // --- applying auto_stop: state transitions, active_key stays set (station-level continuity),
+    // --- applying auto_stop: state transitions to terminal auto_stopped (occurrence-scoped),
     // reminders stop for good ---
     broth_log_copilot_notify_incident($asBoundaryAtId, new DateTimeImmutable('2026-08-20 00:00:00 UTC'));
     $asBeforeActiveKey = q1("SELECT active_key FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId])['active_key'] ?? null;
@@ -3425,7 +3425,7 @@ try {
     expect_eq($asApplyResult['action'] ?? '', 'auto_stopped', 'applying auto_stop reports action=auto_stopped');
     $asRow = q1("SELECT state, active_key FROM broth_log_incidents WHERE incident_id=?", [$asBoundaryAtId]);
     expect_eq($asRow['state'] ?? '', 'auto_stopped', 'incident state becomes auto_stopped, never resolved/closed');
-    expect_eq($asRow['active_key'], $asBeforeActiveKey, 'Owner policy (2026-09-25): active_key is NOT freed on auto_stop - the station\'s unresolved-problem identity must persist so a later still-unsafe reading for the SAME station does not restart a new 4-hour cycle');
+    expect_eq($asRow['active_key'], $asBeforeActiveKey, 'auto_stop leaves the incident row (and its occurrence-scoped active_key) as is - it only stops this exact incident');
     $asStillDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-21 00:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asBoundaryAtId));
     expect_true(empty($asStillDue), 'once auto_stopped, the incident never appears in due_escalations() again - reminders/escalations stop for good');
 
@@ -3457,31 +3457,23 @@ try {
     $asResolveResult = broth_log_copilot_resolve($asBoundaryAtId, $asEarlyUser, 38.0, 'fixed after auto-stop', new DateTimeImmutable('2026-08-20 05:05:00 UTC'));
     expect_eq($asResolveResult['reason'] ?? '', 'incident_not_open', 'a Resolve attempt after ACK already resolved the formerly-auto_stopped incident is rejected as already-closed');
 
-    // --- Owner policy (2026-09-25): a genuinely new submission (different responseId) for the SAME
-    // station, still unsafe, does NOT open a new incident once the old one is auto_stopped - it is
-    // the same unresolved problem until a safe reading or a human Resolve clears it. This replaces
-    // the old "active_key freed -> fresh incident" expectation, which was exactly the behavior the
-    // Owner's stricter policy forbids. ---
-    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
-    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
+    // --- Occurrence-level policy (2026-10-07): a genuinely new submission (different responseId) for
+    // the same station is a NEW occurrence and opens its own incident, even while an older incident
+    // for that station is auto_stopped (terminal for its own occurrence only). ---
     $asReopenId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-reopen']));
     run("UPDATE broth_log_incidents SET created_at='2026-08-20 00:00:00', level_entered_at='2026-08-20 00:00:00', last_reminder_at=NULL WHERE incident_id=?", [$asReopenId]);
     $asReopenDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-08-20 04:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $asReopenId));
     broth_log_copilot_apply_escalation_action($asReopenDue[0], new DateTimeImmutable('2026-08-20 04:00:00 UTC'));
     expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asReopenId])['state'] ?? '', 'auto_stopped', 'sanity: second fixture incident is also auto_stopped');
-    // Deliberately NO station-clear here - this is the exact scenario the policy governs: a new
-    // submission (different responseId) arrives for the SAME still-unsafe station with no safe
-    // reading or Resolve in between.
     $asStillUnsafeId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-still-unsafe']));
-    expect_eq($asStillUnsafeId, $asReopenId, 'a new submission for the same still-unsafe station after auto_stop does NOT open a new incident - it is folded into the existing suppressed one');
+    expect_true($asStillUnsafeId !== '' && $asStillUnsafeId !== $asReopenId, 'a new submission for the same station after auto_stop opens a NEW incident - auto_stopped never suppresses a later occurrence');
     $asStillUnsafeSentBefore = count($sentMessages);
-    expect_true(empty(broth_log_copilot_notify_incident($asStillUnsafeId, new DateTimeImmutable('2026-08-20 04:01:00 UTC'))['sent']), 'notify_incident() still refuses to send for this incident - a new still-unsafe submission never restarts notifications');
-    expect_eq(count($sentMessages), $asStillUnsafeSentBefore, 'sanity - no notification was sent for the still-unsafe rescan');
+    expect_true(broth_log_copilot_notify_incident($asStillUnsafeId, new DateTimeImmutable('2026-08-20 04:01:00 UTC'))['sent'] ?? false, 'the new occurrence gets its own real initial notification');
+    expect_true(count($sentMessages) > $asStillUnsafeSentBefore, 'sanity - the new occurrence notification actually sent');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$asReopenId])['state'] ?? '', 'auto_stopped', 'the older auto_stopped incident is untouched (never reopened) by the new occurrence');
 
-    // [test-isolation] fresh station identity for this scenario (2026-09-25 hard-stop policy: station-level continuity would otherwise fold this into an earlier fixture reusing the same default station).
-    run("UPDATE broth_log_incidents SET active_key=NULL WHERE active_key IS NOT NULL");
     $asFreshId = broth_log_copilot_create_incident(array_replace($alert, ['branch' => 'B1', 'responseId' => 'resp-autostop-fresh']));
-    expect_true($asFreshId !== $asReopenId && $asFreshId !== '', 'once the station is genuinely cleared (simulated here the same way a safe reading or Resolve would), a brand new violation opens a genuinely NEW incident');
+    expect_true($asFreshId !== $asReopenId && $asFreshId !== $asStillUnsafeId && $asFreshId !== '', 'every further new submission opens its own independent incident');
     $asFreshSentBefore = count($sentMessages);
     expect_true(broth_log_copilot_notify_incident($asFreshId, new DateTimeImmutable('2026-08-20 04:01:00 UTC'))['sent'] ?? false, 'the fresh new incident gets its own real initial notification');
     expect_true(count($sentMessages) > $asFreshSentBefore, 'sanity - the fresh incident notification actually sent');
@@ -3523,332 +3515,196 @@ try {
     expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($asPlaceholders)", $asIncidentIds)['c'] ?? -1), 0, 'auto-stop: no leftover fixture incidents remain');
 
     // ============================================================================
-    // 4-HOUR HARD-STOP SUPPRESSION (Owner policy, 2026-09-25, then corrected/strengthened same day):
-    // a STATION, not a single submission, is the unit of an unresolved problem. The cron that feeds
-    // critical alerts (scripts/broth-log-telegram-cron.php) re-derives EVERY still-critical row from
-    // today's Google Sheet on every 5-minute pass, regardless of what happened to the incident it
-    // already produced - confirmed against real production history for Sliced Pork Hot, Diced Pork
-    // Hot, and Line Freezer (two incidents sharing one identical fingerprint, 5 minutes apart, the
-    // night of 2026-09-24/25). The original fix (fingerprint-based dedup) stopped the literal same
-    // row from recreating, but the Owner's policy is stricter: a genuinely NEW submission for the
-    // SAME still-unsafe station - a different day, a different responseId - must ALSO not restart
-    // notifications. broth_log_copilot_create_incident() now checks TWO things in order: (1)
-    // fingerprint (permanent, never cleared) - the exact same submission never produces a second
-    // incident, which is what stops Resolve (which frees active_key) from being immediately undone
-    // by the next cron pass re-reading the same never-updated stale sheet row; (2) active_key, now
-    // keyed by (branch, station) and NOT cleared by auto_stop - a later, different submission for the
-    // same still-unsafe station is folded into the same suppressed incident. Only an actual SAFE
-    // reading (broth_log_copilot_process_station_safe_clears()) or a human Resolve frees active_key
-    // and makes the station eligible for a genuinely new incident again.
+    // OCCURRENCE-LEVEL INCIDENTS (2026-10-07; replaces the 2026-09-25 station-level suppression)
+    // One real violation occurrence = one incident with its own ACK / reminder / escalation / 4-hour
+    // auto-stop lifecycle. Same occurrence rescanned -> same incident, no duplicate. Any later
+    // occurrence (next date, other shift, other station, new submission) -> a new incident, no matter
+    // what state (auto_stopped / resolved / closed / frozen) older incidents for the station are in.
     // ============================================================================
-    $hsStationA = 'slicedPorkHot';
-    $hsStationB = 'dicedPorkHot';
-    $hsAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => $hsStationA, 'station' => 'Sliced Pork Hot', 'responseId' => 'resp-hardstop-a', 'businessDate' => '2026-09-24']);
+    $ocIds = [];
+    $ocAlert = function (string $branch, string $stationKey, string $label, string $responseId, string $date, string $temp = '120F') use ($alert): array {
+        return array_replace($alert, ['branch' => $branch, 'stationKey' => $stationKey, 'station' => $label, 'responseId' => $responseId, 'businessDate' => $date, 'temperature' => $temp]);
+    };
+    $ocCreate = function (array $a) use (&$ocIds): string {
+        $id = broth_log_copilot_create_incident($a);
+        if ($id !== '') $ocIds[] = $id;
+        return $id;
+    };
+    $ocBackdate = function (string $incidentId, string $createdUtc): void {
+        run("UPDATE broth_log_incidents SET created_at=?, level_entered_at=?, last_reminder_at=NULL WHERE incident_id=?", [$createdUtc, $createdUtc, $incidentId]);
+    };
+    $ocDue = function (string $incidentId, string $nowUtc): array {
+        return array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable($nowUtc . ' UTC')), fn($d) => $d['incident']['incident_id'] === $incidentId));
+    };
 
-    // --- 1-5: normal lifecycle up to auto-stop, unaffected by this fix. ---
-    $hsIncidentId = broth_log_copilot_create_incident($hsAlert);
-    expect_true($hsIncidentId !== '', '1: an unsafe station creates an incident');
+    // --- 1. the normal lifecycle of ONE occurrence, ending in its own 4-hour auto-stop ---
+    $hsAlert = $ocAlert('B1', 'slicedPorkHot', 'Sliced Pork Hot', 'resp-occ-a', '2026-09-24');
+    $hsIncidentId = $ocCreate($hsAlert);
+    expect_true($hsIncidentId !== '', '1: a critical occurrence creates an incident');
     $hsSentBefore = count($sentMessages);
-    expect_true(broth_log_copilot_notify_incident($hsIncidentId, new DateTimeImmutable('2026-09-24 22:35:51 UTC'))['sent'] ?? false, '2: the initial notification sends normally before 4 hours');
+    expect_true(broth_log_copilot_notify_incident($hsIncidentId, new DateTimeImmutable('2026-09-24 22:35:51 UTC'))['sent'] ?? false, '2: the initial notification sends');
     expect_true(count($sentMessages) > $hsSentBefore, '2: sanity - the initial notification batch actually sent');
-    run("UPDATE broth_log_incidents SET created_at='2026-09-24 22:35:51', level_entered_at='2026-09-24 22:35:51' WHERE incident_id=?", [$hsIncidentId]);
-    $hsAckActor = ['telegram_user_id' => '910hs001', 'allowed_branch_list' => ['B1']];
-    $hsAckResult = broth_log_copilot_ack($hsIncidentId, $hsAckActor, new DateTimeImmutable('2026-09-24 22:40:00 UTC'));
-    expect_true($hsAckResult['ok'] ?? false, '3: ACK before 4 hours succeeds');
-    expect_true(empty(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-24 23:00:00 UTC')), fn($d) => $d['incident']['incident_id'] === $hsIncidentId)), '3: ACK stops reminders - the acknowledged incident never appears in due_escalations() again');
-    // Un-ACK for the rest of this scenario (simulating the real no-response case) by putting the
-    // fixture back into a live, unacknowledged state before proceeding to the auto-stop walkthrough.
-    // Under the 2026-10-01 policy, ACK on a temperature incident also writes resolved_by/resolved_at/
-    // resolution_note and frees active_key - all of those must be restored too, not just the
-    // original acknowledged_* fields, or the auto-stop assertions below would see stale resolved-
-    // looking data from this already-undone ACK.
-    run("UPDATE broth_log_incidents SET state='detected', owner_telegram_user_id=NULL, acknowledged_by=NULL, acknowledged_at=NULL, resolved_by=NULL, resolved_at=NULL, resolution_note=NULL, active_key=? WHERE incident_id=?", [broth_log_copilot_station_problem_key('B1', $hsStationA), $hsIncidentId]);
-
-    $hsDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 02:35:51 UTC')), fn($d) => $d['incident']['incident_id'] === $hsIncidentId));
+    $ocBackdate($hsIncidentId, '2026-09-24 22:35:51');
+    $hsDue = $ocDue($hsIncidentId, '2026-09-25 02:35:51');
     expect_eq($hsDue[0]['action'] ?? '', 'auto_stop', '4: no ACK -> auto_stop is due at exactly 4 hours');
     broth_log_copilot_apply_escalation_action_with_notification($hsDue[0], new DateTimeImmutable('2026-09-25 02:35:51 UTC'));
-    $hsRowAfterStop = q1("SELECT state, resolved_at, active_key, fingerprint FROM broth_log_incidents WHERE incident_id=?", [$hsIncidentId]);
-    expect_eq($hsRowAfterStop['state'] ?? '', 'auto_stopped', '4: incident transitions to auto_stopped');
+    $hsRowAfterStop = q1("SELECT state, resolved_at, fingerprint FROM broth_log_incidents WHERE incident_id=?", [$hsIncidentId]);
+    expect_eq($hsRowAfterStop['state'] ?? '', 'auto_stopped', '4: the incident becomes auto_stopped');
     expect_true($hsRowAfterStop['resolved_at'] === null, '5: auto-stop != resolved - resolved_at stays empty');
-    expect_true($hsRowAfterStop['active_key'] !== null, 'sanity: active_key is NOT freed by auto_stop (station-level continuity) - a later still-unsafe reading for this station must keep finding this incident');
     $hsFingerprint = $hsRowAfterStop['fingerprint'];
-    $hsActiveKey = $hsRowAfterStop['active_key'];
+    expect_eq($hsFingerprint, broth_log_copilot_incident_fingerprint($hsAlert), 'the stored fingerprint is the documented occurrence fingerprint');
 
-    // --- 6-9: the SAME unchanged source reading (identical responseId, therefore identical
-    // fingerprint) is rescanned repeatedly - at the next tick, 5 minutes later, and 1 hour later -
-    // and must NEVER create a new incident or send a new notification. ---
+    // --- 2. the SAME occurrence rescanned repeatedly never creates or notifies anything ---
     $hsSentAfterStop = count($sentMessages);
-    foreach ([
-        ['2026-09-25 02:40:51 UTC', '6: immediately after auto-stop'],
-        ['2026-09-25 02:45:51 UTC', '7: next 5-minute cron tick'],
-        ['2026-09-25 02:50:51 UTC', '8: 5 minutes later again'],
-        ['2026-09-25 03:35:51 UTC', '9: 1 hour later'],
-    ] as [$rescanTime, $label]) {
+    $hsIncidentCount = (int)q1("SELECT COUNT(*) c FROM broth_log_incidents")['c'];
+    foreach (['2026-09-25 02:40:51', '2026-09-25 02:45:51', '2026-09-25 02:50:51', '2026-09-25 03:35:51', '2026-09-25 09:00:00'] as $rescanTime) {
         $rescanId = broth_log_copilot_create_incident($hsAlert);
-        expect_eq($rescanId, $hsIncidentId, "$label: rescanning the identical source reading returns the SAME incident id, never a new one");
-        $rescanNotify = broth_log_copilot_notify_incident($rescanId, new DateTimeImmutable($rescanTime));
-        expect_true(empty($rescanNotify['sent']), "$label: notify_incident() refuses to send for the auto_stopped incident");
+        expect_eq($rescanId, $hsIncidentId, "rescan at $rescanTime UTC: the identical occurrence returns the SAME incident id");
+        expect_true(empty(broth_log_copilot_notify_incident($rescanId, new DateTimeImmutable($rescanTime . ' UTC'))['sent']), "rescan at $rescanTime UTC: notify refuses for the auto_stopped incident");
     }
-    expect_eq(count($sentMessages), $hsSentAfterStop, '22/P: no duplicate notifications were sent across any of the repeated rescans above');
-    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE fingerprint=?", [$hsFingerprint])['c'] ?? -1), 1, '6-9: exactly one incident row exists for this fingerprint no matter how many times it was rescanned');
+    expect_eq(count($sentMessages), $hsSentAfterStop, 'no notification was sent by any rescan');
+    expect_eq((int)q1("SELECT COUNT(*) c FROM broth_log_incidents")['c'], $hsIncidentCount, 'no incident row was created by any rescan');
+    expect_eq((int)q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE fingerprint=?", [$hsFingerprint])['c'], 1, 'exactly one incident exists for this occurrence fingerprint');
+    expect_eq((int)q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='rescan_same_unresolved_problem'", [$hsIncidentId])['c'], 0, 'the retired station-level rescan event is never written');
 
-    // --- D/F: a genuinely NEW submission for the SAME still-unsafe station - whether a different
-    // responseId on the same business date, or the identical responseId text on the NEXT business
-    // date (the only way this exact identity could legitimately recur day-to-day, since the cron
-    // only ever scans TODAY's business date) - is folded into the SAME suppressed incident. Owner
-    // policy: only a safe reading or a human Resolve, never a new source row alone, clears this. ---
-    $hsNewSubmissionAlert = array_replace($hsAlert, ['responseId' => 'resp-hardstop-a-new-measurement']);
-    $hsNewSubmissionId = broth_log_copilot_create_incident($hsNewSubmissionAlert);
-    expect_eq($hsNewSubmissionId, $hsIncidentId, 'D: a genuinely new submission (different responseId), still unsafe, for the same station does NOT open a new incident while the old one is unresolved');
-    expect_true(empty(broth_log_copilot_notify_incident($hsNewSubmissionId, new DateTimeImmutable('2026-09-25 04:00:00 UTC'))['sent']), 'D: notify_incident() still refuses to send - the new submission does not restart notifications');
-
-    $hsNextDayAlert = array_replace($hsAlert, ['responseId' => 'resp-hardstop-a', 'businessDate' => '2026-09-25']);
-    $hsNextDayId = broth_log_copilot_create_incident($hsNextDayAlert);
-    expect_eq($hsNextDayId, $hsIncidentId, 'F: the next business date, still unsafe, is folded into the same suppressed incident - active_key is not scoped to business date, so the problem stays silent day-to-day until actually cleared');
-
-    // --- 13/23/J/K: suppressing Problem A (this station, this branch) must not suppress Problem B (a
-    // different station) or Problem C (the same station on a different branch). ---
-    $hsProblemBAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => $hsStationB, 'station' => 'Diced Pork Hot', 'responseId' => 'resp-hardstop-b', 'businessDate' => '2026-09-24']);
-    $hsProblemBId = broth_log_copilot_create_incident($hsProblemBAlert);
-    run("UPDATE broth_log_incidents SET created_at='2026-09-24 22:35:51', level_entered_at='2026-09-24 22:35:51' WHERE incident_id=?", [$hsProblemBId]);
-    $hsBDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 02:35:51 UTC')), fn($d) => $d['incident']['incident_id'] === $hsProblemBId));
-    broth_log_copilot_apply_escalation_action_with_notification($hsBDue[0], new DateTimeImmutable('2026-09-25 02:35:51 UTC'));
-    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$hsProblemBId])['state'] ?? '', 'auto_stopped', '13/J: sanity - Problem B (a different station) independently reaches auto_stopped too');
-    expect_eq(broth_log_copilot_create_incident($hsProblemBAlert), $hsProblemBId, '13/J: Problem B\'s own identical rescan is suppressed independently of Problem A');
-
-    $hsProblemCAlert = array_replace($alert, ['branch' => 'B2', 'stationKey' => $hsStationA, 'station' => 'Sliced Pork Hot', 'responseId' => 'resp-hardstop-a', 'businessDate' => '2026-09-24']);
-    $hsProblemCId = broth_log_copilot_create_incident($hsProblemCAlert);
-    expect_true($hsProblemCId !== $hsIncidentId && $hsProblemCId !== '', '23/K: the same station on a DIFFERENT branch (B2) has its own independent station_problem_key and is not cross-branch-suppressed by B1\'s suppressed incident');
-    expect_true((broth_log_copilot_notify_incident($hsProblemCId, new DateTimeImmutable('2026-09-25 04:00:00 UTC'))['sent'] ?? false), '23/K: the B2 incident notifies normally');
-
-    // --- G/H: a genuinely SAFE reading, submitted after the incident's own creation, clears
-    // active_key via broth_log_copilot_process_station_safe_clears() - without touching state,
-    // resolved_at, or acknowledged_* (never claims a human resolved it) - and a later unsafe reading
-    // then opens a real new incident with its own fresh 4-hour window. ---
-    // The raw sheet's submittedAt text is parsed in Asia/Ho_Chi_Minh (BROTH_LOG_SHEET_TIMESTAMP_TIMEZONE),
-    // never the America/Chicago business timezone - converting explicitly here, matching the
-    // established pattern elsewhere in this file, rather than hand-picking an offset.
-    $hsSafeReadingSubmittedAt = (new DateTimeImmutable('2026-09-25 00:00:00', new DateTimeZone('America/Chicago')))
-        ->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh'))->format('n/j/Y G:i:s');
-    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($hsStationA, $hsSafeReadingSubmittedAt) {
-        if ($branch !== 'B1') return [];
-        return [[
-            'branch' => 'B1',
-            'businessDate' => '2026-09-25',
-            'businessTime' => '00:00',
-            'submittedAt' => $hsSafeReadingSubmittedAt,
-            'responseId' => 'resp-hardstop-a-safe-reading',
-            'employeeName' => '',
-            'readings' => [
-                ['key' => $hsStationA, 'label' => 'Sliced Pork Hot', 'category' => 'hot', 'temperature' => 100.0, 'unit' => 'F', 'severity' => 'safe', 'target' => '95F - 105F', 'correctiveAction' => ''],
-            ],
-        ]];
-    };
-    $hsClears = broth_log_copilot_process_station_safe_clears();
-    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
-    expect_true(in_array($hsIncidentId, array_column($hsClears, 'incident_id'), true), 'G: a safe reading submitted after the incident was created clears its active_key via broth_log_copilot_process_station_safe_clears()');
-    $hsRowAfterClear = q1("SELECT state, resolved_at, resolved_by, acknowledged_at, active_key FROM broth_log_incidents WHERE incident_id=?", [$hsIncidentId]);
-    expect_true($hsRowAfterClear['active_key'] === null, 'G: active_key is now freed - the station is eligible for a new incident again');
-    expect_eq($hsRowAfterClear['state'], 'auto_stopped', 'G: the original incident\'s state is untouched by the safe-clear - it stays auto_stopped, exactly as Needs Attention/Open Issues already show it');
-    expect_true($hsRowAfterClear['resolved_at'] === null && $hsRowAfterClear['resolved_by'] === null, 'G: the safe-clear never claims a human Resolve - resolved_at/resolved_by stay empty');
-    expect_true($hsRowAfterClear['acknowledged_at'] === null, 'G: the safe-clear never touches ACK/ownership fields either - orthogonal to the ACK flow, per instruction');
-    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incident_events WHERE incident_id=? AND event_type='auto_cleared_safe_reading'", [$hsIncidentId])['c'] ?? -1), 1, 'G: the clearing is recorded as a plain audit event, never silent - Q: historical audit preserved');
-
-    $hsRearmAlert = array_replace($hsAlert, ['responseId' => 'resp-hardstop-a-rearmed']);
-    $hsRearmId = broth_log_copilot_create_incident($hsRearmAlert);
-    expect_true($hsRearmId !== $hsIncidentId && $hsRearmId !== '', 'H: once the station is genuinely cleared by a safe reading, a later unsafe reading opens a real NEW incident');
-    expect_true((broth_log_copilot_notify_incident($hsRearmId, new DateTimeImmutable('2026-09-25 05:05:00 UTC'))['sent'] ?? false), 'H/I: the new incident gets its own fresh initial notification - a genuinely new 4-hour window, independent of the cleared one');
-
-    // ============================================================================
-    // CROSS-PROCESS RACE CORRECTION (2026-09-26): detection (broth_log_copilot_create_incident(),
-    // reached via the separate telegram-cron.php process) and this reconciliation sweep
-    // (broth_log_copilot_process_station_safe_clears(), run from the separate bot-worker.php cron)
-    // have no ordering guarantee. These tests prove the outcome is correct regardless of which one
-    // observes what first - by deriving the station's state from the FULL ordered observation
-    // history every time the sweep runs, not from "does a safe reading exist" in isolation.
-    // ============================================================================
-    function hs_race_helper_setup(string $stationKey, string $label, float $unsafeTemp): array {
-        global $alert;
-        $rcAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => $stationKey, 'station' => $label, 'responseId' => "resp-race-$stationKey-a", 'businessDate' => '2026-09-24']);
-        $rcIncidentId = broth_log_copilot_create_incident($rcAlert);
-        run("UPDATE broth_log_incidents SET created_at='2026-09-24 22:35:51', level_entered_at='2026-09-24 22:35:51' WHERE incident_id=?", [$rcIncidentId]);
-        $rcDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 02:35:51 UTC')), fn($d) => $d['incident']['incident_id'] === $rcIncidentId));
-        broth_log_copilot_apply_escalation_action_with_notification($rcDue[0], new DateTimeImmutable('2026-09-25 02:35:51 UTC'));
-        return ['incidentId' => $rcIncidentId, 'alert' => $rcAlert];
-    }
-    function hs_race_reading(string $stationKey, string $label, string $target, float $temp, bool $safe): array {
-        return ['key' => $stationKey, 'label' => $label, 'category' => 'freezer', 'temperature' => $temp, 'unit' => 'F', 'severity' => $safe ? 'safe' : 'critical', 'target' => $target, 'correctiveAction' => ''];
-    }
-    function hs_race_record(string $responseId, string $submittedAtChicago, array $reading): array {
-        $ts = (new DateTimeImmutable($submittedAtChicago, new DateTimeZone('America/Chicago')))->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh'))->format('n/j/Y G:i:s');
-        return ['branch' => 'B1', 'businessDate' => '2026-09-25', 'businessTime' => '00:00', 'submittedAt' => $ts, 'responseId' => $responseId, 'employeeName' => '', 'correctiveAction' => '', 'readings' => [$reading]];
+    // --- 3. REPRODUCTION OF THE AUDITED PRODUCTION PATTERNS: an old auto_stopped incident that still
+    // holds the legacy station-level active_key must not suppress a later critical submission. ---
+    $prodCases = [
+        ['B1', 'lineFreezer', 'Line Freezer', 'B1|2026-10-03||Yenci|10/3/2026 22:51:31', '2026-10-03', '2026-10-03 15:55:05', 'B1|2026-10-06||Aleyda  Perez|10/7/2026 2:53:54', '11F'],
+        ['B2', 'walkInFreezer', 'Walk-In Freezer', 'B2|2026-09-26||Isamar|9/26/2026 23:22:43', '2026-09-26', '2026-09-26 16:23:00', 'B2|2026-10-06||Isamar|10/6/2026 23:52:44', '17F'],
+        ['B2', 'slicedPorkHot', 'Sliced Pork Hot', 'B2|2026-09-26||Isamar|9/26/2026 23:22:43', '2026-09-26', '2026-09-26 16:23:10', 'B2|2026-10-06||Isamar|10/6/2026 23:52:44', '135F'],
+        ['B2', 'dicedPorkHot', 'Diced Pork Hot', 'B2|2026-09-26||Isamar|9/26/2026 23:22:43', '2026-09-26', '2026-09-26 16:23:13', 'B2|2026-10-06||Isamar|10/6/2026 23:52:44', '154F'],
+    ];
+    foreach ($prodCases as [$pcBranch, $pcStation, $pcLabel, $pcOldResp, $pcOldDate, $pcOldCreated, $pcNewResp, $pcTemp]) {
+        $pcOldId = $ocCreate($ocAlert($pcBranch, $pcStation, $pcLabel, $pcOldResp, $pcOldDate));
+        $legacyKey = hash('sha256', implode('|', [$pcBranch, $pcStation, 'station_problem']));
+        run("UPDATE broth_log_incidents SET state='auto_stopped', current_level=3, created_at=?, level_entered_at=?, active_key=? WHERE incident_id=?", [$pcOldCreated, $pcOldCreated, $legacyKey, $pcOldId]);
+        $pcBefore = q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$pcOldId]);
+        $pcNewAlert = $ocAlert($pcBranch, $pcStation, $pcLabel, $pcNewResp, '2026-10-06', $pcTemp);
+        $pcNewId = $ocCreate($pcNewAlert);
+        expect_true($pcNewId !== '' && $pcNewId !== $pcOldId, "production pattern $pcBranch/$pcStation: the Oct 6 critical submission creates a NEW incident although the older auto_stopped incident still holds the legacy station key");
+        $pcNewRow = q1("SELECT state, business_date, current_level FROM broth_log_incidents WHERE incident_id=?", [$pcNewId]);
+        expect_eq([$pcNewRow['state'], $pcNewRow['business_date'], (int)$pcNewRow['current_level']], ['detected', '2026-10-06', 1], "production pattern $pcBranch/$pcStation: the new incident starts fresh at level 1 on its own business date");
+        $pcSentBefore = count($sentMessages);
+        expect_true(broth_log_copilot_notify_incident($pcNewId, new DateTimeImmutable('2026-10-06 17:00:00 UTC'))['sent'] ?? false, "production pattern $pcBranch/$pcStation: the new incident is notified through the normal flow");
+        expect_true(count($sentMessages) > $pcSentBefore, "production pattern $pcBranch/$pcStation: a message actually went out");
+        expect_eq($ocCreate($pcNewAlert), $pcNewId, "production pattern $pcBranch/$pcStation: rescanning the Oct 6 submission is deduplicated onto the new incident");
+        expect_eq(q1("SELECT * FROM broth_log_incidents WHERE incident_id=?", [$pcOldId]), $pcBefore, "production pattern $pcBranch/$pcStation: the historical auto_stopped incident row is completely unchanged");
     }
 
-    // --- RACE ORDER 1 (favorable): safe-clear processes B before detection ever sees C. Already the
-    // shape PR #55's own G/H tests exercise; restated here explicitly under the "race order" naming. ---
-    $raceStationO1 = 'walkInFreezer';
-    $raceO1 = hs_race_helper_setup($raceStationO1, 'Walk-In Freezer', 8.0);
-    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($raceStationO1) {
-        if ($branch !== 'B1') return [];
-        return [hs_race_record('resp-race-o1-b-safe', '2026-09-25 00:00:00', hs_race_reading($raceStationO1, 'Walk-In Freezer', '-20F - 5F', 0.0, true))];
+    // --- 4. independence of occurrences: date, shift, new response, station ---
+    $ocBase = $ocAlert('B2', 'walkInFreezer', 'Walk-In Freezer', 'B2|2026-09-25||Isamar|9/25/2026 22:00:00', '2026-09-25', '17F');
+    $ocBaseId = $ocCreate($ocBase);
+    expect_true($ocBaseId !== '', 'base occurrence: B2 Sep 25 AM Walk-In Freezer');
+    $ocNextDayId = $ocCreate($ocAlert('B2', 'walkInFreezer', 'Walk-In Freezer', 'B2|2026-09-26||Isamar|9/26/2026 22:00:00', '2026-09-26', '17F'));
+    expect_true($ocNextDayId !== '' && $ocNextDayId !== $ocBaseId, 'same station, next business date -> new incident');
+    $ocSameResponseNextDayId = $ocCreate($ocAlert('B2', 'walkInFreezer', 'Walk-In Freezer', 'B2|2026-09-25||Isamar|9/25/2026 22:00:00', '2026-09-27', '17F'));
+    expect_true($ocSameResponseNextDayId !== '' && $ocSameResponseNextDayId !== $ocBaseId, 'identical response text on a different business date is a different occurrence');
+    $ocPmId = $ocCreate($ocAlert('B2', 'walkInFreezer', 'Walk-In Freezer', 'B2|2026-09-25||Isamar|9/26/2026 4:00:00', '2026-09-25', '17F'));
+    expect_true($ocPmId !== '' && $ocPmId !== $ocBaseId, 'same station, same date, AM then PM submission -> separate incident');
+    $ocNewResponseId = $ocCreate($ocAlert('B2', 'walkInFreezer', 'Walk-In Freezer', 'B2|2026-09-25||Isamar|9/25/2026 22:30:00', '2026-09-25', '17F'));
+    expect_true($ocNewResponseId !== '' && $ocNewResponseId !== $ocBaseId && $ocNewResponseId !== $ocPmId, 'same station, new response/submission -> new incident');
+    $ocSlicedId = $ocCreate($ocAlert('B2', 'slicedPorkHot', 'Sliced Pork Hot', 'B2|2026-09-25||Isamar|9/25/2026 22:00:00', '2026-09-25', '135F'));
+    $ocDicedId = $ocCreate($ocAlert('B2', 'dicedPorkHot', 'Diced Pork Hot', 'B2|2026-09-25||Isamar|9/25/2026 22:00:00', '2026-09-25', '154F'));
+    expect_true($ocSlicedId !== '' && $ocDicedId !== '' && $ocSlicedId !== $ocDicedId && !in_array($ocSlicedId, [$ocBaseId, $ocDicedId], true) && $ocDicedId !== $ocBaseId, 'different stations in the same submission -> three independent incidents');
+    expect_eq($ocCreate($ocBase), $ocBaseId, 'exact same occurrence rescanned -> same incident');
+    expect_eq($ocCreate($ocAlert('B3', 'walkInFreezer', 'Walk-In Freezer', 'B2|2026-09-25||Isamar|9/25/2026 22:00:00', '2026-09-25', '17F')) !== $ocBaseId, true, 'the same station on another branch is its own occurrence');
+
+    // --- 5. terminal states never block a later occurrence ---
+    $ocResolvedId = $ocCreate($ocAlert('B3', 'prepAreaCooler', 'Prep Area Cooler', 'resp-occ-resolved-1', '2026-09-27', '70F'));
+    $ocResolveActor = ['telegram_user_id' => '910hs001', 'allowed_branch_list' => ['B3']];
+    expect_true(broth_log_copilot_ack($ocResolvedId, $ocResolveActor, new DateTimeImmutable('2026-09-27 17:00:00 UTC'))['ok'] ?? false, 'Temperature ACK resolves the incident (current policy)');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ocResolvedId])['state'] ?? '', 'resolved', 'the ACKed incident is resolved');
+    expect_eq($ocCreate($ocAlert('B3', 'prepAreaCooler', 'Prep Area Cooler', 'resp-occ-resolved-1', '2026-09-27', '70F')), $ocResolvedId, 'a resolved occurrence is never recreated or reopened by a rescan of the same submission');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ocResolvedId])['state'] ?? '', 'resolved', 'the resolved incident stays resolved');
+    $ocAfterResolvedId = $ocCreate($ocAlert('B3', 'prepAreaCooler', 'Prep Area Cooler', 'resp-occ-resolved-2', '2026-09-27', '72F'));
+    expect_true($ocAfterResolvedId !== '' && $ocAfterResolvedId !== $ocResolvedId, 'a resolved incident does not block a later occurrence for the same station');
+
+    $ocClosedId = $ocCreate($ocAlert('B3', 'bowlWarmer', 'Bowl Warmer', 'resp-occ-closed-1', '2026-09-27', '60F'));
+    run("UPDATE broth_log_incidents SET state='closed', closed_at=datetime('now') WHERE incident_id=?", [$ocClosedId]);
+    $ocAfterClosedId = $ocCreate($ocAlert('B3', 'bowlWarmer', 'Bowl Warmer', 'resp-occ-closed-2', '2026-09-27', '61F'));
+    expect_true($ocAfterClosedId !== '' && $ocAfterClosedId !== $ocClosedId, 'a closed incident does not block a later occurrence for the same station');
+    expect_eq(q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ocClosedId])['state'] ?? '', 'closed', 'the closed incident is never reopened');
+
+    $ocFrozenId = $ocCreate($ocAlert('B3', 'lineFreezer', 'Line Freezer', 'resp-occ-frozen-1', '2026-08-01', '20F'));
+    run("UPDATE broth_log_incidents SET state='escalated_level_3', current_level=3, created_at='2026-08-01 15:00:00', level_entered_at='2026-08-01 15:20:00', escalation_lock_expires_at=? WHERE incident_id=?", [BROTH_LOG_COPILOT_FROZEN_LOCK_SENTINEL, $ocFrozenId]);
+    $ocAfterFrozenId = $ocCreate($ocAlert('B3', 'lineFreezer', 'Line Freezer', 'resp-occ-frozen-2', '2026-10-06', '15F'));
+    expect_true($ocAfterFrozenId !== '' && $ocAfterFrozenId !== $ocFrozenId, 'a frozen/cutover historical incident does not block a post-cutover occurrence');
+    expect_eq(q1("SELECT escalation_lock_expires_at FROM broth_log_incidents WHERE incident_id=?", [$ocAfterFrozenId])['escalation_lock_expires_at'], null, 'the new incident is not frozen');
+    expect_true(empty($ocDue($ocFrozenId, '2026-10-07 00:00:00')), 'the frozen incident itself stays excluded from escalations');
+
+    // --- 6. each occurrence has its OWN 4-hour timer ---
+    $ocT1 = $ocCreate($ocAlert('B1', 'walkInFreezer', 'Walk-In Freezer', 'resp-occ-timer-1', '2026-10-01', '30F'));
+    $ocT2 = $ocCreate($ocAlert('B1', 'walkInFreezer', 'Walk-In Freezer', 'resp-occ-timer-2', '2026-10-01', '31F'));
+    $ocBackdate($ocT1, '2026-10-01 10:00:00');
+    $ocBackdate($ocT2, '2026-10-01 12:00:00');
+    expect_eq($ocDue($ocT1, '2026-10-01 14:00:00')[0]['action'] ?? '', 'auto_stop', 'occurrence 1 is due to auto-stop at ITS 4-hour mark');
+    expect_true(($ocDue($ocT2, '2026-10-01 14:00:00')[0]['action'] ?? '') !== 'auto_stop', 'occurrence 2 (created 2h later) is NOT auto-stopped at that moment');
+    broth_log_copilot_apply_escalation_action_with_notification($ocDue($ocT1, '2026-10-01 14:00:00')[0], new DateTimeImmutable('2026-10-01 14:00:00 UTC'));
+    expect_eq([q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ocT1])['state'], q1("SELECT state FROM broth_log_incidents WHERE incident_id=?", [$ocT2])['state'] === 'auto_stopped'], ['auto_stopped', false], 'stopping occurrence 1 does not stop occurrence 2');
+    expect_eq($ocDue($ocT2, '2026-10-01 16:00:00')[0]['action'] ?? '', 'auto_stop', 'occurrence 2 auto-stops at its own 4-hour mark');
+
+    // --- 6b. optional no-retro-alert rollout guard (BROTH_LOG_OCCURRENCE_POLICY_START_DATE, default off) ---
+    $ocGuardOld = $ocAlert('B2', 'walkInFreezer', 'Walk-In Freezer', 'resp-occ-guard-old', '2026-10-06', '17F');
+    $ocGuardNew = $ocAlert('B2', 'walkInFreezer', 'Walk-In Freezer', 'resp-occ-guard-new', '2026-10-07', '17F');
+    putenv('BROTH_LOG_OCCURRENCE_POLICY_START_DATE=2026-10-07');
+    $ocCountBeforeGuard = (int)q1("SELECT COUNT(*) c FROM broth_log_incidents")['c'];
+    expect_eq(broth_log_copilot_create_incident($ocGuardOld), '', 'guard on: an occurrence from before the policy start date creates NO incident (no retro-alert)');
+    expect_eq((int)q1("SELECT COUNT(*) c FROM broth_log_incidents")['c'], $ocCountBeforeGuard, 'guard on: nothing was written for the older occurrence');
+    $ocGuardNewId = $ocCreate($ocGuardNew);
+    expect_true($ocGuardNewId !== '', 'guard on: an occurrence on/after the start date creates its incident normally');
+    expect_eq(broth_log_copilot_create_incident($hsAlert), $hsIncidentId, 'guard on: an already-existing older incident is still returned by its fingerprint');
+    putenv('BROTH_LOG_OCCURRENCE_POLICY_START_DATE=');
+    $ocGuardOldId = $ocCreate($ocGuardOld);
+    expect_true($ocGuardOldId !== '', 'guard off (default): the same older occurrence creates an incident');
+
+    // --- 7. Temperature ACK behavior is unchanged: ACK = resolved, ownership recorded, reminders stop ---
+    $ocAckId = $ocCreate($ocAlert('B1', 'prepAreaCooler', 'Prep Area Cooler', 'resp-occ-ack', '2026-10-02', '60F'));
+    $ocBackdate($ocAckId, '2026-10-02 15:00:00');
+    $ocAck = broth_log_copilot_ack($ocAckId, ['telegram_user_id' => '910hs001', 'allowed_branch_list' => ['B1']], new DateTimeImmutable('2026-10-02 15:10:00 UTC'));
+    $ocAckRow = q1("SELECT state, acknowledged_by, resolved_by, resolution_note, active_key FROM broth_log_incidents WHERE incident_id=?", [$ocAckId]);
+    expect_true(($ocAck['ok'] ?? false) && $ocAckRow['state'] === 'resolved' && $ocAckRow['acknowledged_by'] === '910hs001' && $ocAckRow['resolved_by'] === '910hs001' && $ocAckRow['active_key'] === null, 'Temperature ACK still records who ACKed and fully resolves the incident');
+    expect_eq($ocAckRow['resolution_note'], 'Acknowledged by manager - no recheck logged', 'the ACK closure note is unchanged');
+    expect_true(empty($ocDue($ocAckId, '2026-10-02 16:00:00')), 'after ACK no reminder or escalation is ever due for that incident');
+    expect_eq(broth_log_copilot_create_incident($ocAlert('B1', 'prepAreaCooler', 'Prep Area Cooler', 'resp-occ-ack', '2026-10-02', '60F')), $ocAckId, 'rescanning the ACKed occurrence returns the same resolved incident');
+
+    // --- 8. a safe reading never reopens or mutates a terminal incident (the retired sweep is a no-op) ---
+    $ocSafeSnapshot = q("SELECT * FROM broth_log_incidents ORDER BY incident_id");
+    $ocEventCount = (int)q1("SELECT COUNT(*) c FROM broth_log_incident_events")['c'];
+    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) {
+        $ts = (new DateTimeImmutable('2026-10-07 10:00:00', new DateTimeZone('America/Chicago')))->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh'))->format('n/j/Y G:i:s');
+        return [['branch' => $branch, 'businessDate' => '2026-10-07', 'businessTime' => '10:00', 'submittedAt' => $ts, 'responseId' => 'resp-safe-' . $branch, 'employeeName' => '', 'correctiveAction' => '',
+            'readings' => array_map(fn($k) => ['key' => $k, 'label' => $k, 'category' => 'cold', 'temperature' => 100.0, 'unit' => 'F', 'severity' => 'safe', 'target' => '', 'correctiveAction' => ''], ['lineFreezer', 'walkInFreezer', 'slicedPorkHot', 'dicedPorkHot', 'prepAreaCooler'])]];
     };
-    $raceO1Clears = broth_log_copilot_process_station_safe_clears();
+    expect_eq(broth_log_copilot_process_station_safe_clears(), [], 'the safe-reading sweep is retired: it clears and mints nothing');
     unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
-    expect_true(in_array($raceO1['incidentId'], array_column($raceO1Clears, 'incident_id'), true), 'ORDER 1: safe-clear runs first and frees active_key');
-    expect_true(!isset(array_values(array_filter($raceO1Clears, fn($c) => $c['incident_id'] === $raceO1['incidentId']))[0]['rearmed_incident_id']), 'ORDER 1: no new incident minted yet - only a safe reading has been observed so far');
-    $raceO1CAlert = array_replace($raceO1['alert'], ['responseId' => 'resp-race-o1-c-unsafe', 'businessDate' => '2026-09-25']);
-    $raceO1CId = broth_log_copilot_create_incident($raceO1CAlert);
-    expect_true($raceO1CId !== '' && $raceO1CId !== $raceO1['incidentId'], 'ORDER 1: detection processing C afterward, with active_key already free, opens a genuinely NEW incident');
-    expect_true((broth_log_copilot_notify_incident($raceO1CId, new DateTimeImmutable('2026-09-25 06:00:00 UTC'))['sent'] ?? false), 'ORDER 1: C gets a real new notification');
+    expect_eq(q("SELECT * FROM broth_log_incidents ORDER BY incident_id"), $ocSafeSnapshot, 'a safe reading does not change, reopen or create any incident row');
+    expect_eq((int)q1("SELECT COUNT(*) c FROM broth_log_incident_events")['c'], $ocEventCount, 'a safe reading writes no audit events');
 
-    // --- RACE ORDER 2 (the actual failure mode this fix targets): detection processes C FIRST,
-    // while active_key is still set, so C is folded into the old (already auto_stopped) incident and
-    // gets NO notification. B (safe) is not yet reflected in the DB. The safe-clear sweep then runs
-    // and must recover: recognize B -> C as a full rearm-then-new-unsafe transition and mint/notify a
-    // real new incident for C, even though C's own fingerprint was already "used" by the fold. ---
-    $raceStationO2 = 'lineFreezer';
-    $raceO2 = hs_race_helper_setup($raceStationO2, 'Line Freezer', 8.0);
-    $raceO2CAlert = array_replace($raceO2['alert'], ['responseId' => 'resp-race-o2-c-unsafe', 'businessDate' => '2026-09-25']);
-    // Detection processes C FIRST - active_key is still set (safe-clear has not run), so this folds
-    // into the old incident exactly like a same-fingerprint rescan does: no new row, no notification.
-    $raceO2CFoldedId = broth_log_copilot_create_incident($raceO2CAlert);
-    expect_eq($raceO2CFoldedId, $raceO2['incidentId'], 'ORDER 2: C, detected before the safe-clear sweep runs, is initially folded into the old incident (this is the failure mode being fixed)');
-    $raceO2SentBefore = count($sentMessages);
-    expect_true(empty(broth_log_copilot_notify_incident($raceO2CFoldedId, new DateTimeImmutable('2026-09-25 06:00:00 UTC'))['sent']), 'ORDER 2: sanity - no notification went out for C on this bad-ordering tick (old incident is auto_stopped)');
-    // Now the safe-clear sweep runs and sees BOTH B (safe) and C (unsafe, already folded above) in
-    // the source data, B chronologically before C.
-    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($raceStationO2) {
-        if ($branch !== 'B1') return [];
-        return [
-            hs_race_record('resp-race-o2-b-safe', '2026-09-25 00:00:00', hs_race_reading($raceStationO2, 'Line Freezer', '-20F - 0F', -5.0, true)),
-            hs_race_record('resp-race-o2-c-unsafe', '2026-09-25 00:30:00', hs_race_reading($raceStationO2, 'Line Freezer', '-20F - 0F', 8.0, false)),
-        ];
-    };
-    $raceO2Clears = broth_log_copilot_process_station_safe_clears();
-    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
-    $raceO2ClearEntry = array_values(array_filter($raceO2Clears, fn($c) => $c['incident_id'] === $raceO2['incidentId']))[0] ?? null;
-    expect_true($raceO2ClearEntry !== null, 'ORDER 2: the sweep recognizes the old incident needs reconciling (a rearm boundary was crossed)');
-    expect_true(isset($raceO2ClearEntry['rearmed_incident_id']) && $raceO2ClearEntry['rearmed_incident_id'] !== $raceO2['incidentId'], 'ORDER 2: the sweep mints a genuinely NEW incident for C - it does not remain permanently folded into the old one');
-    $raceO2NewId = $raceO2ClearEntry['rearmed_incident_id'];
-    expect_true((int)(q1("SELECT COUNT(*) c FROM broth_log_outbound_deliveries WHERE incident_id=? AND status='sent'", [$raceO2NewId])['c'] ?? 0) > 0, 'ORDER 2: the new incident has real, sent outbound deliveries - the sweep itself notified it, not just created it');
-    expect_true(count($sentMessages) > $raceO2SentBefore, 'ORDER 2: the sweep itself sent a real new notification for C - FINGERPRINT PERMANENT-LOSS RISK eliminated, not just delayed');
-    expect_true(q1("SELECT active_key FROM broth_log_incidents WHERE incident_id=?", [$raceO2['incidentId']])['active_key'] === null, 'ORDER 2: the old incident\'s active_key is freed');
-    expect_true(q1("SELECT active_key FROM broth_log_incidents WHERE incident_id=?", [$raceO2NewId])['active_key'] !== null, 'ORDER 2: the new incident owns the station\'s active_key going forward');
-    // A later retry of C's exact same source row (e.g. detection re-scanning it on the next tick)
-    // must resolve to the SAME new incident, never a duplicate.
-    expect_eq(broth_log_copilot_create_incident($raceO2CAlert), $raceO2NewId, 'ORDER 2: C\'s own fingerprint, re-scanned again later, now correctly resolves to the new incident - no duplicate');
-    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch='B1' AND station_key=? AND business_date='2026-09-25'", [$raceStationO2])['c'] ?? -1), 1, 'ORDER 2: exactly one incident exists for C\'s episode - no duplicate was created');
-    // The forward link from the old incident to the one that replaced it must be discoverable from
-    // the OLD incident's own audit history, not only from the sweep's transient return value.
-    $raceO2LinkEvent = q1("SELECT event_json FROM broth_log_incident_events WHERE incident_id=? AND event_type='rearmed_into_new_incident'", [$raceO2['incidentId']]);
-    expect_true($raceO2LinkEvent !== null, 'ORDER 2: the old incident\'s own audit history records a rearmed_into_new_incident event');
-    expect_eq(json_decode((string)($raceO2LinkEvent['event_json'] ?? '{}'), true)['new_incident_id'] ?? null, $raceO2NewId, 'ORDER 2: that event correctly points at the real new incident id');
-
-    // --- Concurrency, sequential case: if a concurrent process's row for this station already
-    // committed by the time THIS call reaches its own existingByStation check (the common, easily
-    // reachable ordering), the pre-existing fold path returns that real row - never attempts an
-    // insert, never risks a phantom id. Confirms broth_log_copilot_create_incident() is safe for
-    // this ordering regardless of which process is the alert-cron's detection path and which is this
-    // sweep. ---
-    $raceConcurStation = 'chickenCold';
-    $raceConcurActiveKey = broth_log_copilot_station_problem_key('B1', $raceConcurStation);
-    $raceConcurWinnerId = 'bl-concur-winner-test';
-    run("INSERT INTO broth_log_incidents
-        (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash,employee_name)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
-        $raceConcurWinnerId, 'resp-concur-winner-fingerprint', $raceConcurActiveKey, 'B1', '2026-09-25', '00:00', 'resp-concur-winner', $raceConcurStation, 'Chicken Cold', 50.0, '30F - 40F', 'critical', '', 'detected', 1, gmdate('Y-m-d H:i:s'), 'x', '',
-    ]);
-    $raceConcurLoserAlert = array_replace($alert, ['branch' => 'B1', 'stationKey' => $raceConcurStation, 'station' => 'Chicken Cold', 'responseId' => 'resp-concur-loser', 'businessDate' => '2026-09-25']);
-    $raceConcurResult = broth_log_copilot_create_incident($raceConcurLoserAlert);
-    expect_eq($raceConcurResult, $raceConcurWinnerId, 'concurrency (sequential): a concurrent process\'s already-committed row for the station is found and returned, never duplicated');
-    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch='B1' AND station_key=?", [$raceConcurStation])['c'] ?? -1), 1, 'concurrency (sequential): still exactly one incident row for the station');
-
-    // --- Concurrency, true sub-statement race: the narrower window this fix specifically guards -
-    // both callers' existingBySubmission/existingByStation checks pass (both see nothing, since
-    // neither row exists yet), then one caller's INSERT OR IGNORE commits first and the other's is
-    // silently ignored by the active_key UNIQUE constraint. This exact interleaving cannot be
-    // reproduced by single-threaded sequential test code (it requires two real OS processes racing
-    // at the SQLite engine level) - instead, this directly verifies the underlying assumption
-    // broth_log_copilot_create_incident()'s db()->changes()===0 check relies on: that SQLite
-    // genuinely reports zero rows changed for an ignored INSERT OR IGNORE, which is what turns an
-    // otherwise-silent phantom-id bug into a detectable, recoverable one. ---
-    $raceConcurStation2 = 'porkCold';
-    $raceConcurActiveKey2 = broth_log_copilot_station_problem_key('B1', $raceConcurStation2);
-    run("INSERT INTO broth_log_incidents
-        (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash,employee_name)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
-        'bl-concur2-winner-test', 'resp-concur2-winner-fingerprint', $raceConcurActiveKey2, 'B1', '2026-09-25', '00:00', 'resp-concur2-winner', $raceConcurStation2, 'Pork Cold Holding', 50.0, '30F - 40F', 'critical', '', 'detected', 1, gmdate('Y-m-d H:i:s'), 'x', '',
-    ]);
-    run("INSERT OR IGNORE INTO broth_log_incidents
-        (incident_id,fingerprint,active_key,branch,business_date,business_time,response_id,station_key,station_label,temperature_f,sop_target,severity,corrective_action,state,current_level,level_entered_at,source_revision_hash,employee_name)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
-        'bl-concur2-loser-test', 'resp-concur2-loser-fingerprint', $raceConcurActiveKey2, 'B1', '2026-09-25', '00:00', 'resp-concur2-loser', $raceConcurStation2, 'Pork Cold Holding', 50.0, '30F - 40F', 'critical', '', 'detected', 1, gmdate('Y-m-d H:i:s'), 'x', '',
-    ]);
-    expect_eq(db()->changes(), 0, 'concurrency (sub-statement race): SQLite reports zero rows changed for an INSERT OR IGNORE that collided on the active_key UNIQUE constraint - the exact signal broth_log_copilot_create_incident() checks to detect and recover from a lost race instead of returning a phantom id');
-    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch='B1' AND station_key=?", [$raceConcurStation2])['c'] ?? -1), 1, 'concurrency (sub-statement race): the losing insert genuinely wrote nothing - only the winner\'s row exists');
-    run("DELETE FROM broth_log_incidents WHERE incident_id IN (?,?)", [$raceConcurWinnerId, 'bl-concur2-winner-test']);
-
-    // --- Item 1: an old SAFE reading from BEFORE the incident even existed must never count. ---
-    $oldSafeStation = 'prepAreaCooler';
-    $oldSafe = hs_race_helper_setup($oldSafeStation, 'Prep Area Cooler', 120.0);
-    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($oldSafeStation) {
-        if ($branch !== 'B1') return [];
-        // Submitted well before the incident's created_at (2026-09-24 22:35:51) - must be ignored.
-        return [hs_race_record('resp-old-safe-before', '2026-09-24 10:00:00', hs_race_reading($oldSafeStation, 'Prep Area Cooler', '30F - 45F', 35.0, true))];
-    };
-    $oldSafeClears = broth_log_copilot_process_station_safe_clears();
-    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
-    expect_true(!in_array($oldSafe['incidentId'], array_column($oldSafeClears, 'incident_id'), true), 'item 1: a safe reading from BEFORE the incident was created is ignored - active_key stays set');
-    expect_true(q1("SELECT active_key FROM broth_log_incidents WHERE incident_id=?", [$oldSafe['incidentId']])['active_key'] !== null, 'item 1: sanity - active_key confirmed still set');
-
-    // --- Item 4: UNSAFE -> SAFE -> newer UNSAFE -> newest SAFE. Final state is safe: rearm, but do
-    // NOT mint an incident for the transient unsafe reading in between. ---
-    $finalSafeStation = 'ramenReachInTop';
-    $finalSafe = hs_race_helper_setup($finalSafeStation, 'Ramen Reach-In Top', 60.0);
-    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($finalSafeStation) {
-        if ($branch !== 'B1') return [];
-        return [
-            hs_race_record('resp-finalsafe-b', '2026-09-25 00:00:00', hs_race_reading($finalSafeStation, 'Ramen Reach-In Top', '30F - 45F', 35.0, true)),
-            hs_race_record('resp-finalsafe-c', '2026-09-25 00:30:00', hs_race_reading($finalSafeStation, 'Ramen Reach-In Top', '30F - 45F', 60.0, false)),
-            hs_race_record('resp-finalsafe-d', '2026-09-25 01:00:00', hs_race_reading($finalSafeStation, 'Ramen Reach-In Top', '30F - 45F', 38.0, true)),
-        ];
-    };
-    $finalSafeSentBefore = count($sentMessages);
-    $finalSafeClears = broth_log_copilot_process_station_safe_clears();
-    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
-    $finalSafeEntry = array_values(array_filter($finalSafeClears, fn($c) => $c['incident_id'] === $finalSafe['incidentId']))[0] ?? null;
-    expect_true($finalSafeEntry !== null, 'item 4: the sweep still recognizes and processes the rearm boundary');
-    expect_true(!isset($finalSafeEntry['rearmed_incident_id']), 'item 4: final state is SAFE - no incident is minted for the transient unsafe reading in between');
-    expect_eq(count($sentMessages), $finalSafeSentBefore, 'item 4: no new notification fires - the station is quiet, correctly reflecting its genuinely safe final state');
-    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE branch='B1' AND station_key=? AND business_date IN ('2026-09-24','2026-09-25')", [$finalSafeStation])['c'] ?? -1), 1, 'item 4: still exactly one incident total for this station - no duplicate, no orphan');
-
-    // --- Item 5: deterministic tie-breaking when two observations share the identical timestamp. ---
-    $tieStation = 'seasonedEggs';
-    $tie = hs_race_helper_setup($tieStation, 'Seasoned Eggs', 50.0);
-    $GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER'] = function (string $branch) use ($tieStation) {
-        if ($branch !== 'B1') return [];
-        // Identical submittedAt; responseId 'resp-tie-a-unsafe' < 'resp-tie-b-safe' lexically, so the
-        // safe one sorts last and wins the tie - the outcome must be this, not random/unstable.
-        return [
-            hs_race_record('resp-tie-a-unsafe', '2026-09-25 00:00:00', hs_race_reading($tieStation, 'Seasoned Eggs', '95F - 105F', 50.0, false)),
-            hs_race_record('resp-tie-b-safe', '2026-09-25 00:00:00', hs_race_reading($tieStation, 'Seasoned Eggs', '95F - 105F', 100.0, true)),
-        ];
-    };
-    $tieClears1 = broth_log_copilot_process_station_safe_clears();
-    unset($GLOBALS['BROTH_LOG_COPILOT_RECORDS_PROVIDER']);
-    $tieEntry1 = array_values(array_filter($tieClears1, fn($c) => $c['incident_id'] === $tie['incidentId']))[0] ?? null;
-    expect_true($tieEntry1 !== null && !isset($tieEntry1['rearmed_incident_id']), 'item 5: tie-break is deterministic (responseId order), never random - same-timestamp safe+unsafe resolves to SAFE here because \'resp-tie-b-safe\' sorts after \'resp-tie-a-unsafe\'');
-
-    // Cleanup for this whole race-correction section.
-    $raceCleanupIds = array_values(array_unique(array_filter([
-        $raceO1['incidentId'], $raceO1CId, $raceO2['incidentId'], $raceO2NewId,
-        $oldSafe['incidentId'], $finalSafe['incidentId'], $tie['incidentId'],
-    ])));
-    $raceCleanupPlaceholders = implode(',', array_fill(0, count($raceCleanupIds), '?'));
-    run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($raceCleanupPlaceholders)", $raceCleanupIds);
-    run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($raceCleanupPlaceholders)", $raceCleanupIds);
-    run("DELETE FROM broth_log_incidents WHERE incident_id IN ($raceCleanupPlaceholders)", $raceCleanupIds);
-    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($raceCleanupPlaceholders)", $raceCleanupIds)['c'] ?? -1), 0, 'cross-process race correction: no leftover fixture incidents remain');
+    // --- 9. no return of the 4-hour alert storm: one occurrence, scanned every 5 minutes for 12 hours
+    // (as the production cron does), produces exactly one incident, one initial notification burst and
+    // no messages after its auto-stop. ---
+    $ocStormAlert = $ocAlert('B1', 'dicedPorkHot', 'Diced Pork Hot', 'resp-occ-storm', '2026-10-03', '160F');
+    $ocStormId = $ocCreate($ocStormAlert);
+    $ocBackdate($ocStormId, '2026-10-03 16:00:00');
+    $ocStormIncidents = (int)q1("SELECT COUNT(*) c FROM broth_log_incidents")['c'];
+    $ocStormStopApplied = false;
+    $ocStormSentAtStop = null;
+    for ($tick = 0; $tick <= 144; $tick++) {
+        $tickTime = (new DateTimeImmutable('2026-10-03 16:00:00 UTC'))->modify('+' . ($tick * 5) . ' minutes');
+        $tickId = broth_log_copilot_create_incident($ocStormAlert);
+        if ($tickId !== $ocStormId) throw new RuntimeException('FAIL storm: rescan produced a different incident at tick ' . $tick);
+        broth_log_copilot_notify_incident($tickId, $tickTime);
+        foreach (broth_log_copilot_due_escalations($tickTime) as $dueAction) {
+            if ($dueAction['incident']['incident_id'] !== $ocStormId) continue;
+            broth_log_copilot_apply_escalation_action_with_notification($dueAction, $tickTime);
+            if (($dueAction['action'] ?? '') === 'auto_stop') { $ocStormStopApplied = true; $ocStormSentAtStop = count($sentMessages); }
+        }
+    }
+    expect_true($ocStormStopApplied, 'storm: the occurrence auto-stopped within the 12-hour simulation');
+    expect_eq(count($sentMessages), $ocStormSentAtStop, 'storm: nothing at all was sent after the occurrence auto-stopped, despite 5-minute rescans for hours');
+    expect_eq((int)q1("SELECT COUNT(*) c FROM broth_log_incidents")['c'], $ocStormIncidents, 'storm: 145 rescans created zero additional incidents');
+    expect_eq((int)q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE fingerprint=?", [broth_log_copilot_incident_fingerprint($ocStormAlert)])['c'], 1, 'storm: still exactly one incident for the occurrence');
 
     // --- 18: missing_shift auto-close still works correctly for an incident that already
     // auto_stopped - the close-lookup was changed from active_key to fingerprint precisely because
@@ -3872,12 +3728,12 @@ try {
     expect_eq((int)($hsOpsDeliveries[0]['c'] ?? -1), 1, '21: Ops received exactly one initial-notification delivery for the original incident - the suppressed rescans never produced a second/duplicate initial notification');
 
     // Cleanup
-    $hsIncidentIds = array_values(array_unique([$hsIncidentId, $hsNextDayId, $hsNewSubmissionId, $hsProblemBId, $hsProblemCId, $hsRearmId, $hsMsId]));
+    $hsIncidentIds = array_values(array_unique(array_merge($ocIds, [$hsIncidentId, $hsMsId])));
     $hsPlaceholders = implode(',', array_fill(0, count($hsIncidentIds), '?'));
     run("DELETE FROM broth_log_incident_events WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds);
     run("DELETE FROM broth_log_outbound_deliveries WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds);
     run("DELETE FROM broth_log_incidents WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds);
-    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds)['c'] ?? -1), 0, '4-hour hard-stop suppression: no leftover fixture incidents remain');
+    expect_eq((int)(q1("SELECT COUNT(*) c FROM broth_log_incidents WHERE incident_id IN ($hsPlaceholders)", $hsIncidentIds)['c'] ?? -1), 0, 'occurrence-level incidents: no leftover fixture incidents remain');
 
     // ============================================================================
     // MANAGER DAILY OPERATIONS UX: Daily Check, Needs Attention, Review Date, Issue Detail.
@@ -4458,7 +4314,7 @@ try {
     // never-ACKed incident before the auto-stop walkthrough below, exactly like the equivalent reset
     // in the hard-stop suppression test section earlier in this file.
     run("UPDATE broth_log_incidents SET created_at='2026-09-25 00:00:00', level_entered_at='2026-09-25 00:00:00' WHERE incident_id=?", [$rcAckIncident]);
-    run("UPDATE broth_log_incidents SET state='detected', owner_telegram_user_id=NULL, acknowledged_by=NULL, acknowledged_at=NULL, resolved_by=NULL, resolved_at=NULL, resolution_note=NULL, active_key=? WHERE incident_id=?", [broth_log_copilot_station_problem_key('B3', 'lineFreezer'), $rcAckIncident]);
+    run("UPDATE broth_log_incidents SET state='detected', owner_telegram_user_id=NULL, acknowledged_by=NULL, acknowledged_at=NULL, resolved_by=NULL, resolved_at=NULL, resolution_note=NULL, active_key=? WHERE incident_id=?", [broth_log_copilot_occurrence_active_key((string)q1("SELECT fingerprint FROM broth_log_incidents WHERE incident_id=?", [$rcAckIncident])['fingerprint']), $rcAckIncident]);
     $rcAsDue = array_values(array_filter(broth_log_copilot_due_escalations(new DateTimeImmutable('2026-09-25 04:00:01 UTC')), fn($d) => $d['incident']['incident_id'] === $rcAckIncident));
     expect_eq($rcAsDue[0]['action'] ?? '', 'auto_stop', '30: auto-stop policy (4h) completely unchanged by this UX task');
     broth_log_copilot_apply_escalation_action_with_notification($rcAsDue[0], new DateTimeImmutable('2026-09-25 04:00:01 UTC'));

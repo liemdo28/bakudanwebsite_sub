@@ -176,17 +176,36 @@ try {
     expect_eq($report['pending_recipients'], ['Omar - B2 Level 2 (pending onboarding, no Telegram ID)'], 'Omar is reported as pending onboarding');
     expect_eq([q1("SELECT COUNT(*) c FROM broth_log_incidents")['c'], q1("SELECT COUNT(*) c FROM broth_log_outbound_deliveries")['c'], q1("SELECT COUNT(*) c FROM broth_log_incident_events")['c']], $countsBefore, 'building the report creates/changes no incident, delivery or event');
 
-    // alert coverage for critical readings + legacy-era split
+    // alert status of critical readings: exact occurrence evidence only
     $fryer = array_values(array_filter($report['stores']['B1']['exceptions'], fn($e) => $e['station'] === 'Fryer Left'))[0];
     $prepEx = array_values(array_filter($report['stores']['B1']['exceptions'], fn($e) => $e['station'] === 'Prep Area Cooler'))[0];
-    expect_eq($fryer['alert_coverage'], 'NO incident found for this critical reading', 'a critical reading with no incident anywhere is reported plainly as having no incident');
+    expect_eq($fryer['alert_coverage'], 'NO incident found for this occurrence', 'a critical reading with no incident for its exact occurrence is reported plainly as having no incident');
     expect_eq($prepEx['alert_coverage'], 'not alert-eligible (not critical)', 'a non-critical exception is labelled not alert-eligible');
-    $inc('inc-b1-fryer-old', 'B1', '2026-09-01', 'temperature', 'auto_stopped', null, '2026-09-01 18:00:00', null, 'Fryer Left');
-    run("UPDATE broth_log_incidents SET station_key='fryerLeft' WHERE incident_id='inc-b1-fryer-old'");
+    // A historical TERMINAL incident for the same station must never be described as covering the later occurrence.
+    foreach (['auto_stopped', 'resolved', 'closed'] as $terminalState) {
+        $inc('inc-b1-fryer-old-' . $terminalState, 'B1', '2026-09-01', 'temperature', $terminalState, null, '2026-09-01 18:00:00', null, 'Fryer Left');
+        run("UPDATE broth_log_incidents SET station_key='fryerLeft' WHERE incident_id=?", ['inc-b1-fryer-old-' . $terminalState]);
+    }
+    run("UPDATE broth_log_incidents SET station_key='fryerLeft', escalation_lock_expires_at='9999-12-31 23:59:59', state='escalated_level_3' WHERE incident_id='inc-b1-fryer-old-closed'");
     $reportCov = bldr_build_report($d, ['B1' => ['table' => $b1], 'B2' => ['table' => $b2], 'B3' => ['table' => $b3]], utc('2026-10-09 04:00:00'));
     $fryer2 = array_values(array_filter($reportCov['stores']['B1']['exceptions'], fn($e) => $e['station'] === 'Fryer Left'))[0];
-    expect_eq($fryer2['alert_coverage'], 'covered by earlier unresolved incident from 2026-09-01 (auto_stopped)', 'a critical reading folded into an earlier unresolved station incident names that incident date and state');
-    run("DELETE FROM broth_log_incidents WHERE incident_id='inc-b1-fryer-old'");
+    expect_eq($fryer2['alert_coverage'], 'NO incident found for this occurrence', 'auto_stopped / resolved / closed / frozen historical incidents for the same station never "cover" a later occurrence');
+    expect_true(!str_contains(bldr_render_text($reportCov), 'covered') && !str_contains(bldr_render_html($reportCov), 'covered'), 'the misleading word "covered" is gone from the report');
+    // exact occurrence incident -> reported as created
+    $inc('inc-b1-fryer-own', 'B1', $d, 'temperature', 'auto_stopped', null, '2026-10-08 15:30:00', null, 'Fryer Left');
+    run("UPDATE broth_log_incidents SET station_key='fryerLeft', fingerprint=? WHERE incident_id='inc-b1-fryer-own'", [broth_log_copilot_incident_fingerprint(['branch' => 'B1', 'responseId' => $fryer['response_id'], 'stationKey' => 'fryerLeft', 'severity' => 'critical', 'businessDate' => $d])]);
+    $reportOwn = bldr_build_report($d, ['B1' => ['table' => $b1], 'B2' => ['table' => $b2], 'B3' => ['table' => $b3]], utc('2026-10-09 04:00:00'));
+    $fryer3 = array_values(array_filter($reportOwn['stores']['B1']['exceptions'], fn($e) => $e['station'] === 'Fryer Left'))[0];
+    expect_true(str_starts_with($fryer3['alert_coverage'], 'incident created for this exact occurrence (inc-b1-fryer-own, auto_stopped)'), 'an incident carrying the exact occurrence fingerprint is reported as created for this occurrence');
+    run("DELETE FROM broth_log_incidents WHERE incident_id='inc-b1-fryer-own'");
+    // historical suppression by the retired station-level rule, evidenced by the exact fingerprint in the rescan event
+    $supFp = broth_log_copilot_incident_fingerprint(['branch' => 'B1', 'responseId' => $fryer['response_id'], 'stationKey' => 'fryerLeft', 'severity' => 'critical', 'businessDate' => $d]);
+    run("INSERT INTO broth_log_incident_events (incident_id, event_type, event_json) VALUES ('inc-b1-fryer-old-auto_stopped','rescan_same_unresolved_problem',?)", [json_encode(['fingerprint' => $supFp, 'temperature' => '1230F'])]);
+    $reportSup = bldr_build_report($d, ['B1' => ['table' => $b1], 'B2' => ['table' => $b2], 'B3' => ['table' => $b3]], utc('2026-10-09 04:00:00'));
+    $fryer4 = array_values(array_filter($reportSup['stores']['B1']['exceptions'], fn($e) => $e['station'] === 'Fryer Left'))[0];
+    expect_true(str_starts_with($fryer4['alert_coverage'], 'NOT ALERTED - historically suppressed by the retired station-level rule'), 'an occurrence logged as folded by the retired rule is reported as NOT ALERTED / historically suppressed');
+    run("DELETE FROM broth_log_incident_events WHERE event_type='rescan_same_unresolved_problem'");
+    foreach (['auto_stopped', 'resolved', 'closed'] as $terminalState) run("DELETE FROM broth_log_incidents WHERE incident_id=?", ['inc-b1-fryer-old-' . $terminalState]);
     run("UPDATE broth_log_branch_alert_mode SET updated_at='2026-10-08 19:00:00' WHERE branch='B1'");
     $reportEra = bldr_build_report($d, ['B1' => ['table' => $b1], 'B2' => ['table' => $b2], 'B3' => ['table' => $b3]], utc('2026-10-09 04:00:00'));
     $dEra = $reportEra['stores']['B1']['delivery'];

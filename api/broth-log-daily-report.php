@@ -139,7 +139,7 @@ function bldr_collect_store(string $branch, array $table, string $date, DateTime
     foreach ($submissions as $s) {
         foreach ($s['stations'] as $st) {
             $tally[$st['class']]++;
-            $ctx = ['key' => $st['key'], 'employee' => $s['employee'], 'local_time' => $s['local_time'], 'shift' => $s['assigned_shift'], 'station' => $st['label'], 'raw' => $st['raw'], 'target' => $st['target'], 'severity' => $st['severity'], 'temperature' => $st['temperature']];
+            $ctx = ['key' => $st['key'], 'response_id' => $s['response_id'], 'employee' => $s['employee'], 'local_time' => $s['local_time'], 'shift' => $s['assigned_shift'], 'station' => $st['label'], 'raw' => $st['raw'], 'target' => $st['target'], 'severity' => $st['severity'], 'temperature' => $st['temperature']];
             if ($st['class'] === 'exception' || $st['class'] === 'config_gap') $exceptions[] = $ctx;
             if ($st['class'] === 'non_numeric') $nonNumeric[] = $ctx;
             if ($st['raw_text_parsed']) $reviews[] = $ctx;
@@ -274,18 +274,27 @@ function bldr_collect_delivery_health(string $branch, string $date): array {
     ];
 }
 
-// Whether a reading outside SOP is backed by a Telegram incident. Only CRITICAL readings raise
-// alerts; a critical reading with no incident of its own that date is normally folded into a
-// still-unresolved incident for the same station (station-level suppression) - report which one,
-// from the incident table, or say plainly that none was found.
+// Alert status of one reading outside SOP, from EXACT occurrence evidence only: the permanent
+// occurrence fingerprint (branch | response | station | severity | business date - the same function
+// the alert engine uses). Never inferred from "some incident exists for this station": a historical
+// auto_stopped / resolved / closed / frozen incident never describes, covers or excuses a later,
+// independent occurrence. Only CRITICAL readings raise alerts.
+//   1. an incident exists for this exact occurrence      -> incident created (repeat scans dedupe onto it)
+//   2. no incident, but the retired 2026-09-25 station-level rule logged this occurrence as folded into
+//      an earlier incident (rescan_same_unresolved_problem event carrying this fingerprint)
+//                                                         -> historically suppressed, NOT alerted
+//   3. neither                                            -> no incident found
 function bldr_alert_coverage(string $branch, string $date, array $exception): string {
     if (($exception['severity'] ?? '') !== 'critical') return 'not alert-eligible (not critical)';
-    $key = (string)($exception['key'] ?? '');
-    $same = q1("SELECT incident_id, state FROM broth_log_incidents WHERE branch=? AND station_key=? AND business_date=? ORDER BY created_at LIMIT 1", [$branch, $key, $date]);
-    if ($same) return 'incident this date (' . $same['state'] . ')';
-    $open = q1("SELECT business_date, state FROM broth_log_incidents WHERE branch=? AND station_key=? AND state NOT IN ('resolved','closed') ORDER BY created_at DESC LIMIT 1", [$branch, $key]);
-    if ($open) return 'covered by earlier unresolved incident from ' . $open['business_date'] . ' (' . $open['state'] . ')';
-    return 'NO incident found for this critical reading';
+    $fingerprint = broth_log_copilot_incident_fingerprint([
+        'branch' => $branch, 'responseId' => (string)($exception['response_id'] ?? ''), 'stationKey' => (string)($exception['key'] ?? ''),
+        'severity' => 'critical', 'businessDate' => $date,
+    ]);
+    $own = q1("SELECT incident_id, state FROM broth_log_incidents WHERE fingerprint=? ORDER BY created_at LIMIT 1", [$fingerprint]);
+    if ($own) return 'incident created for this exact occurrence (' . $own['incident_id'] . ', ' . $own['state'] . '); repeat scans deduplicate onto it';
+    $suppressed = q1("SELECT incident_id FROM broth_log_incident_events WHERE event_type='rescan_same_unresolved_problem' AND event_json LIKE ? ORDER BY id LIMIT 1", ['%' . $fingerprint . '%']);
+    if ($suppressed) return 'NOT ALERTED - historically suppressed by the retired station-level rule (folded into earlier incident ' . $suppressed['incident_id'] . '); no incident exists for this occurrence';
+    return 'NO incident found for this occurrence';
 }
 
 function bldr_build_report(string $date, array $tablesByBranch, DateTimeImmutable $now): array {
